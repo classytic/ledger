@@ -1206,3 +1206,354 @@ describe('Engine: createReports() pipes retainedEarningsCode/currentYearEarnings
     expect(engine.config.currentYearEarningsCode).toBeUndefined();
   });
 });
+
+// ─── Extra item field preservation in duplicate() and reverse() ─────────────
+
+describe('Extra item field preservation', () => {
+  function createMockDb() {
+    return {
+      startSession: vi.fn().mockReturnValue({
+        startTransaction: vi.fn(),
+        inTransaction: () => false,
+        commitTransaction: vi.fn(),
+        abortTransaction: vi.fn(),
+        endSession: vi.fn(),
+      }),
+      getClient: () => ({ topology: { description: { type: 'Single' } } }),
+    };
+  }
+
+  it('duplicate() preserves extra dimension fields on items', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'posted',
+      journalType: 'GENERAL',
+      label: 'Test',
+      journalItems: [
+        { account: 'acc1', debit: 10000, credit: 0, label: 'Line 1', departmentId: 'dept-A', projectId: 'proj-1', locationId: 'loc-X' },
+        { account: 'acc2', debit: 0, credit: 10000, label: 'Line 2', departmentId: 'dept-B', customField: 42 },
+      ],
+    };
+
+    let capturedData: Record<string, unknown> | undefined;
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(mockEntry),
+      }),
+    } as any;
+
+    const repo: any = {
+      on: vi.fn(),
+      create: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+        capturedData = data;
+        return Promise.resolve({ _id: 'dup-1', ...data });
+      }),
+    };
+    wireJournalEntryMethods(repo, mockModel);
+
+    await repo.duplicate('entry-1');
+
+    expect(capturedData).toBeDefined();
+    const items = capturedData!.journalItems as Array<Record<string, unknown>>;
+
+    // First item should carry departmentId, projectId, locationId
+    expect(items[0].departmentId).toBe('dept-A');
+    expect(items[0].projectId).toBe('proj-1');
+    expect(items[0].locationId).toBe('loc-X');
+
+    // Second item should carry departmentId, customField
+    expect(items[1].departmentId).toBe('dept-B');
+    expect(items[1].customField).toBe(42);
+
+    // Core fields should still be correct
+    expect(items[0].account).toBe('acc1');
+    expect(items[0].debit).toBe(10000);
+    expect(items[0].credit).toBe(0);
+    expect(capturedData!.state).toBe('draft');
+  });
+
+  it('reverse() preserves extra dimension fields on items', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'posted',
+      reversed: false,
+      journalType: 'GENERAL',
+      referenceNumber: 'GEN/2025/01/0001',
+      label: 'Test',
+      journalItems: [
+        { account: { _id: 'acc1' }, debit: 10000, credit: 0, label: 'Line 1', departmentId: 'dept-A', projectId: 'proj-1' },
+        { account: { _id: 'acc2' }, debit: 0, credit: 10000, label: 'Line 2', departmentId: 'dept-B' },
+      ],
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+
+    let capturedData: Record<string, unknown> | undefined;
+    const mockModel = {
+      db: createMockDb(),
+      findOne: () => ({
+        populate: () => ({
+          session: () => Promise.resolve(mockEntry),
+        }),
+      }),
+    } as any;
+
+    const repo: any = {
+      on: vi.fn(),
+      create: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+        capturedData = data;
+        return Promise.resolve({ _id: 'rev-1' });
+      }),
+    };
+    wireJournalEntryMethods(repo, mockModel);
+
+    await repo.reverse('entry-1');
+
+    expect(capturedData).toBeDefined();
+    const items = capturedData!.journalItems as Array<Record<string, unknown>>;
+
+    // First item: debits/credits swapped, extra fields preserved
+    expect(items[0].debit).toBe(0);
+    expect(items[0].credit).toBe(10000);
+    expect(items[0].departmentId).toBe('dept-A');
+    expect(items[0].projectId).toBe('proj-1');
+
+    // Second item
+    expect(items[1].debit).toBe(10000);
+    expect(items[1].credit).toBe(0);
+    expect(items[1].departmentId).toBe('dept-B');
+  });
+
+  it('duplicate() does not copy _id or id from items', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'posted',
+      journalType: 'GENERAL',
+      label: 'Test',
+      journalItems: [
+        { _id: 'item-1', id: 'item-1', account: 'acc1', debit: 10000, credit: 0, departmentId: 'dept-A' },
+        { _id: 'item-2', id: 'item-2', account: 'acc2', debit: 0, credit: 10000 },
+      ],
+    };
+
+    let capturedData: Record<string, unknown> | undefined;
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(mockEntry),
+      }),
+    } as any;
+
+    const repo: any = {
+      on: vi.fn(),
+      create: vi.fn().mockImplementation((data: Record<string, unknown>) => {
+        capturedData = data;
+        return Promise.resolve({ _id: 'dup-1' });
+      }),
+    };
+    wireJournalEntryMethods(repo, mockModel);
+
+    await repo.duplicate('entry-1');
+
+    const items = capturedData!.journalItems as Array<Record<string, unknown>>;
+    // _id and id must NOT be copied to the duplicate
+    expect(items[0]._id).toBeUndefined();
+    expect(items[0].id).toBeUndefined();
+    // But extra fields should be
+    expect(items[0].departmentId).toBe('dept-A');
+  });
+});
+
+// ─── Approval metadata enforcement ──────────────────────────────────────────
+
+describe('requireApproval enforcement', () => {
+  it('rejects post when approvedBy is set but approvedAt is missing', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'draft',
+      approvedBy: 'user-1',
+      approvedAt: undefined, // missing!
+      journalItems: [
+        { account: 'acc1', debit: 10000, credit: 0 },
+        { account: 'acc2', debit: 0, credit: 10000 },
+      ],
+      save: vi.fn(),
+    };
+
+    const mockModel = {
+      findOne: () => ({
+        populate: () => ({
+          session: () => Promise.resolve(mockEntry),
+        }),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel, undefined, { requireApproval: true });
+
+    await expect(repo.post('entry-1')).rejects.toThrow(
+      'Both approvedBy and approvedAt are required',
+    );
+  });
+
+  it('allows post when both approvedBy and approvedAt are set', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'draft',
+      approvedBy: 'user-1',
+      approvedAt: new Date(),
+      journalItems: [
+        { account: 'acc1', debit: 10000, credit: 0 },
+        { account: 'acc2', debit: 0, credit: 10000 },
+      ],
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const mockModel = {
+      findOne: () => ({
+        populate: () => ({
+          session: () => Promise.resolve(mockEntry),
+        }),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel, undefined, { requireApproval: true });
+
+    const result = await repo.post('entry-1');
+    expect(result.state).toBe('posted');
+  });
+});
+
+// ─── Archive (draft → archived) ──────────────────────────────────────────────
+
+describe('archive() method', () => {
+  it('archives a draft entry', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'draft',
+      stateChangedAt: undefined as Date | undefined,
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(mockEntry),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel);
+
+    const result = await repo.archive('entry-1');
+    expect(result.state).toBe('archived');
+    expect(result.stateChangedAt).toBeInstanceOf(Date);
+    expect(mockEntry.save).toHaveBeenCalled();
+  });
+
+  it('rejects archiving a posted entry', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'posted',
+      save: vi.fn(),
+    };
+
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(mockEntry),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel);
+
+    await expect(repo.archive('entry-1')).rejects.toThrow(
+      'Only draft entries can be archived',
+    );
+    expect(mockEntry.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects archiving an already-archived entry', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'archived',
+      save: vi.fn(),
+    };
+
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(mockEntry),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel);
+
+    await expect(repo.archive('entry-1')).rejects.toThrow(
+      'Only draft entries can be archived',
+    );
+  });
+
+  it('throws not-found when entry does not exist', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(null),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel);
+
+    await expect(repo.archive('non-existent')).rejects.toThrow('Entry not found');
+  });
+
+  it('requires actorId when strictness.requireActor is enabled', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve({ _id: 'entry-1', state: 'draft', save: vi.fn() }),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel, undefined, { requireActor: true });
+
+    await expect(repo.archive('entry-1')).rejects.toThrow(
+      'actorId is required for archive operations',
+    );
+  });
+
+  it('enforces org scope in multi-tenant mode', async () => {
+    const { wireJournalEntryMethods } = await import('./repositories/journal-entry.repository.js');
+
+    const mockModel = {
+      findOne: () => ({
+        session: () => Promise.resolve(null),
+      }),
+    } as any;
+
+    const repo: any = { on: vi.fn() };
+    wireJournalEntryMethods(repo, mockModel, 'business');
+
+    await expect(repo.archive('entry-1')).rejects.toThrow(
+      'organizationId is required',
+    );
+  });
+});

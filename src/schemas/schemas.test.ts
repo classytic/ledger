@@ -304,4 +304,86 @@ describe('Fiscal Period Schema', () => {
 
     expect(fp.closed).toBe(false);
   });
+
+  it('rejects overlapping fiscal periods (single-tenant)', async () => {
+    const schema = createFiscalPeriodSchema(stConfig);
+    if (mongoose.models['FPOverlap']) delete mongoose.models['FPOverlap'];
+    const FPModel = mongoose.model('FPOverlap', schema);
+    await FPModel.createIndexes();
+
+    // Create Q1
+    await FPModel.create({
+      name: 'Q1 2025',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
+    });
+
+    // Overlapping period should fail
+    await expect(
+      FPModel.create({
+        name: 'Jan-Feb 2025',
+        startDate: new Date('2025-01-15'),
+        endDate: new Date('2025-02-28'),
+      }),
+    ).rejects.toThrow(/overlaps/i);
+  });
+
+  it('allows non-overlapping fiscal periods', async () => {
+    const schema = createFiscalPeriodSchema(stConfig);
+    if (mongoose.models['FPNoOverlap']) delete mongoose.models['FPNoOverlap'];
+    const FPModel = mongoose.model('FPNoOverlap', schema);
+    await FPModel.createIndexes();
+
+    await FPModel.create({
+      name: 'Q1 2025',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
+    });
+
+    // Q2 starts after Q1 ends — should succeed
+    await expect(
+      FPModel.create({
+        name: 'Q2 2025',
+        startDate: new Date('2025-04-01'),
+        endDate: new Date('2025-06-30'),
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects overlapping fiscal periods within same tenant (multi-tenant)', async () => {
+    const schema = createFiscalPeriodSchema(mtConfig);
+    if (mongoose.models['FPMTOverlap']) delete mongoose.models['FPMTOverlap'];
+    const FPModel = mongoose.model('FPMTOverlap', schema);
+    await FPModel.createIndexes();
+
+    const org1 = new mongoose.Types.ObjectId();
+    const org2 = new mongoose.Types.ObjectId();
+
+    await FPModel.create({
+      name: 'Q1 2025',
+      business: org1,
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
+    });
+
+    // Same org, overlapping — should fail
+    await expect(
+      FPModel.create({
+        name: 'Jan 2025',
+        business: org1,
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-01-31'),
+      }),
+    ).rejects.toThrow(/overlaps/i);
+
+    // Different org, same dates — should succeed
+    await expect(
+      FPModel.create({
+        name: 'Q1 2025',
+        business: org2,
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2025-03-31'),
+      }),
+    ).resolves.toBeDefined();
+  });
 });

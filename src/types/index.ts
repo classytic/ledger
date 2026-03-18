@@ -49,7 +49,17 @@ export type {
   SchemaOptions,
   JournalSchemaOptions,
   AccountingEngineConfig,
+  AuditConfig,
+  StrictnessConfig,
 } from './engine.js';
+
+export type {
+  // Posting contracts
+  SubledgerPostingInput,
+  SubledgerJournalItem,
+  PostingContract,
+  PostingResult,
+} from './contracts.js';
 
 export type {
   // Reports

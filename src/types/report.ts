@@ -155,6 +155,12 @@ export interface TaxReport {
 export interface PeriodParams {
   dateOption: 'month' | 'quarter' | 'year' | 'custom';
   dateValue: unknown;
+  /**
+   * Optional dimension filters injected into aggregation $match stages.
+   * Keys are dot-path field names (e.g. 'journalItems.departmentId').
+   * Values are matched with equality or MongoDB query operators.
+   */
+  filters?: Record<string, unknown>;
 }
 
 export interface BalanceSheetParams extends PeriodParams {

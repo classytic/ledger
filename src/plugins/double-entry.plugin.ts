@@ -195,6 +195,11 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
             );
           }
           validateItems(items, data);
+
+          // Account existence + tenant-account integrity (when AccountModel provided)
+          if (AccountModel) {
+            await validateAccounts(items as Array<{ account?: unknown }>, data, context);
+          }
           return;
         }
 
@@ -220,7 +225,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
 
         if (!existing) return; // will 404 downstream
 
-        const persistedItems = existing.journalItems as Array<{ debit?: number; credit?: number }> | undefined;
+        const persistedItems = existing.journalItems as Array<{ debit?: number; credit?: number; account?: unknown }> | undefined;
         if (!persistedItems || persistedItems.length < 2) {
           throw Errors.validation(
             `Cannot post entry: at least 2 journal items required, got ${persistedItems?.length ?? 0}.`,
@@ -228,6 +233,11 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         }
 
         validateItems(persistedItems, data);
+
+        // Account existence + tenant-account integrity (when AccountModel provided)
+        if (AccountModel) {
+          await validateAccounts(persistedItems, { ...data, ...existing }, context);
+        }
       };
 
       repo.on('before:create', (payload: unknown) => validate(payload as Record<string, unknown>));

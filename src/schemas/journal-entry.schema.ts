@@ -4,7 +4,7 @@
  * Creates a Mongoose schema for double-entry journal entries.
  * - Multi-tenant aware
  * - Embedded journal items with account refs
- * - State machine: draft → posted
+ * - State machine: draft → posted, draft → archived
  * - Auto-generated reference numbers
  * - Double-entry validation on post
  * - Optimized indexes for high-load reporting
@@ -26,6 +26,7 @@ export function createJournalEntrySchema(
     textSearch = true,
     extraFields = {},
     extraIndexes = [],
+    extraItemFields = {},
   } = options;
 
   // ── Tax Detail (audit reference only) ────────────────────────────────────
@@ -57,6 +58,7 @@ export function createJournalEntrySchema(
       debit: { type: Number, default: 0, min: 0, validate: amountValidator },
       credit: { type: Number, default: 0, min: 0, validate: amountValidator },
       taxDetails: { type: [TaxDetailSchema], default: [] },
+      ...extraItemFields,
     },
     { _id: false },
   );
@@ -84,7 +86,7 @@ export function createJournalEntrySchema(
     totalCredit: { type: Number, required: true, min: 0, validate: { validator: Number.isInteger, message: 'totalCredit must be an integer (cents)' } },
     state: {
       type: String,
-      enum: ['draft', 'posted'],
+      enum: ['draft', 'posted', 'archived'],
       default: 'draft',
       required: true,
     },
@@ -102,6 +104,27 @@ export function createJournalEntrySchema(
     },
     ...extraFields,
   };
+
+  // ── Audit fields (conditional) ─────────────────────────────────────────
+
+  if (config.audit?.trackActor) {
+    fields.createdBy = { type: mongoose.Schema.Types.ObjectId, default: null };
+    fields.postedBy = { type: mongoose.Schema.Types.ObjectId, default: null };
+    fields.reversedByUser = { type: mongoose.Schema.Types.ObjectId, default: null };
+  }
+
+  // ── Approval fields (conditional) ──────────────────────────────────────
+
+  if (config.strictness?.requireApproval || config.audit?.trackActor) {
+    fields.approvedBy = { type: mongoose.Schema.Types.ObjectId, default: null };
+    fields.approvedAt = { type: Date, default: null };
+  }
+
+  // ── Idempotency key (conditional) ──────────────────────────────────────
+
+  if (config.idempotency) {
+    fields.idempotencyKey = { type: String, default: null };
+  }
 
   // ── Multi-tenant field ───────────────────────────────────────────────────
 
@@ -289,6 +312,17 @@ export function createJournalEntrySchema(
     }
 
     schema.index({ reversed: 1 });
+
+    // Idempotency key: unique sparse index (only when enabled)
+    if (config.idempotency) {
+      const idempotencyIdx: Record<string, 1 | -1> = {};
+      if (org) idempotencyIdx[org] = 1;
+      idempotencyIdx.idempotencyKey = 1;
+      schema.index(idempotencyIdx, {
+        unique: true,
+        partialFilterExpression: { idempotencyKey: { $exists: true, $ne: null } },
+      });
+    }
   }
 
   if (textSearch) {

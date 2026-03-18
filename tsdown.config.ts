@@ -12,8 +12,9 @@ export default defineConfig({
     'src/repositories/index.ts',
     'src/exports/index.ts',
   ],
-  format: 'esm',
+  format: ['esm'],
   dts: false,
+  clean: true,
   sourcemap: false,
-  external: ['mongoose'],
+  external: ['mongoose', '@classytic/mongokit'],
 });

@@ -40,6 +40,10 @@ const Account = mongoose.model('Account', AccountSchema);
 const JournalEntrySchema = accounting.createJournalEntrySchema('Account', {
   autoReference: true,  // auto-generate reference numbers
   textSearch: true,     // text index on reference + label
+  extraItemFields: {    // custom dimension fields on journal items
+    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+    projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
+  },
 });
 const JournalEntry = mongoose.model('JournalEntry', JournalEntrySchema);
 ```
@@ -52,7 +56,7 @@ const JournalEntry = mongoose.model('JournalEntry', JournalEntrySchema);
 | `referenceNumber` | String | Auto | Auto-generated (e.g. `GJ-0001`). Unique per org |
 | `label` | String | No | Description/memo |
 | `date` | Date | No | Defaults to `new Date()` |
-| `state` | String | No | `draft` (default) or `posted` |
+| `state` | String | No | `draft` (default), `posted`, or `archived` |
 | `stateChangedAt` | Date | No | Set when state changes |
 | `journalItems` | Array | Yes | Embedded items (see below) |
 | `totalDebit` | Number | No | Synced by double-entry plugin |
@@ -61,6 +65,17 @@ const JournalEntry = mongoose.model('JournalEntry', JournalEntrySchema);
 | `reversedBy` | ObjectId | No | Points to reversal entry |
 | `reversalOf` | ObjectId | No | Points to original entry (on the reversal) |
 | `{orgField}` | ObjectId | Multi-tenant only | Organization reference |
+
+**Conditional fields** (added when engine config enables them):
+
+| Field | Condition | Description |
+|---|---|---|
+| `createdBy` | `audit.trackActor` | Actor who created the entry |
+| `postedBy` | `audit.trackActor` | Actor who posted the entry |
+| `reversedByUser` | `audit.trackActor` | Actor who reversed the entry |
+| `approvedBy` | `audit.trackActor` or `strictness.requireApproval` | Actor who approved the entry |
+| `approvedAt` | `audit.trackActor` or `strictness.requireApproval` | Timestamp of approval |
+| `idempotencyKey` | `idempotency: true` | Unique key for at-most-once posting (sparse index) |
 
 ### Journal Item Sub-document
 
@@ -72,6 +87,8 @@ const JournalEntry = mongoose.model('JournalEntry', JournalEntrySchema);
 | `debit` | Number | No | Default 0, non-negative integer (cents) |
 | `credit` | Number | No | Default 0, non-negative integer (cents) |
 | `taxDetails` | Array | No | `[{ taxCode, taxName }]` audit trail |
+
+**Custom dimension fields:** Pass `extraItemFields` in schema options to add fields like `departmentId`, `projectId`, `locationId` to the journal item sub-document. These fields are preserved through `duplicate()` and `reverse()` operations and can be filtered on in reports via the `filters` parameter.
 
 ### Validation Rules
 
@@ -100,6 +117,12 @@ const FiscalPeriod = mongoose.model('FiscalPeriod', FiscalPeriodSchema);
 | `reopenedAt` | Date | No | Timestamp of last reopen |
 | `reopenedBy` | String | No | User who reopened |
 
+### Overlap Protection
+
+The schema includes a `pre('validate')` hook that prevents overlapping date ranges within a tenant. If a new period's date range overlaps with an existing period (same org in multi-tenant mode), validation fails with a descriptive error message.
+
+This prevents fiscal lock/close from becoming inconsistent — two overlapping periods could otherwise both claim authority over the same date range.
+
 ### Schema Options
 
 All schema factories accept:
@@ -116,7 +139,8 @@ Journal entry schema also accepts:
 
 ```typescript
 interface JournalSchemaOptions extends SchemaOptions {
-  autoReference?: boolean;  // default true
-  textSearch?: boolean;     // default true
+  autoReference?: boolean;        // default true
+  textSearch?: boolean;           // default true
+  extraItemFields?: Record<string, unknown>;  // custom fields on journal items
 }
 ```

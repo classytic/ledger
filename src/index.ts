@@ -57,6 +57,7 @@ export { createFiscalPeriodSchema } from './schemas/fiscal-period.schema.js';
 
 export { doubleEntryPlugin } from './plugins/double-entry.plugin.js';
 export { fiscalLockPlugin } from './plugins/fiscal-lock.plugin.js';
+export { idempotencyPlugin } from './plugins/idempotency.plugin.js';
 
 // ── Reports ────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ export { defaultLogger } from './utils/logger.js';
 export type { Logger } from './utils/logger.js';
 export { acquireSession, finalizeSession } from './utils/session.js';
 export type { SessionResult } from './utils/session.js';
+export { buildItemFilters } from './utils/filter-builder.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +157,14 @@ export type {
   MultiTenantConfig,
   SchemaOptions,
   JournalSchemaOptions,
+  AuditConfig,
+  StrictnessConfig,
+
+  // Posting Contracts
+  SubledgerPostingInput,
+  SubledgerJournalItem,
+  PostingContract,
+  PostingResult,
 
   // Reports
   TrialBalanceReport,

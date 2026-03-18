@@ -11,3 +11,5 @@ export {
   computeEndingBalance,
   buildAccountTypeMap,
 } from './account-helpers.js';
+
+export { buildItemFilters } from './filter-builder.js';

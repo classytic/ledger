@@ -12,6 +12,7 @@ import type { CountryPack } from '../country/index.js';
 import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
 import { computeEndingBalance } from '../utils/account-helpers.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+import { buildItemFilters } from '../utils/filter-builder.js';
 
 export interface TrialBalanceOptions {
   AccountModel: Model<unknown>;
@@ -28,12 +29,14 @@ export async function generateTrialBalance(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     accountId?: string;
+    filters?: Record<string, unknown>;
   },
 ): Promise<TrialBalanceReport> {
   const { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth = 1 } = opts;
   requireOrgScope(orgField, params.organizationId);
   const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
   const fiscalYearStart = getFiscalYearStart(startDate, fiscalYearStartMonth);
+  const itemFilters = buildItemFilters(params.filters);
 
   // Fetch all active accounts
   const accountQuery: Record<string, unknown> = { active: true };
@@ -62,7 +65,7 @@ export async function generateTrialBalance(
   const buildPipeline = (ids: unknown[], dateFrom: Date, dateTo: Date): PipelineStage[] => [
     { $match: { ...baseMatch, date: { $gte: dateFrom, $lt: dateTo } } },
     { $unwind: '$journalItems' },
-    { $match: { 'journalItems.account': { $in: ids }, ...accountFilter } },
+    { $match: { 'journalItems.account': { $in: ids }, ...accountFilter, ...itemFilters } },
     { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
   ];
 

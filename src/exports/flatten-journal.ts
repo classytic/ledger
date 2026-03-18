@@ -37,9 +37,20 @@ export function flattenJournalEntry(entry: PopulatedJournalEntry): FlatJournalRo
   const items = entry.journalItems ?? [];
   const itemCount = items.length;
 
+  // Known core item keys — everything else is an extra dimension field
+  const KNOWN_ITEM_KEYS = new Set(['account', 'label', 'date', 'debit', 'credit', 'taxDetails']);
+
   return items.map((item, index) => {
     const acct = resolveAccount(item.account);
     const firstTax = item.taxDetails?.[0];
+
+    // Collect extra item fields (dimensions like departmentId, projectId, etc.)
+    const extraItemFields: Record<string, unknown> = {};
+    for (const key of Object.keys(item)) {
+      if (!KNOWN_ITEM_KEYS.has(key)) {
+        extraItemFields[key] = (item as Record<string, unknown>)[key];
+      }
+    }
 
     return {
       entryId: String(entry._id ?? ''),
@@ -64,6 +75,7 @@ export function flattenJournalEntry(entry: PopulatedJournalEntry): FlatJournalRo
 
       itemIndex: index,
       itemCount,
+      ...extraItemFields,
     };
   });
 }

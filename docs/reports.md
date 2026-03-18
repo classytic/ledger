@@ -15,8 +15,33 @@ All report methods accept:
   organizationId?: unknown;  // required in multi-tenant mode
   dateOption: 'month' | 'quarter' | 'year' | 'custom';
   dateValue: unknown;        // month: '2025-03', quarter: '2025-Q1', year: 2025, custom: { start, end }
+  filters?: Record<string, unknown>;  // dimension filters (see below)
 }
 ```
+
+### Dimension Filters
+
+All reports accept an optional `filters` parameter for filtering by custom dimension fields on journal items:
+
+```typescript
+const bs = await reports.balanceSheet({
+  organizationId: orgId,
+  dateOption: 'year',
+  dateValue: 2025,
+  filters: {
+    'journalItems.departmentId': departmentId,
+    'journalItems.projectId': { $in: [proj1, proj2] },
+  },
+});
+```
+
+Filters are injected into aggregation `$match` stages after `$unwind`. Dangerous MongoDB operators (`$where`, `$expr`, `$function`, `$accumulator`, `$merge`, `$out`, `$unionWith`) are blocked by `buildItemFilters()`. Top-level `$`-prefixed keys are also blocked to prevent query injection.
+
+### Account Identity in Reports
+
+Reports use the **actual account row** for display names and codes, not the account type template. When `acc.name` or `acc.accountNumber` is set on the account document, that value is used. Falls back to `accountType.name` / `accountType.code` from the country pack when the account row doesn't have these fields.
+
+This means tenants with multiple accounts under one type (e.g. three bank accounts all typed as "1000-Cash") will see their distinct names in report output.
 
 ## Trial Balance
 
@@ -28,7 +53,7 @@ const tb = await reports.trialBalance({
 });
 ```
 
-Three-column report: initial balance + current period activity + ending balance. Returns `TrialBalanceReport` with `rows: TrialBalanceRow[]` and `totals`.
+Three-column report: initial balance + current period activity + ending balance. Returns `TrialBalanceReport` with `rows: TrialBalanceRow[]` and `period`.
 
 ## Balance Sheet
 
@@ -41,7 +66,7 @@ const bs = await reports.balanceSheet({
 });
 ```
 
-Returns `BalanceSheetReport` with `categories` grouped by Balance Sheet classifications (assets, liabilities, equity). Net income is computed from income statement accounts.
+Returns `BalanceSheetReport` with `assets`, `liabilities`, `equity` categories, each containing groups of accounts. Net income is computed from income statement accounts for the fiscal year and injected into equity as retained earnings.
 
 ## Income Statement
 
@@ -78,7 +103,9 @@ const cf = await reports.cashFlow({
 });
 ```
 
-Groups posted transactions by `cashFlowCategory` from country pack account type definitions. Returns `CashFlowReport` with sections (Operating, Investing, Financing) and `netCashFlow`.
+Groups posted transactions by `cashFlowCategory` from the country pack's account type definitions. Returns `CashFlowReport` with three sections — Operating, Investing, Financing — and `netCashFlow`.
+
+**Scope and limitations:** The cash flow statement is derived from the `cashFlowCategory` assigned to account types in the country pack. It works by summing journal items posted to accounts that have a cash flow category defined. This is an **indirect method** classification — it does not perform direct method cash flow analysis. For the report to be meaningful, the country pack must assign `cashFlowCategory` values to the relevant account types.
 
 ## Fiscal Period Close
 
@@ -122,6 +149,6 @@ import { generateTrialBalance } from '@classytic/ledger/reports';
 
 const tb = await generateTrialBalance(
   { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth },
-  { organizationId, dateOption: 'year', dateValue: 2025 },
+  { organizationId, dateOption: 'year', dateValue: 2025, filters: { 'journalItems.departmentId': deptId } },
 );
 ```

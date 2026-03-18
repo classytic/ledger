@@ -31,6 +31,8 @@ export interface PopulatedJournalItem {
   debit: number;
   credit: number;
   taxDetails?: Array<{ taxCode?: string; taxName?: string }>;
+  /** Extra dimension fields from extraItemFields */
+  [key: string]: unknown;
 }
 
 /**
@@ -46,7 +48,7 @@ export interface PopulatedJournalEntry {
   journalItems: PopulatedJournalItem[];
   totalDebit: number;
   totalCredit: number;
-  state: 'draft' | 'posted';
+  state: 'draft' | 'posted' | 'archived';
   reversed?: boolean;
   createdAt?: Date | string;
   updatedAt?: Date | string;
@@ -65,7 +67,7 @@ export interface FlatJournalRow {
   referenceNumber: string;
   entryLabel: string;
   entryDate: Date;
-  state: 'draft' | 'posted';
+  state: 'draft' | 'posted' | 'archived';
   reversed: boolean;
   totalDebit: number;
   totalCredit: number;
@@ -82,6 +84,9 @@ export interface FlatJournalRow {
 
   itemIndex: number;
   itemCount: number;
+
+  /** Extra dimension fields carried from journal items */
+  [key: string]: unknown;
 }
 
 // ── Field Map ────────────────────────────────────────────────────────────────

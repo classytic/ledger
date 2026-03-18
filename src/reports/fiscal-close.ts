@@ -52,7 +52,7 @@ export async function closeFiscalPeriod(
     FiscalPeriodModel,
     country,
     orgField,
-    retainedEarningsCode = '3660',
+    retainedEarningsCode = country.retainedEarningsCode ?? '3660',
     logger = defaultLogger,
   } = opts;
   const { periodId, organizationId, closedBy } = params;

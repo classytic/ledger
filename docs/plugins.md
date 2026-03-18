@@ -11,7 +11,7 @@ import { doubleEntryPlugin } from '@classytic/ledger';
 
 const plugin = doubleEntryPlugin({
   JournalEntryModel: JournalEntry, // required for immutability guard + partial updates
-  AccountModel: Account,           // validates account existence on posted creates
+  AccountModel: Account,           // validates account existence on posted creates AND updates
   orgField: 'business',            // validates tenant-account integrity
 });
 ```
@@ -24,32 +24,30 @@ On `before:create` and `before:update` (when state is `posted`):
 2. At least 2 journal items
 3. `sum(debits) === sum(credits)` (exact integer match)
 4. Syncs `totalDebit` and `totalCredit` onto the data
+5. All journal item accounts exist (when `AccountModel` provided)
+6. All referenced accounts belong to the same org as the entry (when `orgField` set)
 
-### Immutability Guard
+### Account Validation
 
-When `JournalEntryModel` is provided, the plugin also enforces immutable posted ledger on updates:
+Account validation runs on **both** `before:create` and `before:update` when `AccountModel` is provided. This closes the `repository.update(id, { state: 'posted' })` bypass — a draft with invalid accounts cannot be posted through the generic update path.
+
+On `before:create` for posted entries, `AccountModel` is **required** and the plugin throws if it's missing (fail-closed). On `before:update`, account validation runs when `AccountModel` is available but does not throw if it's absent (allows unit tests that only check balancing).
+
+### Posted-Entry Protection
+
+When `JournalEntryModel` is provided, the plugin protects posted entries from direct modification via updates:
 
 - Blocks any state transition away from `posted` (e.g. `{ state: 'draft' }`)
-- Blocks any field change on posted entries except `reversed`, `reversedBy`, and idempotent `state: 'posted'`
+- Blocks any field change on posted entries except idempotent `state: 'posted'`
+- `reversed`/`reversedBy` are NOT allowed through `repository.update()` — `reverse()` uses `entry.save()` directly
 - Partial updates that set `state: 'posted'` without `journalItems` fetch the persisted doc for validation
-
-### Account Validation (posted creates — fail-closed)
-
-`AccountModel` is **required**. The plugin throws on any posted create if `AccountModel` is not provided. This ensures account existence and tenant integrity are always enforced.
-
-On `before:create` for posted entries:
-
-1. All journal items reference existing accounts
-2. If `orgField` is set, all referenced accounts belong to the same organization as the entry
-
-> **Tip:** Use `accounting.createJournalEntryRepository()` (see [Repositories](repositories.md)) to avoid manual plugin configuration.
 
 ### Options
 
 | Option | Type | Required | Description |
 |---|---|---|---|
 | `JournalEntryModel` | Model | No | Required for immutability guard and partial update validation |
-| `AccountModel` | Model | Yes* | Validates account existence and tenant integrity on posted creates. *Throws at runtime if missing on a posted create. |
+| `AccountModel` | Model | Yes* | Validates account existence and tenant integrity. *Required on `before:create` (throws if missing). On `before:update`, runs when available. |
 | `orgField` | string | No | Multi-tenant org field name (enables tenant-account integrity check) |
 
 ## Fiscal Lock Plugin
@@ -74,13 +72,6 @@ On `before:create` and `before:update`:
 2. Checks if any closed fiscal period covers that date (org-scoped)
 3. Throws if the entry date falls in a closed period
 
-### Multi-Tenant Scoping
-
-When `orgField` is configured:
-- Resolves org from payload, or fetches from persisted doc
-- Only checks fiscal periods for the same org
-- Fail-closed: throws if org cannot be resolved
-
 ### Options
 
 | Option | Type | Required | Description |
@@ -89,9 +80,37 @@ When `orgField` is configured:
 | `JournalEntryModel` | Model | No | Needed to resolve date from persisted doc on partial updates |
 | `orgField` | string | No | Multi-tenant org field name |
 
+## Idempotency Plugin
+
+Prevents duplicate journal entries by checking for existing entries with the same `idempotencyKey`.
+
+```typescript
+import { idempotencyPlugin } from '@classytic/ledger';
+
+const plugin = idempotencyPlugin({
+  JournalEntryModel: JournalEntry,
+});
+```
+
+### Behavior
+
+On `before:create`: if the entry has an `idempotencyKey` and a document with the same key already exists, the plugin throws a 409 Conflict error.
+
+Enable the `idempotencyKey` schema field by setting `idempotency: true` in the engine config. The field has a unique sparse index — entries without a key are not affected.
+
+### When to use
+
+Idempotency keys are essential for subledger integrations where a retry (network failure, queue redelivery) could otherwise create duplicate postings. The subledger generates a deterministic key (e.g. `billing:invoice:INV-001`) and the ledger guarantees at-most-once posting.
+
+### Options
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `JournalEntryModel` | Model | Yes | Mongoose model for journal entries |
+
 ## Plugin Composition
 
-**Recommended:** Use `accounting.createJournalEntryRepository()` which handles all plugin wiring securely:
+**Recommended:** Use `accounting.createJournalEntryRepository()` which handles all plugin wiring:
 
 ```typescript
 const repo = accounting.createJournalEntryRepository(
@@ -110,7 +129,8 @@ const repo = createRepository(JournalEntry, [
     orgField: 'business',
   }),
   fiscalLockPlugin({ FiscalPeriodModel: FiscalPeriod, JournalEntryModel: JournalEntry, orgField: 'business' }),
+  idempotencyPlugin({ JournalEntryModel: JournalEntry }),
 ]);
 ```
 
-Both plugins fire on the same hooks. Order matters: double-entry runs first (validates balance), then fiscal-lock (checks period).
+Plugins fire in registration order on the same hooks. Double-entry runs first (validates balance + accounts), then fiscal-lock (checks period), then idempotency (checks key uniqueness).

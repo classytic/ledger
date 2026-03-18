@@ -107,8 +107,8 @@ export interface JournalType {
   readonly description: string;
 }
 
-/** Entry state machine */
-export type EntryState = 'draft' | 'posted';
+/** Entry state machine: draft → posted, draft → archived */
+export type EntryState = 'draft' | 'posted' | 'archived';
 
 /** Tax detail on a journal item (audit reference only) */
 export interface TaxDetail {
@@ -116,7 +116,10 @@ export interface TaxDetail {
   taxName?: string;
 }
 
-/** A single line in a journal entry */
+/**
+ * A single line in a journal entry.
+ * Additional dimension fields can be injected via `extraItemFields` in JournalSchemaOptions.
+ */
 export interface JournalItem {
   account: ObjectId | string;
   label?: string;
@@ -124,6 +127,8 @@ export interface JournalItem {
   debit: number;   // Integer cents (e.g. 10050 = $100.50)
   credit: number;  // Integer cents (e.g. 10050 = $100.50)
   taxDetails?: TaxDetail[];
+  /** Extra dimension fields injected via extraItemFields */
+  [key: string]: unknown;
 }
 
 // ─── Currency ────────────────────────────────────────────────────────────────
@@ -162,6 +167,8 @@ export interface DateRange {
 /** Shared options for DB operations */
 export interface OperationOptions {
   session?: ClientSession;
+  /** ID of the user performing the operation (used when audit.trackActor is enabled) */
+  actorId?: string | ObjectId;
 }
 
 /** Multi-tenant context passed to repositories */

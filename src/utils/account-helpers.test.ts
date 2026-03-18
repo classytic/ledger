@@ -8,16 +8,40 @@ import type { AccountType } from '../types/core.js';
 
 describe('Account Helpers', () => {
   describe('isVirtualTaxAccount', () => {
-    it('detects tax sub-accounts', () => {
-      expect(isVirtualTaxAccount('2680.GST.COLLECTED')).toBe(true);
-      expect(isVirtualTaxAccount('1066.GST-HST.REFUND')).toBe(true);
-      expect(isVirtualTaxAccount('2680.HST13.ITC')).toBe(true);
+    // Build a test account type map with a virtualTotal parent
+    const types: AccountType[] = [
+      { code: '2680', name: 'Taxes Payable', category: 'Balance Sheet-Liability' as any, description: '', parentCode: null, isTotal: true, isVirtualTotal: true },
+      { code: '2680.GST.COLLECTED', name: 'GST Collected', category: 'Balance Sheet-Liability' as any, description: '', parentCode: '2680' },
+      { code: '1066', name: 'Taxes Receivable', category: 'Balance Sheet-Asset' as any, description: '', parentCode: null, isTotal: true, isVirtualTotal: true },
+      { code: '1066.GST-HST.REFUND', name: 'GST Refund', category: 'Balance Sheet-Asset' as any, description: '', parentCode: '1066' },
+      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset' as any, description: '', parentCode: 'Current Assets' },
+      { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset' as any, description: '', parentCode: null, isGroup: true },
+      { code: '2100', name: 'State Tax', category: 'Balance Sheet-Liability' as any, description: '', parentCode: '2680' },
+    ];
+    const map = buildAccountTypeMap(types);
+
+    it('detects sub-accounts of isVirtualTotal parents', () => {
+      expect(isVirtualTaxAccount(map.get('2680.GST.COLLECTED')!, map)).toBe(true);
+      expect(isVirtualTaxAccount(map.get('1066.GST-HST.REFUND')!, map)).toBe(true);
+      expect(isVirtualTaxAccount(map.get('2100')!, map)).toBe(true);
     });
 
     it('rejects regular accounts', () => {
-      expect(isVirtualTaxAccount('8000')).toBe(false);
-      expect(isVirtualTaxAccount('1060')).toBe(false);
-      expect(isVirtualTaxAccount('2680')).toBe(false);
+      expect(isVirtualTaxAccount(map.get('1000')!, map)).toBe(false);
+    });
+
+    it('rejects the virtual total parent itself', () => {
+      // 2680 parentCode is null → not a sub-account
+      expect(isVirtualTaxAccount(map.get('2680')!, map)).toBe(false);
+    });
+
+    it('rejects group labels', () => {
+      expect(isVirtualTaxAccount(map.get('Current Assets')!, map)).toBe(false);
+    });
+
+    it('returns false when parentCode does not exist in map', () => {
+      const orphan: AccountType = { code: 'X', name: 'Orphan', category: 'Balance Sheet-Asset' as any, description: '', parentCode: 'NONEXISTENT' };
+      expect(isVirtualTaxAccount(orphan, map)).toBe(false);
     });
   });
 

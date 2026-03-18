@@ -76,6 +76,23 @@ export interface CountryPack {
   /** Tax report template (e.g., CRA GST/HST return) */
   readonly taxReport?: TaxReportTemplate;
 
+  // ── Country-specific report defaults ──
+
+  /** Account code for prior retained earnings (e.g. '3660' CA, '3200' US) */
+  readonly retainedEarningsCode?: string;
+  /** Account code for current year net income (e.g. '3680' CA, '3210' US) */
+  readonly currentYearEarningsCode?: string;
+  /** Group label code used to identify Cost of Sales in the income statement */
+  readonly cogsGroupCode?: string;
+  /** Override default English report section names */
+  readonly reportLabels?: {
+    readonly assets?: string;
+    readonly liabilities?: string;
+    readonly equity?: string;
+    readonly revenue?: string;
+    readonly expenses?: string;
+  };
+
   // ── Helpers ──
 
   /** Get all account types that can be posted to (not groups, not totals) */
@@ -108,6 +125,16 @@ export interface CountryPackInput {
   taxCodesByRegion: TaxCodesByRegion;
   regions: readonly string[];
   taxReport?: TaxReportTemplate;
+  retainedEarningsCode?: string;
+  currentYearEarningsCode?: string;
+  cogsGroupCode?: string;
+  reportLabels?: {
+    readonly assets?: string;
+    readonly liabilities?: string;
+    readonly equity?: string;
+    readonly revenue?: string;
+    readonly expenses?: string;
+  };
 }
 
 /**

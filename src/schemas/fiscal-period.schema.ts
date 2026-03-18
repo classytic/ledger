@@ -54,5 +54,28 @@ export function createFiscalPeriodSchema(
     schema.index(idx.fields, idx.options);
   }
 
+  // ── Overlap guard: prevent overlapping date ranges within a tenant ─────
+  schema.pre('validate', async function () {
+    const doc = this as mongoose.Document & { startDate: Date; endDate: Date; [key: string]: unknown };
+    if (!doc.startDate || !doc.endDate) return;
+
+    // A period overlaps if: existing.startDate < this.endDate AND existing.endDate > this.startDate
+    const overlapQuery: Record<string, unknown> = {
+      _id: { $ne: doc._id },
+      startDate: { $lt: doc.endDate },
+      endDate: { $gt: doc.startDate },
+    };
+
+    if (multiTenant) {
+      overlapQuery[multiTenant.orgField] = doc[multiTenant.orgField];
+    }
+
+    const overlap = await doc.collection.findOne(overlapQuery);
+    if (overlap) {
+      const msg = `Fiscal period overlaps with existing period "${overlap.name}" (${new Date(overlap.startDate).toISOString().split('T')[0]} – ${new Date(overlap.endDate).toISOString().split('T')[0]}).`;
+      doc.invalidate('startDate', msg, doc.startDate, 'overlap');
+    }
+  });
+
   return schema;
 }

@@ -13,6 +13,7 @@ import type { CashFlowReport } from '../types/report.js';
 import { getDateRange } from '../utils/date-range.js';
 import { computeEndingBalance } from '../utils/account-helpers.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+import { buildItemFilters } from '../utils/filter-builder.js';
 
 export interface CashFlowOptions {
   AccountModel: Model<unknown>;
@@ -28,11 +29,13 @@ export async function generateCashFlow(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     businessName?: string;
+    filters?: Record<string, unknown>;
   },
 ): Promise<CashFlowReport> {
   const { AccountModel, JournalEntryModel, country, orgField } = opts;
   requireOrgScope(orgField, params.organizationId);
   const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
+  const itemFilters = buildItemFilters(params.filters);
 
   // Fetch accounts
   const q: Record<string, unknown> = { active: true };
@@ -68,7 +71,7 @@ export async function generateCashFlow(
     ? await JournalEntryModel.aggregate([
         { $match: baseMatch },
         { $unwind: '$journalItems' },
-        { $match: { 'journalItems.account': { $in: cfAccountIds } } },
+        { $match: { 'journalItems.account': { $in: cfAccountIds }, ...itemFilters } },
         { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
       ]) as Array<{ _id: unknown; d: number; c: number }>
     : [];
@@ -92,8 +95,8 @@ export async function generateCashFlow(
     const at = country.getAccountType(acc?.accountTypeCode as string);
 
     flows[meta.cfCategory].accounts.push({
-      name: at?.name ?? '',
-      code: at?.code ?? '',
+      name: (acc?.name as string) ?? at?.name ?? '',
+      code: (acc?.accountNumber as string) ?? at?.code ?? '',
       amount,
     });
     flows[meta.cfCategory].total += amount;
