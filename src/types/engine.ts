@@ -36,6 +36,28 @@ export interface JournalSchemaOptions extends SchemaOptions {
   autoReference?: boolean;
   /** Enable text search index on reference + label (default: true) */
   textSearch?: boolean;
+  /** Extra Mongoose schema fields to merge into the JournalItem subdocument */
+  extraItemFields?: Record<string, unknown>;
+}
+
+// ─── Audit Configuration ─────────────────────────────────────────────────────
+
+/** Audit trail configuration */
+export interface AuditConfig {
+  /** Track actor (user) who performs each operation (post, reverse, approve) */
+  trackActor?: boolean;
+}
+
+// ─── Strictness Configuration ────────────────────────────────────────────────
+
+/** Strictness rules for the ledger */
+export interface StrictnessConfig {
+  /** If true, unpost() is disabled — correction only via reverse() (immutable ledger) */
+  immutable?: boolean;
+  /** If true, actorId is required on post/reverse/unpost operations */
+  requireActor?: boolean;
+  /** If true, entries must have approvedBy/approvedAt set before posting */
+  requireApproval?: boolean;
 }
 
 // ─── Engine Config ───────────────────────────────────────────────────────────
@@ -56,4 +78,10 @@ export interface AccountingEngineConfig {
   currentYearEarningsCode?: string;
   /** Logger instance. Defaults to console-based logger. */
   logger?: Logger;
+  /** Audit trail configuration */
+  audit?: AuditConfig;
+  /** Enable built-in idempotency key field on journal entries */
+  idempotency?: boolean;
+  /** Strictness rules for the ledger */
+  strictness?: StrictnessConfig;
 }

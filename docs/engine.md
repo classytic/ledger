@@ -26,6 +26,9 @@ const accounting = createAccountingEngine({
 | `multiTenant` | `{ orgField, orgRef }` | No | Multi-tenant configuration |
 | `fiscalYearStartMonth` | `number` | No | 1-12, default 1 (January) |
 | `logger` | `Logger` | No | `{ warn, error, info }` interface; defaults to console |
+| `audit` | `AuditConfig` | No | Actor tracking on journal entries (see below) |
+| `idempotency` | `boolean` | No | Enable `idempotencyKey` field on journal entries |
+| `strictness` | `StrictnessConfig` | No | Immutability, actor, and approval requirements |
 
 ### Multi-Tenant Config
 
@@ -39,6 +42,36 @@ multiTenant: {
 ```
 
 Omit `multiTenant` for single-tenant applications.
+
+### Audit Config
+
+```typescript
+audit: {
+  trackActor: true, // adds createdBy, postedBy, reversedByUser fields to journal entries
+}
+```
+
+When enabled, the journal entry schema gains actor-tracking fields. These are populated by `post()` and `reverse()` when `actorId` is passed in options.
+
+### Idempotency
+
+```typescript
+idempotency: true
+```
+
+Adds an `idempotencyKey` field (unique sparse index) to journal entries. When used with `idempotencyPlugin`, prevents duplicate postings on retry. See [Plugins](plugins.md#idempotency-plugin).
+
+### Strictness Config
+
+```typescript
+strictness: {
+  immutable: true,       // unpost() disabled — correction only via reverse()
+  requireActor: true,    // actorId required on post/reverse/unpost
+  requireApproval: true, // approvedBy + approvedAt required before posting
+}
+```
+
+All strictness options are opt-in and default to `false`. See [Repositories](repositories.md#strictness-configuration) for behavioral details.
 
 ## Engine Methods
 
@@ -61,14 +94,14 @@ const journalRepo = accounting.createJournalEntryRepository(
   createRepository,
   { JournalEntryModel: JournalEntry, AccountModel: Account, FiscalPeriodModel: FiscalPeriod },
 );
-// Includes: double-entry + fiscal lock plugins, post(), reverse() — all securely configured
+// Includes: double-entry + fiscal lock + idempotency plugins, post(), reverse(), duplicate(), unpost()
 ```
 
 ### Manual Repository Wiring (advanced)
 
 ```typescript
 accounting.wireJournalEntryRepository(repo, JournalEntryModel)
-// Adds: repo.post(id, orgId), repo.reverse(id, orgId)
+// Adds: repo.post(id, orgId), repo.reverse(id, orgId), repo.duplicate(id, orgId), repo.unpost(id, orgId)
 
 accounting.wireAccountRepository(repo, AccountModel)
 // Adds: repo.seedAccounts(orgId), repo.bulkCreate(accounts, orgId)
@@ -81,11 +114,11 @@ See [Repositories](repositories.md) for details.
 ```typescript
 const reports = accounting.createReports({ Account, JournalEntry });
 
-await reports.trialBalance({ organizationId, dateOption, dateValue });
-await reports.balanceSheet({ organizationId, dateOption, dateValue });
-await reports.incomeStatement({ organizationId, dateOption, dateValue });
-await reports.generalLedger({ organizationId, dateOption, dateValue, accountId? });
-await reports.cashFlow({ organizationId, dateOption, dateValue });
+await reports.trialBalance({ organizationId, dateOption, dateValue, filters? });
+await reports.balanceSheet({ organizationId, dateOption, dateValue, filters? });
+await reports.incomeStatement({ organizationId, dateOption, dateValue, filters? });
+await reports.generalLedger({ organizationId, dateOption, dateValue, accountId?, filters? });
+await reports.cashFlow({ organizationId, dateOption, dateValue, filters? });
 ```
 
 See [Reports](reports.md) for details.

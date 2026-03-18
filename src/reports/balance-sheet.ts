@@ -9,8 +9,9 @@ import type { Model, PipelineStage } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import type { BalanceSheetReport, ReportCategory, ReportGroup, ReportAccount } from '../types/report.js';
 import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
-import { computeEndingBalance, calculateTotal, isVirtualTaxAccount } from '../utils/account-helpers.js';
+import { computeEndingBalance, calculateTotal, isVirtualTaxAccount, buildAccountTypeMap } from '../utils/account-helpers.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+import { buildItemFilters } from '../utils/filter-builder.js';
 import { extractMainType } from '../constants/categories.js';
 import type { CategoryKey } from '../types/core.js';
 
@@ -33,15 +34,18 @@ export async function generateBalanceSheet(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     businessName?: string;
+    filters?: Record<string, unknown>;
   },
 ): Promise<BalanceSheetReport> {
   const {
     AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth = 1,
-    retainedEarningsCode = '3660', currentYearEarningsCode = '3680',
+    retainedEarningsCode = country.retainedEarningsCode ?? '3660',
+    currentYearEarningsCode = country.currentYearEarningsCode ?? '3680',
   } = opts;
   requireOrgScope(orgField, params.organizationId);
   const { endDate } = getDateRange(params.dateOption, params.dateValue);
   const fiscalYearStart = getFiscalYearStart(endDate, fiscalYearStartMonth);
+  const itemFilters = buildItemFilters(params.filters);
 
   // Fetch accounts
   const q: Record<string, unknown> = { active: true };
@@ -73,7 +77,7 @@ export async function generateBalanceSheet(
     JournalEntryModel.aggregate([
       { $match: { ...baseMatch, date: { $lte: endDate } } },
       { $unwind: '$journalItems' },
-      { $match: { 'journalItems.account': { $in: bsIds } } },
+      { $match: { 'journalItems.account': { $in: bsIds }, ...itemFilters } },
       { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
     ]) as Promise<Array<{ _id: unknown; d: number; c: number }>>,
 
@@ -81,7 +85,7 @@ export async function generateBalanceSheet(
     JournalEntryModel.aggregate([
       { $match: { ...baseMatch, date: { $gte: fiscalYearStart, $lte: endDate } } },
       { $unwind: '$journalItems' },
-      { $match: { 'journalItems.account': { $in: isIds } } },
+      { $match: { 'journalItems.account': { $in: isIds }, ...itemFilters } },
       { $group: { _id: null, d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
     ]) as Promise<Array<{ _id: unknown; d: number; c: number }>>,
 
@@ -89,7 +93,7 @@ export async function generateBalanceSheet(
     JournalEntryModel.aggregate([
       { $match: { ...baseMatch, date: { $lt: fiscalYearStart } } },
       { $unwind: '$journalItems' },
-      { $match: { 'journalItems.account': { $in: isIds } } },
+      { $match: { 'journalItems.account': { $in: isIds }, ...itemFilters } },
       { $group: { _id: null, d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
     ]) as Promise<Array<{ _id: unknown; d: number; c: number }>>,
   ]);
@@ -99,11 +103,13 @@ export async function generateBalanceSheet(
 
   // Build categories
   const accountMap = new Map(allAccounts.map(a => [String(a._id), a]));
+  const accountTypeMap = buildAccountTypeMap(country.accountTypes);
   const balanceMap = new Map<string, number>();
 
-  const assets: ReportCategory = { name: 'Assets', total: 0, groups: [] };
-  const liabilities: ReportCategory = { name: 'Liabilities', total: 0, groups: [] };
-  const equity: ReportCategory = { name: 'Equity', total: 0, groups: [] };
+  const labels = country.reportLabels ?? {};
+  const assets: ReportCategory = { name: labels.assets ?? 'Assets', total: 0, groups: [] };
+  const liabilities: ReportCategory = { name: labels.liabilities ?? 'Liabilities', total: 0, groups: [] };
+  const equity: ReportCategory = { name: labels.equity ?? 'Equity', total: 0, groups: [] };
 
   const groupsMap: Record<string, Record<string, ReportGroup>> = {
     Asset: {}, Liability: {}, Equity: {},
@@ -129,12 +135,12 @@ export async function generateBalanceSheet(
 
     const group = groupsMap[mainType][groupName];
 
-    // Skip virtual tax accounts from display but include in calculation
-    if (!isVirtualTaxAccount(at.code)) {
+    // Skip virtual tax sub-accounts from display but include in calculation
+    if (!isVirtualTaxAccount(at, accountTypeMap)) {
       group.accounts.push({
         id: acc._id,
-        name: at.name,
-        code: at.code,
+        name: (acc.name as string) ?? at.name,
+        code: (acc.accountNumber as string) ?? at.code,
         balance,
         isTotal: at.isTotal,
         isVirtualTotal: at.isVirtualTotal,

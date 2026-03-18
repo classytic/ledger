@@ -6,12 +6,15 @@
  */
 
 import type { Model, ClientSession } from 'mongoose';
+import type { StrictnessConfig } from '../types/engine.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 import { acquireSession, finalizeSession } from '../utils/session.js';
 
 interface PostOptions {
   session?: ClientSession | null;
+  /** Actor performing this operation (required when strictness.requireActor is enabled) */
+  actorId?: unknown;
 }
 
 interface JournalItem {
@@ -24,7 +27,11 @@ interface JournalItemWithLabel extends JournalItem {
   label?: string;
   date?: Date;
   taxDetails?: unknown[];
+  [key: string]: unknown;
 }
+
+/** Keys that are either handled explicitly or must not be copied */
+const ITEM_CORE_KEYS = new Set(['account', 'debit', 'credit', 'label', 'date', 'taxDetails', '_id', 'id']);
 
 interface JournalEntryDoc {
   _id: unknown;
@@ -53,18 +60,23 @@ interface ReverseOptions extends PostOptions {
  * @param repository - A mongokit Repository instance (already created)
  * @param JournalEntryModel - The Mongoose model for journal entries
  * @param orgField - The multi-tenant field name (e.g. 'business')
+ * @param strictness - Strictness rules (immutable, requireActor, requireApproval)
  */
 export function wireJournalEntryMethods(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   repository: any,
   JournalEntryModel: Model<unknown>,
   orgField?: string,
+  strictness?: StrictnessConfig,
 ): void {
   /**
    * Post an entry (draft → posted).
    * Validates items, balance, and accounts before changing state.
    */
   repository.post = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+    if (strictness?.requireActor && !options.actorId) {
+      throw Errors.validation('actorId is required for post operations.');
+    }
     requireOrgScope(orgField, orgId);
     const query: Record<string, unknown> = { _id: id };
     if (orgField && orgId != null) query[orgField] = orgId;
@@ -76,8 +88,21 @@ export function wireJournalEntryMethods(
     if (!entry) {
       throw Errors.notFound('Entry not found');
     }
+
+    // Idempotency: if already posted with same idempotency key, return as-is
+    if (entry.idempotencyKey && entry.state === 'posted') {
+      return entry;
+    }
+
     if (entry.state !== 'draft') {
       throw Errors.validation('Only draft entries can be posted');
+    }
+
+    // Approval requirement — both approvedBy and approvedAt must be set
+    if (strictness?.requireApproval) {
+      if (!entry.approvedBy || !entry.approvedAt) {
+        throw Errors.validation('Entry must be approved before posting. Both approvedBy and approvedAt are required.');
+      }
     }
 
     // Must have >= 2 items
@@ -130,6 +155,9 @@ export function wireJournalEntryMethods(
 
     entry.state = 'posted';
     entry.stateChangedAt = new Date();
+    if (options.actorId) {
+      entry.postedBy = options.actorId;
+    }
     await entry.save({ session: options.session });
 
     return entry;
@@ -141,6 +169,12 @@ export function wireJournalEntryMethods(
    * Also clears the reversed flag if set, allowing full re-editing.
    */
   repository.unpost = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+    if (strictness?.immutable) {
+      throw Errors.immutable('Unpost is disabled in strict mode. Use reverse() to correct posted entries.');
+    }
+    if (strictness?.requireActor && !options.actorId) {
+      throw Errors.validation('actorId is required for unpost operations.');
+    }
     requireOrgScope(orgField, orgId);
     const query: Record<string, unknown> = { _id: id };
     if (orgField && orgId != null) query[orgField] = orgId;
@@ -162,6 +196,36 @@ export function wireJournalEntryMethods(
       entry.reversed = false;
       entry.reversedBy = undefined;
     }
+    await entry.save({ session: options.session });
+
+    return entry;
+  };
+
+  /**
+   * Archive a draft entry (draft → archived).
+   * Used to discard unneeded drafts without deleting them, preserving audit trail.
+   * Only draft entries can be archived. Posted entries must be reversed instead.
+   */
+  repository.archive = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+    if (strictness?.requireActor && !options.actorId) {
+      throw Errors.validation('actorId is required for archive operations.');
+    }
+    requireOrgScope(orgField, orgId);
+    const query: Record<string, unknown> = { _id: id };
+    if (orgField && orgId != null) query[orgField] = orgId;
+
+    const entry = (await JournalEntryModel.findOne(query)
+      .session(options.session || null)) as JournalEntryDoc | null;
+
+    if (!entry) {
+      throw Errors.notFound('Entry not found');
+    }
+    if (entry.state !== 'draft') {
+      throw Errors.validation('Only draft entries can be archived');
+    }
+
+    entry.state = 'archived';
+    entry.stateChangedAt = new Date();
     await entry.save({ session: options.session });
 
     return entry;
@@ -192,7 +256,15 @@ export function wireJournalEntryMethods(
         const accountId = typeof item.account === 'object' && item.account !== null
           ? (item.account as Record<string, unknown>)._id
           : item.account;
+
+        // Preserve dimension/extra fields (departmentId, projectId, locationId, etc.)
+        const extra: Record<string, unknown> = {};
+        for (const key of Object.keys(item)) {
+          if (!ITEM_CORE_KEYS.has(key)) extra[key] = item[key];
+        }
+
         return {
+          ...extra,
           account: accountId,
           debit: item.debit ?? 0,
           credit: item.credit ?? 0,
@@ -224,6 +296,9 @@ export function wireJournalEntryMethods(
    * double-entry) enforce policy on the reversal entry.
    */
   repository.reverse = async function (id: unknown, orgId?: unknown, options: ReverseOptions = {}) {
+    if (strictness?.requireActor && !options.actorId) {
+      throw Errors.validation('actorId is required for reverse operations.');
+    }
     requireOrgScope(orgField, orgId);
     const { session, ownSession } = await acquireSession(
       JournalEntryModel.db,
@@ -254,7 +329,15 @@ export function wireJournalEntryMethods(
         const accountId = typeof item.account === 'object' && item.account !== null
           ? (item.account as Record<string, unknown>)._id
           : item.account;
+
+        // Preserve dimension/extra fields (departmentId, projectId, locationId, etc.)
+        const extra: Record<string, unknown> = {};
+        for (const key of Object.keys(item)) {
+          if (!ITEM_CORE_KEYS.has(key)) extra[key] = item[key];
+        }
+
         return {
+          ...extra,
           account: accountId,
           debit: item.credit ?? 0,
           credit: item.debit ?? 0,
@@ -285,6 +368,11 @@ export function wireJournalEntryMethods(
         reversalData[orgField] = entry[orgField];
       }
 
+      // Stamp actor on reversal entry
+      if (options.actorId) {
+        reversalData.postedBy = options.actorId;
+      }
+
       // Create reversal via repository so plugins (fiscal-lock, double-entry) run
       const reversalEntry = await repository.create(
         reversalData,
@@ -294,6 +382,9 @@ export function wireJournalEntryMethods(
       // Mark original as reversed (bidirectional link)
       entry.reversed = true;
       entry.reversedBy = reversalEntry._id;
+      if (options.actorId) {
+        entry.reversedByUser = options.actorId;
+      }
       await entry.save({ session });
 
       success = true;

@@ -474,4 +474,139 @@ describe('doubleEntryPlugin', () => {
       await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
   });
+
+  // ── before:update — account validation on update path ───────────────────────
+
+  describe('before:update (account validation)', () => {
+    it('validates accounts when items are in update payload and AccountModel provided', async () => {
+      const repo = createMockRepo();
+      const mockAccounts = [
+        { _id: 'acc1', business: 'org1' },
+        { _id: 'acc2', business: 'org1' },
+      ];
+      doubleEntryPlugin({
+        AccountModel: createMockAccountModel(mockAccounts) as any,
+        orgField: 'business',
+      }).apply(repo);
+
+      const data = {
+        state: 'posted',
+        business: 'org1',
+        journalItems: [
+          { account: 'acc1', debit: 10000, credit: 0 },
+          { account: 'acc2', debit: 0, credit: 10000 },
+        ],
+      };
+
+      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+    });
+
+    it('rejects update→posted when account belongs to different org', async () => {
+      const repo = createMockRepo();
+      const mockAccounts = [
+        { _id: 'acc1', business: 'org1' },
+        { _id: 'acc2', business: 'org2' }, // cross-tenant
+      ];
+      doubleEntryPlugin({
+        AccountModel: createMockAccountModel(mockAccounts) as any,
+        orgField: 'business',
+      }).apply(repo);
+
+      const data = {
+        state: 'posted',
+        business: 'org1',
+        journalItems: [
+          { account: 'acc1', debit: 10000, credit: 0 },
+          { account: 'acc2', debit: 0, credit: 10000 },
+        ],
+      };
+
+      await expect(repo.emit('before:update', { id: 'abc', data })).rejects.toThrow(
+        'accounts from another organization',
+      );
+    });
+
+    it('rejects update→posted when account does not exist', async () => {
+      const repo = createMockRepo();
+      // Only acc1 exists
+      const mockAccounts = [{ _id: 'acc1' }];
+      doubleEntryPlugin({
+        AccountModel: createMockAccountModel(mockAccounts) as any,
+      }).apply(repo);
+
+      const data = {
+        state: 'posted',
+        journalItems: [
+          { account: 'acc1', debit: 10000, credit: 0 },
+          { account: 'acc2', debit: 0, credit: 10000 },
+        ],
+      };
+
+      await expect(repo.emit('before:update', { id: 'abc', data })).rejects.toThrow(
+        'non-existent accounts',
+      );
+    });
+
+    it('validates persisted accounts on partial update (state→posted, no items in payload)', async () => {
+      const repo = createMockRepo();
+      const mockAccounts = [
+        { _id: 'acc1', business: 'org1' },
+        { _id: 'acc2', business: 'org2' }, // cross-tenant!
+      ];
+
+      const mockJEModel = {
+        findById: () => ({
+          select: (fields: string) => {
+            // Immutability guard check returns state for first call
+            if (fields === 'state') {
+              return {
+                session: () => ({
+                  lean: () => Promise.resolve({ state: 'draft' }), // target is a draft being posted
+                }),
+              };
+            }
+            // Items fetch
+            return {
+              session: () => ({
+                lean: () => Promise.resolve({
+                  business: 'org1',
+                  journalItems: [
+                    { account: 'acc1', debit: 10000, credit: 0 },
+                    { account: 'acc2', debit: 0, credit: 10000 },
+                  ],
+                }),
+              }),
+            };
+          },
+        }),
+      };
+
+      doubleEntryPlugin({
+        JournalEntryModel: mockJEModel as any,
+        AccountModel: createMockAccountModel(mockAccounts) as any,
+        orgField: 'business',
+      }).apply(repo);
+
+      const data = { state: 'posted' };
+      await expect(repo.emit('before:update', { id: 'abc', data })).rejects.toThrow(
+        'accounts from another organization',
+      );
+    });
+
+    it('skips account validation on update when AccountModel not provided', async () => {
+      const repo = createMockRepo();
+      // No AccountModel — should still pass (only balancing checked)
+      doubleEntryPlugin().apply(repo);
+
+      const data = {
+        state: 'posted',
+        journalItems: [
+          { account: 'acc1', debit: 10000, credit: 0 },
+          { account: 'acc2', debit: 0, credit: 10000 },
+        ],
+      };
+
+      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+    });
+  });
 });

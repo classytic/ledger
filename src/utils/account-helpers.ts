@@ -5,9 +5,15 @@
 import type { AccountType, TotalAccountOp, CategoryKey } from '../types/core.js';
 import { extractMainType } from '../constants/categories.js';
 
-/** Check if an account type is a virtual tax sub-account */
-export function isVirtualTaxAccount(code: string): boolean {
-  return code.includes('.'); // e.g., 2680.GST.COLLECTED, 1066.GST-HST.REFUND
+/**
+ * Check if an account type is a virtual tax sub-account.
+ * Returns true if the account's parent has `isVirtualTotal: true`.
+ * Works for any country pack — no code format assumptions.
+ */
+export function isVirtualTaxAccount(accountType: AccountType, accountMap: Map<string, AccountType>): boolean {
+  if (!accountType.parentCode) return false;
+  const parent = accountMap.get(accountType.parentCode);
+  return parent?.isVirtualTotal === true;
 }
 
 /** Check if an account type is a balance sheet account */

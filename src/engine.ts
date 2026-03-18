@@ -38,6 +38,7 @@ import { wireJournalEntryMethods } from './repositories/journal-entry.repository
 import { wireAccountMethods } from './repositories/account.repository.js';
 import { doubleEntryPlugin } from './plugins/double-entry.plugin.js';
 import { fiscalLockPlugin } from './plugins/fiscal-lock.plugin.js';
+import { idempotencyPlugin } from './plugins/idempotency.plugin.js';
 
 export class AccountingEngine {
   readonly config: AccountingEngineConfig;
@@ -84,6 +85,7 @@ export class AccountingEngine {
         dateOption: 'month' | 'quarter' | 'year' | 'custom';
         dateValue: unknown;
         accountId?: string;
+        filters?: Record<string, unknown>;
       }) =>
         generateTrialBalance(
           { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth },
@@ -95,6 +97,7 @@ export class AccountingEngine {
         dateOption: 'month' | 'quarter' | 'year' | 'custom';
         dateValue: unknown;
         businessName?: string;
+        filters?: Record<string, unknown>;
       }) =>
         generateBalanceSheet(
           { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth, retainedEarningsCode, currentYearEarningsCode },
@@ -106,6 +109,7 @@ export class AccountingEngine {
         dateOption: 'month' | 'quarter' | 'year' | 'custom';
         dateValue: unknown;
         businessName?: string;
+        filters?: Record<string, unknown>;
       }) =>
         generateIncomeStatement(
           { AccountModel, JournalEntryModel, country, orgField },
@@ -117,6 +121,7 @@ export class AccountingEngine {
         dateOption: 'month' | 'quarter' | 'year' | 'custom';
         dateValue: unknown;
         accountId?: string;
+        filters?: Record<string, unknown>;
       }) =>
         generateGeneralLedger(
           { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth },
@@ -128,6 +133,7 @@ export class AccountingEngine {
         dateOption: 'month' | 'quarter' | 'year' | 'custom';
         dateValue: unknown;
         businessName?: string;
+        filters?: Record<string, unknown>;
       }) =>
         generateCashFlow(
           { AccountModel, JournalEntryModel, country, orgField },
@@ -210,8 +216,17 @@ export class AccountingEngine {
       );
     }
 
+    if (this.config.idempotency) {
+      plugins.push(
+        idempotencyPlugin({
+          JournalEntryModel,
+          orgField,
+        }),
+      );
+    }
+
     const repository = createRepository(JournalEntryModel, plugins);
-    wireJournalEntryMethods(repository, JournalEntryModel, orgField);
+    wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
     return repository;
   }
 
@@ -231,7 +246,7 @@ export class AccountingEngine {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   wireJournalEntryRepository(repository: any, JournalEntryModel: Model<unknown>): any {
     const orgField = this.config.multiTenant?.orgField;
-    wireJournalEntryMethods(repository, JournalEntryModel, orgField);
+    wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
     return repository;
   }
 

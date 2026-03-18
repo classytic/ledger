@@ -14,6 +14,7 @@ import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
 import { computeEndingBalance } from '../utils/account-helpers.js';
 import { extractMainType } from '../constants/categories.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+import { buildItemFilters } from '../utils/filter-builder.js';
 
 export interface GeneralLedgerOptions {
   AccountModel: Model<unknown>;
@@ -30,12 +31,14 @@ export async function generateGeneralLedger(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     accountId?: string;
+    filters?: Record<string, unknown>;
   },
 ): Promise<GeneralLedgerReport> {
   const { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth = 1 } = opts;
   requireOrgScope(orgField, params.organizationId);
   const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
   const fiscalYearStart = getFiscalYearStart(startDate, fiscalYearStartMonth);
+  const itemFilters = buildItemFilters(params.filters);
 
   // Get target accounts
   const acctQuery: Record<string, unknown> = { active: true };
@@ -84,7 +87,7 @@ export async function generateGeneralLedger(
       ? JournalEntryModel.aggregate([
           { $match: { state: 'posted', date: dateFilter, ...orgScope } },
           { $unwind: '$journalItems' },
-          { $match: { 'journalItems.account': { $in: accountIds } } },
+          { $match: { 'journalItems.account': { $in: accountIds }, ...itemFilters } },
           {
             $group: {
               _id: '$journalItems.account',
@@ -106,6 +109,7 @@ export async function generateGeneralLedger(
       date: { $gte: startDate, $lte: endDate },
       'journalItems.account': { $in: allAccountIds },
       ...orgScope,
+      ...itemFilters,
     })
       .select('date referenceNumber label journalItems')
       .sort({ date: 1 })
