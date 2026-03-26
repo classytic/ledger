@@ -1,55 +1,55 @@
 {
   "name": "@classytic/ledger",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "description": "Production-grade double-entry accounting engine for MongoDB — schemas, reports, tax, multi-tenant",
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.mts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs",
       "default": "./dist/index.mjs"
     },
     "./money": {
-      "types": "./dist/money.d.ts",
+      "types": "./dist/money.d.mts",
       "import": "./dist/money.mjs",
       "default": "./dist/money.mjs"
     },
     "./schemas": {
-      "types": "./dist/schemas/index.d.ts",
+      "types": "./dist/schemas/index.d.mts",
       "import": "./dist/schemas/index.mjs",
       "default": "./dist/schemas/index.mjs"
     },
     "./reports": {
-      "types": "./dist/reports/index.d.ts",
+      "types": "./dist/reports/index.d.mts",
       "import": "./dist/reports/index.mjs",
       "default": "./dist/reports/index.mjs"
     },
     "./plugins": {
-      "types": "./dist/plugins/index.d.ts",
+      "types": "./dist/plugins/index.d.mts",
       "import": "./dist/plugins/index.mjs",
       "default": "./dist/plugins/index.mjs"
     },
     "./constants": {
-      "types": "./dist/constants/index.d.ts",
+      "types": "./dist/constants/index.d.mts",
       "import": "./dist/constants/index.mjs",
       "default": "./dist/constants/index.mjs"
     },
     "./country": {
-      "types": "./dist/country/index.d.ts",
+      "types": "./dist/country/index.d.mts",
       "import": "./dist/country/index.mjs",
       "default": "./dist/country/index.mjs"
     },
     "./repositories": {
-      "types": "./dist/repositories/index.d.ts",
+      "types": "./dist/repositories/index.d.mts",
       "import": "./dist/repositories/index.mjs",
       "default": "./dist/repositories/index.mjs"
     },
     "./exports": {
-      "types": "./dist/exports/index.d.ts",
+      "types": "./dist/exports/index.d.mts",
       "import": "./dist/exports/index.mjs",
       "default": "./dist/exports/index.mjs"
     }
@@ -95,7 +95,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "tsdown && tsc --emitDeclarationOnly",
+    "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -169,10 +169,18 @@ export async function generateBalanceSheet(
     groupsMap.Equity[reGroup.name].total += reGroup.total;
   }
 
-  // Convert groups maps to arrays
-  assets.groups = Object.values(groupsMap.Asset);
-  liabilities.groups = Object.values(groupsMap.Liability);
-  equity.groups = Object.values(groupsMap.Equity);
+  // Convert groups maps to arrays, filtering out zero-balance accounts and empty groups
+  const pruneGroups = (groups: Record<string, ReportGroup>) =>
+    Object.values(groups)
+      .map(g => ({
+        ...g,
+        accounts: g.accounts.filter(a => a.balance !== 0 || a.isTotal || a.isCalculated),
+      }))
+      .filter(g => g.accounts.length > 0 || g.total !== 0);
+
+  assets.groups = pruneGroups(groupsMap.Asset);
+  liabilities.groups = pruneGroups(groupsMap.Liability);
+  equity.groups = Object.values(groupsMap.Equity); // Keep equity as-is (retained earnings always shown)
 
   // Sum totals
   assets.total = assets.groups.reduce((s, g) => s + g.total, 0);
