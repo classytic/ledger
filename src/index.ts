@@ -155,6 +155,7 @@ export type {
   // Engine
   AccountingEngineConfig,
   MultiTenantConfig,
+  MultiCurrencyConfig,
   SchemaOptions,
   JournalSchemaOptions,
   AuditConfig,

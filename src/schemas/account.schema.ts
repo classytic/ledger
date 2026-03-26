@@ -10,6 +10,7 @@
 
 import mongoose from 'mongoose';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
+import { buildCurrencyField } from './currency-field.js';
 
 export function createAccountSchema(
   config: AccountingEngineConfig,
@@ -42,8 +43,13 @@ export function createAccountSchema(
     },
     active: { type: Boolean, default: true },
     isCashAccount: { type: Boolean, default: false },
-    ...extraFields,
   };
+
+  // ── Multi-currency account field (opt-in) ──────────────────────────────
+  const currencyField = buildCurrencyField(config);
+  if (currencyField) fields.currency = currencyField;
+
+  Object.assign(fields, extraFields);
 
   // ── Multi-tenant field ───────────────────────────────────────────────────
 
