@@ -67,6 +67,17 @@ export async function generateIncomeStatement(
   const revenueGroups: Record<string, ReportGroup> = {};
   const expenseGroups: Record<string, ReportGroup> = {};
 
+  // Resolve the top-level IS group (Revenue, Cost of Sales, Operating Expenses)
+  // by walking up the parent chain until hitting a group-label account type.
+  const resolveGroupName = (at: { parentCode: string | null; name: string }) => {
+    let current = at.parentCode ? country.getAccountType(at.parentCode) : undefined;
+    while (current) {
+      if (current.isGroup) return current.name;
+      current = current.parentCode ? country.getAccountType(current.parentCode) : undefined;
+    }
+    return at.name;
+  };
+
   for (const r of results) {
     const acc = accountMap.get(String(r._id));
     if (!acc) continue;
@@ -78,8 +89,7 @@ export async function generateIncomeStatement(
     const netAmount = mainType === 'Income' ? r.c - r.d : r.d - r.c;
     if (netAmount === 0) continue;
 
-    const parentAt = at.parentCode ? country.getAccountType(at.parentCode) : undefined;
-    const groupName = parentAt?.name ?? at.name;
+    const groupName = resolveGroupName(at);
 
     const groups = mainType === 'Income' ? revenueGroups : expenseGroups;
 
