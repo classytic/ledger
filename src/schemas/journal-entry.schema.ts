@@ -13,6 +13,7 @@
 import mongoose from 'mongoose';
 import type { AccountingEngineConfig, JournalSchemaOptions } from '../types/engine.js';
 import { getJournalTypeCodes, JOURNAL_CODES } from '../constants/journals.js';
+import { buildCurrencyField } from './currency-field.js';
 
 export function createJournalEntrySchema(
   config: AccountingEngineConfig,
@@ -46,6 +47,19 @@ export function createJournalEntrySchema(
     message: '{PATH} must be a non-negative integer (cents), got {VALUE}',
   };
 
+  // ── Multi-currency item fields (opt-in) ──────────────────────────────────
+  const currencyItemFields: Record<string, unknown> = {};
+  const currencyField = buildCurrencyField(config);
+  if (currencyField) {
+    currencyItemFields.currency = currencyField;
+    currencyItemFields.exchangeRate = {
+      type: Number, default: null,
+      validate: { validator: (v: number | null) => v === null || v > 0, message: 'exchangeRate must be greater than zero when set, got {VALUE}' },
+    };
+    currencyItemFields.originalDebit = { type: Number, default: null, min: 0, validate: amountValidator };
+    currencyItemFields.originalCredit = { type: Number, default: null, min: 0, validate: amountValidator };
+  }
+
   const JournalItemSchema = new mongoose.Schema(
     {
       account: {
@@ -58,6 +72,7 @@ export function createJournalEntrySchema(
       debit: { type: Number, default: 0, min: 0, validate: amountValidator },
       credit: { type: Number, default: 0, min: 0, validate: amountValidator },
       taxDetails: { type: [TaxDetailSchema], default: [] },
+      ...currencyItemFields,
       ...extraItemFields,
     },
     { _id: false },

@@ -70,9 +70,11 @@ export async function generateIncomeStatement(
   // Resolve the top-level IS group (Revenue, Cost of Sales, Operating Expenses)
   // by walking up the parent chain until hitting a group-label account type.
   const resolveGroupName = (at: { parentCode: string | null; name: string }) => {
+    const visited = new Set<string>();
     let current = at.parentCode ? country.getAccountType(at.parentCode) : undefined;
-    while (current) {
+    while (current && !visited.has(current.code)) {
       if (current.isGroup) return current.name;
+      visited.add(current.code);
       current = current.parentCode ? country.getAccountType(current.parentCode) : undefined;
     }
     return at.name;

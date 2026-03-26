@@ -60,16 +60,45 @@ export interface StrictnessConfig {
   requireApproval?: boolean;
 }
 
+// ─── Multi-Currency ──────────────────────────────────────────────────────────
+
+/**
+ * Multi-currency configuration.
+ * When enabled, adds currency and exchange rate fields to journal items
+ * and a currency field to accounts. Allows recording transactions in
+ * foreign currencies while maintaining a base (functional) currency.
+ *
+ * @example
+ * ```typescript
+ * const engine = createAccountingEngine({
+ *   country: canadaPack,
+ *   currency: 'CAD',          // base/functional currency
+ *   multiCurrency: {
+ *     enabled: true,
+ *     currencies: ['USD', 'GBP', 'BDT'],  // allowed foreign currencies
+ *   },
+ * });
+ * ```
+ */
+export interface MultiCurrencyConfig {
+  /** Enable multi-currency fields on schemas */
+  enabled: boolean;
+  /** Allowed foreign currency codes. If omitted, any ISO 4217 code is accepted. */
+  currencies?: readonly string[];
+}
+
 // ─── Engine Config ───────────────────────────────────────────────────────────
 
 /** Main engine configuration */
 export interface AccountingEngineConfig {
   /** Country pack providing account types, tax codes, and templates */
   country: CountryPack;
-  /** Default ISO 4217 currency code (e.g., 'CAD', 'USD') */
+  /** Default ISO 4217 currency code — the functional/base currency (e.g., 'CAD', 'BDT') */
   currency: string;
   /** Multi-tenant configuration. Omit for single-tenant apps. */
   multiTenant?: MultiTenantConfig;
+  /** Multi-currency support. Omit for single-currency apps. */
+  multiCurrency?: MultiCurrencyConfig;
   /** Fiscal year start month (1-12, default: 1 = January) */
   fiscalYearStartMonth?: number;
   /** Display code for prior retained earnings on balance sheet (default: '3660') */

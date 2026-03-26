@@ -13,8 +13,10 @@ export default defineConfig({
     'src/exports/index.ts',
   ],
   format: ['esm'],
-  dts: false,
+  dts: { sourcemap: false },
   clean: true,
   sourcemap: false,
-  external: ['mongoose', '@classytic/mongokit'],
+  deps: {
+    neverBundle: ['mongoose', /^@classytic\//],
+  },
 });
