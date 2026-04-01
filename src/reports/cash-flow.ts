@@ -102,6 +102,11 @@ export async function generateCashFlow(
     flows[meta.cfCategory].total += amount;
   }
 
+  // Sort accounts within each category by code
+  for (const section of Object.values(flows)) {
+    section.accounts.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+  }
+
   const netCashFlow = flows.Operating.total + flows.Investing.total + flows.Financing.total;
 
   const periodDisplay = `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;

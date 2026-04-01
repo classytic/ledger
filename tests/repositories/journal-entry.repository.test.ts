@@ -14,41 +14,20 @@ function createEntryDoc(overrides: Record<string, unknown> = {}) {
   return doc;
 }
 
-/** Build a mock JournalEntryModel whose findOne returns the given doc */
-function createMockJEModel(doc: Record<string, unknown> | null = null) {
-  return {
-    findOne: () => ({
-      populate: () => ({
-        session: () => Promise.resolve(doc),
-      }),
-      session: () => Promise.resolve(doc),
-    }),
-    db: {
-      startSession: () => Promise.resolve({
-        startTransaction: vi.fn(),
-        commitTransaction: vi.fn().mockResolvedValue(undefined),
-        abortTransaction: vi.fn().mockResolvedValue(undefined),
-        endSession: vi.fn(),
-        inTransaction: () => true,
-      }),
-      getClient: () => ({
-        topology: { description: { type: 'ReplicaSetWithPrimary' } },
-      }),
-    },
-  };
-}
-
-/** Create a repository mock with a create method and wire methods onto it */
+/** Create a repository mock with getByQuery/create/withTransaction and wire methods onto it */
 function setup(
   doc: Record<string, unknown> | null = null,
   opts: { orgField?: string; strictness?: StrictnessConfig } = {},
 ) {
-  const model = createMockJEModel(doc);
   const repo: Record<string, unknown> = {
+    getByQuery: vi.fn().mockResolvedValue(doc),
     create: vi.fn().mockResolvedValue({ _id: 'reversal-1' }),
+    withTransaction: vi.fn().mockImplementation(
+      async (cb: (session: unknown) => Promise<unknown>) => cb(null),
+    ),
   };
-  wireJournalEntryMethods(repo, model as any, opts.orgField, opts.strictness);
-  return { repo, model };
+  wireJournalEntryMethods(repo as any, {} as any, opts.orgField, opts.strictness);
+  return { repo };
 }
 
 // ── post() ────────────────────────────────────────────────────────────────
@@ -247,14 +226,21 @@ describe('wireJournalEntryMethods — unpost()', () => {
     );
   });
 
-  it('transitions posted → draft and clears reversed flag', async () => {
-    const entry = createEntryDoc({ state: 'posted', reversed: true, reversedBy: 'rev-1' });
+  it('transitions posted → draft', async () => {
+    const entry = createEntryDoc({ state: 'posted' });
     const { repo } = setup(entry);
 
     const result = await (repo.unpost as Function)('entry-1');
     expect(result.state).toBe('draft');
-    expect(result.reversed).toBe(false);
-    expect(result.reversedBy).toBeUndefined();
+  });
+
+  it('rejects unpost on a reversed entry (prevents inconsistent state)', async () => {
+    const entry = createEntryDoc({ state: 'posted', reversed: true, reversedBy: 'rev-1' });
+    const { repo } = setup(entry);
+
+    await expect((repo.unpost as Function)('entry-1')).rejects.toThrow(
+      'Cannot unpost a reversed entry',
+    );
   });
 });
 

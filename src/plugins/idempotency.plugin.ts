@@ -6,12 +6,8 @@
  */
 
 import type { Model, ClientSession } from 'mongoose';
+import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
 import { Errors } from '../utils/errors.js';
-
-/** Minimal interface matching @classytic/mongokit RepositoryInstance */
-interface RepositoryInstance {
-  on(event: string, listener: (data: unknown) => void | Promise<void>): unknown;
-}
 
 export interface IdempotencyPluginOptions {
   /** Mongoose model for journal entries */
@@ -26,9 +22,8 @@ export function idempotencyPlugin(options: IdempotencyPluginOptions) {
   return {
     name: 'accounting:idempotency',
     apply(repo: RepositoryInstance) {
-      repo.on('before:create', async (raw: unknown) => {
-        const context = raw as Record<string, unknown>;
-        const data = context.data as Record<string, unknown> | undefined;
+      repo.on('before:create', async (context: RepositoryContext) => {
+        const data = context.data;
         if (!data?.idempotencyKey) return;
 
         const query: Record<string, unknown> = {
@@ -40,7 +35,7 @@ export function idempotencyPlugin(options: IdempotencyPluginOptions) {
 
         const existing = await JournalEntryModel.findOne(query)
           .select('_id')
-          .session((context.session as ClientSession) ?? null)
+          .session((context.session ?? null) as ClientSession | null)
           .lean() as Record<string, unknown> | null;
 
         if (existing) {

@@ -23,7 +23,9 @@
  */
 
 import type { Model } from 'mongoose';
+import type { PluginType, Repository } from '@classytic/mongokit';
 import type { AccountingEngineConfig, SchemaOptions, JournalSchemaOptions } from './types/engine.js';
+import type { JournalEntryRepository, AccountRepository, ReconciliationRepository } from './types/repositories.js';
 import type { CountryPack } from './country/index.js';
 import { createAccountSchema } from './schemas/account.schema.js';
 import { createJournalEntrySchema } from './schemas/journal-entry.schema.js';
@@ -33,6 +35,13 @@ import { generateBalanceSheet } from './reports/balance-sheet.js';
 import { generateIncomeStatement } from './reports/income-statement.js';
 import { generateGeneralLedger } from './reports/general-ledger.js';
 import { generateCashFlow } from './reports/cash-flow.js';
+import { generateAgedBalance } from './reports/aged-balance.js';
+import { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
+import { generateBudgetVsActual } from './reports/budget-vs-actual.js';
+import { generateRevaluation } from './reports/revaluation.js';
+import { createBudgetSchema } from './schemas/budget.schema.js';
+import { createReconciliationSchema } from './schemas/reconciliation.schema.js';
+import { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
 import { Money } from './money.js';
 import { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
 import { wireAccountMethods } from './repositories/account.repository.js';
@@ -66,17 +75,27 @@ export class AccountingEngine {
     return createFiscalPeriodSchema(this.config, options);
   }
 
+  createBudgetSchema(options?: SchemaOptions) {
+    return createBudgetSchema(this.config, options);
+  }
+
+  createReconciliationSchema(accountModelName: string, journalEntryModelName: string, options?: SchemaOptions) {
+    return createReconciliationSchema(this.config, accountModelName, journalEntryModelName, options);
+  }
+
   // ── Report Engine ──────────────────────────────────────────────────────────
 
   createReports(models: {
     Account: Model<unknown>;
     JournalEntry: Model<unknown>;
+    Budget?: Model<unknown>;
   }) {
-    const { Account: AccountModel, JournalEntry: JournalEntryModel } = models;
+    const { Account: AccountModel, JournalEntry: JournalEntryModel, Budget: BudgetModel } = models;
     const { country, config } = this;
     const orgField = config.multiTenant?.orgField;
     const fiscalYearStartMonth = config.fiscalYearStartMonth ?? 1;
-    const retainedEarningsCode = config.retainedEarningsCode;
+    const retainedEarningsAccountCode = config.retainedEarningsAccountCode;
+    const retainedEarningsDisplayCode = config.retainedEarningsDisplayCode;
     const currentYearEarningsCode = config.currentYearEarningsCode;
 
     return {
@@ -100,7 +119,7 @@ export class AccountingEngine {
         filters?: Record<string, unknown>;
       }) =>
         generateBalanceSheet(
-          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth, retainedEarningsCode, currentYearEarningsCode },
+          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth, retainedEarningsAccountCode, retainedEarningsDisplayCode, currentYearEarningsCode },
           params,
         ),
 
@@ -137,6 +156,59 @@ export class AccountingEngine {
       }) =>
         generateCashFlow(
           { AccountModel, JournalEntryModel, country, orgField },
+          params,
+        ),
+
+      agedBalance: (params: {
+        organizationId?: unknown;
+        asOfDate?: Date;
+        type: 'receivable' | 'payable';
+        accountIds?: unknown[];
+        dueDateField?: string;
+        contactField?: string;
+        buckets?: Array<{ label: string; minDays: number; maxDays: number }>;
+      }) =>
+        generateAgedBalance(
+          { AccountModel, JournalEntryModel, country, orgField },
+          params,
+        ),
+
+      dimensionBreakdown: (params: {
+        organizationId?: unknown;
+        dateOption: 'month' | 'quarter' | 'year' | 'custom';
+        dateValue: unknown;
+        dimension: string;
+        accountCategory?: string;
+        filters?: Record<string, unknown>;
+      }) =>
+        generateDimensionBreakdown(
+          { AccountModel, JournalEntryModel, country, orgField },
+          params,
+        ),
+
+      budgetVsActual: (params: {
+        organizationId?: unknown;
+        dateOption: 'month' | 'quarter' | 'year' | 'custom';
+        dateValue: unknown;
+        accountIds?: unknown[];
+        filters?: Record<string, unknown>;
+      }) => {
+        if (!BudgetModel) throw new Error('Budget model required — pass Budget to createReports()');
+        return generateBudgetVsActual(
+          { AccountModel, JournalEntryModel, BudgetModel, country, orgField },
+          params,
+        );
+      },
+
+      revaluation: (params: {
+        organizationId?: unknown;
+        asOfDate: Date;
+        rates: Array<{ currency: string; rate: number }>;
+        unrealizedGainLossAccountId: unknown;
+        generateEntry?: boolean;
+      }) =>
+        generateRevaluation(
+          { AccountModel, JournalEntryModel, country, orgField, baseCurrency: this.currency },
           params,
         ),
     };
@@ -182,25 +254,26 @@ export class AccountingEngine {
    * @param additionalPlugins - Extra plugins to include (e.g. timestampPlugin)
    * @returns A wired repository with post(), unpost(), reverse(), duplicate(), and all plugins configured
    */
-  createJournalEntryRepository(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    createRepository: (model: Model<unknown>, plugins: any[]) => any,
+  createJournalEntryRepository<TDoc = unknown>(
+    createRepository: (model: Model<TDoc>, plugins: PluginType[]) => Repository<TDoc>,
     models: {
-      JournalEntryModel: Model<unknown>;
+      JournalEntryModel: Model<TDoc>;
       AccountModel: Model<unknown>;
       FiscalPeriodModel?: Model<unknown>;
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    additionalPlugins: any[] = [],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ): any {
+    additionalPlugins: PluginType[] = [],
+  ): JournalEntryRepository<TDoc> {
     const orgField = this.config.multiTenant?.orgField;
     const { JournalEntryModel, AccountModel, FiscalPeriodModel } = models;
+
+    // Plugins use Model for queries only (findById, findOne) — safe to widen
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const jeModel = JournalEntryModel as any as Model<unknown>;
 
     const plugins = [
       ...additionalPlugins,
       doubleEntryPlugin({
-        JournalEntryModel,
+        JournalEntryModel: jeModel,
         AccountModel,
         orgField,
       }),
@@ -210,7 +283,7 @@ export class AccountingEngine {
       plugins.push(
         fiscalLockPlugin({
           FiscalPeriodModel,
-          JournalEntryModel,
+          JournalEntryModel: jeModel,
           orgField,
         }),
       );
@@ -219,15 +292,14 @@ export class AccountingEngine {
     if (this.config.idempotency) {
       plugins.push(
         idempotencyPlugin({
-          JournalEntryModel,
+          JournalEntryModel: jeModel,
           orgField,
         }),
       );
     }
 
     const repository = createRepository(JournalEntryModel, plugins);
-    wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
-    return repository;
+    return wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
   }
 
   /**
@@ -243,11 +315,9 @@ export class AccountingEngine {
    * @param JournalEntryModel - The Mongoose model for journal entries
    * @returns The same repository, now with `.post()` and `.reverse()`
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  wireJournalEntryRepository(repository: any, JournalEntryModel: Model<unknown>): any {
+  wireJournalEntryRepository<TDoc = unknown>(repository: Repository<TDoc>, JournalEntryModel: Model<unknown>): JournalEntryRepository<TDoc> {
     const orgField = this.config.multiTenant?.orgField;
-    wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
-    return repository;
+    return wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
   }
 
   /**
@@ -259,11 +329,21 @@ export class AccountingEngine {
    * @param AccountModel - The Mongoose model for accounts
    * @returns The same repository, now with `.seedAccounts()` and `.bulkCreate()`
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  wireAccountRepository(repository: any, AccountModel: Model<unknown>): any {
+  wireAccountRepository<TDoc = unknown>(repository: Repository<TDoc>, AccountModel: Model<unknown>): AccountRepository<TDoc> {
     const orgField = this.config.multiTenant?.orgField;
-    wireAccountMethods(repository, AccountModel, this.country, orgField);
-    return repository;
+    return wireAccountMethods(repository, AccountModel, this.country, orgField);
+  }
+
+  /**
+   * Wire reconcile/unreconcile/getUnreconciled methods onto a mongokit Repository.
+   */
+  wireReconciliationRepository<TDoc = unknown>(
+    repository: Repository<TDoc>,
+    ReconciliationModel: Model<unknown>,
+    JournalEntryModel: Model<unknown>,
+  ): ReconciliationRepository<TDoc> {
+    const orgField = this.config.multiTenant?.orgField;
+    return wireReconciliationMethods(repository, ReconciliationModel, JournalEntryModel, orgField);
   }
 }
 

@@ -8,12 +8,8 @@
  */
 
 import type { Model, ClientSession } from 'mongoose';
+import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
 import { Errors } from '../utils/errors.js';
-
-/** Minimal interface matching @classytic/mongokit RepositoryInstance */
-interface RepositoryInstance {
-  on(event: string, listener: (data: unknown) => void | Promise<void>): unknown;
-}
 
 export interface FiscalLockPluginOptions {
   /** Mongoose model for fiscal periods */
@@ -30,14 +26,14 @@ export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
   return {
     name: 'accounting:fiscal-lock',
     apply(repo: RepositoryInstance) {
-      const checkPeriod = async (context: Record<string, unknown>, isUpdate: boolean) => {
-        const data = context.data as Record<string, unknown> | undefined;
+      const checkPeriod = async (context: RepositoryContext, isUpdate: boolean) => {
+        const data = context.data;
         if (!data) return;
 
         // Only check when posting or creating posted entries
         if (data.state !== 'posted') return;
 
-        const session = (context.session as ClientSession) ?? null;
+        const session = (context.session ?? null) as ClientSession | null;
 
         // Resolve the entry date (and org field from persisted doc if needed)
         let entryDate: Date | undefined;
@@ -118,8 +114,8 @@ export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
         }
       };
 
-      repo.on('before:create', (payload: unknown) => checkPeriod(payload as Record<string, unknown>, false));
-      repo.on('before:update', (payload: unknown) => checkPeriod(payload as Record<string, unknown>, true));
+      repo.on('before:create', (ctx: RepositoryContext) => checkPeriod(ctx, false));
+      repo.on('before:update', (ctx: RepositoryContext) => checkPeriod(ctx, true));
     },
   };
 }

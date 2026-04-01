@@ -464,6 +464,8 @@ describe('Balance Sheet — pruneGroups', () => {
 describe('Balance Sheet — equity retained earnings always shown', () => {
   const equityPack = defineCountryPack({
     code: 'EQ', name: 'Equity Test', defaultCurrency: 'TST',
+    retainedEarningsAccountCode: '3660',
+    currentYearEarningsCode: '3680',
     accountTypes: [
       { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
       { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Shares', parentCode: null, isTotal: false, cashFlowCategory: null },
@@ -624,5 +626,243 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
 
     // Even though retained earnings are 0, the accounts should still be listed
     expect(reGroup!.accounts.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BALANCE SHEET — RE account excluded from normal equity grouping
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
+  /**
+   * Simulates the real-world CRA GIFI scenario:
+   *
+   * - 3500 Common Shares → Shareholder Equity group
+   * - 3600 Retained Earnings (Deficit) → Shareholder Equity group (should be EXCLUDED)
+   * - Balance sheet should show 3600's balance inside the computed "Retained Earnings"
+   *   section, combined with prior-year unclosed P&L, NOT in "Shareholder Equity".
+   *
+   * This is inspired by Odoo's equity_unaffected account handling.
+   */
+  const rePack = defineCountryPack({
+    code: 'RE', name: 'RE Exclusion Test', defaultCurrency: 'TST',
+    retainedEarningsAccountCode: '3600',
+    retainedEarningsDisplayCode: '3660',
+    currentYearEarningsCode: '3680',
+    accountTypes: [
+      // Groups
+      { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
+      { code: 'Shareholder Equity', name: 'Shareholder Equity', category: 'Balance Sheet-Equity', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
+
+      // Posting accounts
+      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
+      { code: '3500', name: 'Common Shares', category: 'Balance Sheet-Equity', description: 'Shares', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
+      { code: '3600', name: 'Retained Earnings (Deficit)', category: 'Balance Sheet-Equity', description: 'Accumulated RE', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
+
+      // Income statement
+      { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
+      { code: '5000', name: 'Expenses', category: 'Income Statement-Expense', description: 'Expenses', parentCode: null, isTotal: false, cashFlowCategory: null },
+    ],
+    taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  });
+
+  const config: AccountingEngineConfig = { country: rePack, currency: 'TST' };
+
+  let mongod: MongoMemoryServer;
+  let AccountModel: mongoose.Model<any>;
+  let JEModel: mongoose.Model<any>;
+
+  beforeAll(async () => {
+    mongod = await MongoMemoryServer.create();
+    await mongoose.connect(mongod.getUri());
+
+    if (mongoose.models['REAcct']) delete mongoose.models['REAcct'];
+    AccountModel = mongoose.model('REAcct', createAccountSchema(config));
+
+    if (mongoose.models['REJE']) delete mongoose.models['REJE'];
+    JEModel = mongoose.model('REJE', createJournalEntrySchema(config, 'REAcct'));
+
+    await AccountModel.createIndexes();
+    await JEModel.createIndexes();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await mongod.stop();
+  });
+
+  beforeEach(async () => {
+    await AccountModel.deleteMany({});
+    await JEModel.deleteMany({});
+  });
+
+  async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+    return JEModel.create({
+      journalType: 'GENERAL', state: 'posted', date: new Date(date),
+      journalItems: items,
+      totalDebit: items.reduce((s, i) => s + i.debit, 0),
+      totalCredit: items.reduce((s, i) => s + i.credit, 0),
+    });
+  }
+
+  it('3600 is excluded from Shareholder Equity and folded into Retained Earnings', async () => {
+    const cash = await AccountModel.create({ accountTypeCode: '1000' });
+    const shares = await AccountModel.create({ accountTypeCode: '3500' });
+    const retainedEarnings = await AccountModel.create({ accountTypeCode: '3600' });
+    const revenue = await AccountModel.create({ accountTypeCode: '4000' });
+    const expense = await AccountModel.create({ accountTypeCode: '5000' });
+
+    // Migration opening balance: Dr Cash 100000, Cr Shares 1000, Cr RE 99000
+    await postEntry('2024-01-01', [
+      { account: cash._id, debit: 100000, credit: 0 },
+      { account: shares._id, debit: 0, credit: 1000 },
+      { account: retainedEarnings._id, debit: 0, credit: 99000 },
+    ]);
+
+    // Prior year revenue: $500
+    await postEntry('2024-06-01', [
+      { account: cash._id, debit: 50000, credit: 0 },
+      { account: revenue._id, debit: 0, credit: 50000 },
+    ]);
+
+    // Prior year expense: $200
+    await postEntry('2024-06-15', [
+      { account: expense._id, debit: 20000, credit: 0 },
+      { account: cash._id, debit: 0, credit: 20000 },
+    ]);
+
+    // Current year revenue: $300
+    await postEntry('2025-03-01', [
+      { account: cash._id, debit: 30000, credit: 0 },
+      { account: revenue._id, debit: 0, credit: 30000 },
+    ]);
+
+    const report = await generateBalanceSheet(
+      { AccountModel, JournalEntryModel: JEModel, country: rePack },
+      { dateOption: 'year', dateValue: 2025 },
+    );
+
+    // 1. Shareholder Equity should contain ONLY Common Shares, not RE
+    const shGroup = report.equity.groups.find(g => g.name === 'Shareholder Equity')!;
+    expect(shGroup).toBeDefined();
+    const shCodes = shGroup.accounts.map(a => a.code);
+    expect(shCodes).toContain('3500');
+    expect(shCodes).not.toContain('3600'); // RE must NOT be here
+    expect(shGroup.total).toBe(1000); // Only Common Shares
+
+    // 2. Retained Earnings section should include 3600's balance + prior P&L
+    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
+    expect(reGroup).toBeDefined();
+
+    const priorLine = reGroup.accounts.find(a => a.id === 'prior-retained')!;
+    const currentLine = reGroup.accounts.find(a => a.id === 'current-year')!;
+
+    // Display codes
+    expect(priorLine.code).toBe('3660');
+    expect(currentLine.code).toBe('3680');
+
+    // Opening RE = 3600 balance (99000) + prior P&L (50000 - 20000 = 30000) = 129000
+    expect(priorLine.balance).toBe(129000);
+
+    // Current year net income = 30000
+    expect(currentLine.balance).toBe(30000);
+    expect(currentLine.isCalculated).toBe(true);
+
+    // 3. Balance sheet must still balance
+    expect(report.summary.isBalanced).toBe(true);
+    // Total equity = Shareholder Equity (1000) + RE (129000 + 30000) = 160000
+    expect(report.equity.total).toBe(160000);
+  });
+
+  it('works correctly when year-end closing entries have been posted', async () => {
+    const cash = await AccountModel.create({ accountTypeCode: '1000' });
+    const shares = await AccountModel.create({ accountTypeCode: '3500' });
+    const retainedEarnings = await AccountModel.create({ accountTypeCode: '3600' });
+    const revenue = await AccountModel.create({ accountTypeCode: '4000' });
+
+    // Opening: Dr Cash, Cr Shares
+    await postEntry('2024-01-01', [
+      { account: cash._id, debit: 100000, credit: 0 },
+      { account: shares._id, debit: 0, credit: 100000 },
+    ]);
+
+    // Prior year revenue
+    await postEntry('2024-06-01', [
+      { account: cash._id, debit: 50000, credit: 0 },
+      { account: revenue._id, debit: 0, credit: 50000 },
+    ]);
+
+    // Year-end closing: Dr Revenue 50000, Cr RE 50000
+    await postEntry('2024-12-31', [
+      { account: revenue._id, debit: 50000, credit: 0 },
+      { account: retainedEarnings._id, debit: 0, credit: 50000 },
+    ]);
+
+    // Current year revenue
+    await postEntry('2025-03-01', [
+      { account: cash._id, debit: 20000, credit: 0 },
+      { account: revenue._id, debit: 0, credit: 20000 },
+    ]);
+
+    const report = await generateBalanceSheet(
+      { AccountModel, JournalEntryModel: JEModel, country: rePack },
+      { dateOption: 'year', dateValue: 2025 },
+    );
+
+    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
+    const priorLine = reGroup.accounts.find(a => a.id === 'prior-retained')!;
+    const currentLine = reGroup.accounts.find(a => a.id === 'current-year')!;
+
+    // After closing: RE account has 50000 (from closing entry)
+    // Prior P&L = 50000 (revenue) - 50000 (closing debit) = 0 (zeroed by closing)
+    // Opening RE = 50000 + 0 = 50000
+    expect(priorLine.balance).toBe(50000);
+
+    // Current year = 20000
+    expect(currentLine.balance).toBe(20000);
+
+    expect(report.summary.isBalanced).toBe(true);
+  });
+
+  it('without retainedEarningsAccountCode, 3600 shows in normal equity grouping (backward compat)', async () => {
+    // Pack WITHOUT retainedEarningsAccountCode
+    const noRePack = defineCountryPack({
+      code: 'NR', name: 'No RE Code', defaultCurrency: 'TST',
+      accountTypes: rePack.accountTypes,
+      taxCodes: {}, taxCodesByRegion: {}, regions: [],
+    });
+    const nrConfig: AccountingEngineConfig = { country: noRePack, currency: 'TST' };
+
+    if (mongoose.models['NRAcct']) delete mongoose.models['NRAcct'];
+    const NRAccountModel = mongoose.model('NRAcct', createAccountSchema(nrConfig));
+
+    if (mongoose.models['NRJE']) delete mongoose.models['NRJE'];
+    const NRJEModel = mongoose.model('NRJE', createJournalEntrySchema(nrConfig, 'NRAcct'));
+
+    const cash = await NRAccountModel.create({ accountTypeCode: '1000' });
+    const shares = await NRAccountModel.create({ accountTypeCode: '3500' });
+    const re = await NRAccountModel.create({ accountTypeCode: '3600' });
+
+    await NRJEModel.create({
+      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'),
+      journalItems: [
+        { account: cash._id, debit: 100000, credit: 0 },
+        { account: shares._id, debit: 0, credit: 50000 },
+        { account: re._id, debit: 0, credit: 50000 },
+      ],
+      totalDebit: 100000, totalCredit: 100000,
+    });
+
+    const report = await generateBalanceSheet(
+      { AccountModel: NRAccountModel, JournalEntryModel: NRJEModel, country: noRePack },
+      { dateOption: 'year', dateValue: 2025 },
+    );
+
+    // Without retainedEarningsAccountCode, 3600 should appear in Shareholder Equity (old behavior)
+    const shGroup = report.equity.groups.find(g => g.name === 'Shareholder Equity')!;
+    const shCodes = shGroup.accounts.map(a => a.code);
+    expect(shCodes).toContain('3600');
+
+    expect(report.summary.isBalanced).toBe(true);
   });
 });

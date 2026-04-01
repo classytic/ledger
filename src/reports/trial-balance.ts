@@ -29,6 +29,7 @@ export async function generateTrialBalance(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     accountId?: string;
+    businessName?: string;
     filters?: Record<string, unknown>;
   },
 ): Promise<TrialBalanceReport> {
@@ -111,5 +112,28 @@ export async function generateTrialBalance(
     });
   }
 
-  return { rows, period: { startDate, endDate } };
+  // Sort rows by account code for deterministic output
+  rows.sort((a, b) => {
+    const codeA = (a.account as Record<string, unknown>)?.accountNumber as string
+      ?? (a.account as Record<string, unknown>)?.accountTypeCode as string ?? '';
+    const codeB = (b.account as Record<string, unknown>)?.accountNumber as string
+      ?? (b.account as Record<string, unknown>)?.accountTypeCode as string ?? '';
+    return codeA.localeCompare(codeB, undefined, { numeric: true });
+  });
+
+  const periodDisplay = params.dateOption === 'year'
+    ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+    : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+
+  return {
+    metadata: {
+      businessName: params.businessName,
+      generatedAt: new Date().toISOString(),
+      periodStart: startDate.toISOString().split('T')[0],
+      periodEnd: endDate.toISOString().split('T')[0],
+      displayPeriod: periodDisplay,
+    },
+    rows,
+    period: { startDate, endDate },
+  };
 }

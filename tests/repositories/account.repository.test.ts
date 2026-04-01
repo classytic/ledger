@@ -15,7 +15,7 @@ import { wireAccountMethods } from '../../src/repositories/account.repository.js
 
 const testPack = defineCountryPack({
   code: 'TS', name: 'Test', defaultCurrency: 'TST',
-  retainedEarningsCode: '3000',
+  retainedEarningsAccountCode: '3000',
   cogsGroupCode: 'COGS',
   accountTypes: [
     // Groups (not postable)

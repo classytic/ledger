@@ -1,6 +1,6 @@
 {
   "name": "@classytic/ledger",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Production-grade double-entry accounting engine for MongoDB — schemas, reports, tax, multi-tenant",
   "type": "module",
   "sideEffects": false,
@@ -88,7 +88,7 @@
     "url": "git+https://github.com/classytic/accounting.git"
   },
   "peerDependencies": {
-    "@classytic/mongokit": ">=3.3.2",
+    "@classytic/mongokit": ">=3.4.3",
     "mongoose": ">=9.0.0"
   },
   "engines": {

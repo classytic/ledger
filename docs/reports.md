@@ -120,7 +120,7 @@ const result = await closeFiscalPeriod(
 ```
 
 - Zeroes all income/expense account balances via a `YEAR_END` closing journal entry
-- Transfers net income to retained earnings (default code: `3660`, configurable via `retainedEarningsCode`)
+- Transfers net income to retained earnings (configurable via `retainedEarningsAccountCode`)
 - Marks period as `closed: true`
 - Atomic by default (internal transaction)
 

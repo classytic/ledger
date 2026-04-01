@@ -101,9 +101,14 @@ export interface AccountingEngineConfig {
   multiCurrency?: MultiCurrencyConfig;
   /** Fiscal year start month (1-12, default: 1 = January) */
   fiscalYearStartMonth?: number;
-  /** Display code for prior retained earnings on balance sheet (default: '3660') */
-  retainedEarningsCode?: string;
-  /** Display code for current year net income on balance sheet (default: '3680') */
+  /**
+   * The retained earnings account code (e.g. '3600' CA, '3310' BD).
+   * Overrides the country pack value. See CountryPack.retainedEarningsAccountCode.
+   */
+  retainedEarningsAccountCode?: string;
+  /** Display code for the "Previous Years Retained Earnings" line. Overrides country pack. */
+  retainedEarningsDisplayCode?: string;
+  /** Display code for current year net income line. Overrides country pack. */
   currentYearEarningsCode?: string;
   /** Logger instance. Defaults to console-based logger. */
   logger?: Logger;

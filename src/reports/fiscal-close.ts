@@ -25,7 +25,8 @@ export interface FiscalCloseOptions {
   FiscalPeriodModel: Model<unknown>;
   country: CountryPack;
   orgField?: string;
-  retainedEarningsCode?: string;
+  /** The retained earnings account code — where year-end net income is transferred to */
+  retainedEarningsAccountCode?: string;
   logger?: Logger;
 }
 
@@ -52,7 +53,7 @@ export async function closeFiscalPeriod(
     FiscalPeriodModel,
     country,
     orgField,
-    retainedEarningsCode = country.retainedEarningsCode ?? '3660',
+    retainedEarningsAccountCode = country.retainedEarningsAccountCode ?? '3600',
     logger = defaultLogger,
   } = opts;
   const { periodId, organizationId, closedBy } = params;
@@ -90,7 +91,7 @@ export async function closeFiscalPeriod(
       const at = country.getAccountType(acc.accountTypeCode as string);
       if (!at) continue;
 
-      if (acc.accountTypeCode === retainedEarningsCode) {
+      if (acc.accountTypeCode === retainedEarningsAccountCode) {
         retainedEarningsId = acc._id;
       }
 
@@ -106,7 +107,7 @@ export async function closeFiscalPeriod(
 
     if (!retainedEarningsId) {
       throw Errors.fiscal(
-        `Retained earnings account (code: ${retainedEarningsCode}) not found. ` +
+        `Retained earnings account (code: ${retainedEarningsAccountCode}) not found. ` +
         'Create this account before closing the fiscal period.',
       );
     }

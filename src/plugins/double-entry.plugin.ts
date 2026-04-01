@@ -7,13 +7,9 @@
  * Plugs into the before:create and before:update hooks.
  */
 
-import type { Model } from 'mongoose';
+import type { Model, ClientSession } from 'mongoose';
+import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
 import { Errors } from '../utils/errors.js';
-
-/** Minimal interface matching @classytic/mongokit RepositoryInstance */
-interface RepositoryInstance {
-  on(event: string, listener: (data: unknown) => void | Promise<void>): unknown;
-}
 
 export interface DoubleEntryPluginOptions {
   /** Only enforce on posted entries (default: true) */
@@ -68,8 +64,8 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
   return {
     name: 'accounting:double-entry',
     apply(repo: RepositoryInstance) {
-      const validate = async (context: Record<string, unknown>) => {
-        const data = context.data as Record<string, unknown> | undefined;
+      const validate = async (context: RepositoryContext) => {
+        const data = context.data;
         if (!data) return;
 
         // Skip draft entries if configured
@@ -104,7 +100,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
       const validateAccounts = async (
         items: Array<{ account?: unknown }>,
         data: Record<string, unknown>,
-        context: Record<string, unknown>,
+        context: RepositoryContext,
       ) => {
         const accountIds = items
           .map(i => i.account)
@@ -117,7 +113,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         const selectFields = orgField ? `_id ${orgField}` : '_id';
         const accounts = await AccountModel!.find({ _id: { $in: accountIds } })
           .select(selectFields)
-          .session((context.session as import('mongoose').ClientSession) ?? null)
+          .session((context.session as ClientSession) ?? null)
           .lean() as Array<Record<string, unknown>>;
 
         // Check all accounts exist
@@ -141,8 +137,8 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         }
       };
 
-      const validateUpdate = async (context: Record<string, unknown>) => {
-        const data = context.data as Record<string, unknown> | undefined;
+      const validateUpdate = async (context: RepositoryContext) => {
+        const data = context.data;
         if (!data) return;
 
         // ── Immutability guard: block modifications to posted entries ──────
@@ -155,7 +151,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
             // Check if target entry is already posted
             const target = await JournalEntryModel.findById(id)
               .select('state')
-              .session((context.session as import('mongoose').ClientSession) ?? null)
+              .session((context.session as ClientSession) ?? null)
               .lean() as Record<string, unknown> | null;
 
             if (target?.state === 'posted') {
@@ -220,7 +216,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
 
         const existing = await JournalEntryModel.findById(id)
           .select('journalItems')
-          .session((context.session as import('mongoose').ClientSession) ?? null)
+          .session((context.session as ClientSession) ?? null)
           .lean() as Record<string, unknown> | null;
 
         if (!existing) return; // will 404 downstream
@@ -240,8 +236,8 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         }
       };
 
-      repo.on('before:create', (payload: unknown) => validate(payload as Record<string, unknown>));
-      repo.on('before:update', (payload: unknown) => validateUpdate(payload as Record<string, unknown>));
+      repo.on('before:create', validate);
+      repo.on('before:update', validateUpdate);
     },
   };
 }

@@ -17,6 +17,7 @@ import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema
 
 const testPack = defineCountryPack({
   code: 'RPT', name: 'Report Test', defaultCurrency: 'TST',
+  retainedEarningsAccountCode: '3660',
   accountTypes: [
     { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
     { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
@@ -700,7 +701,7 @@ describe('Fiscal Year Closing', () => {
 
     await expect(
       closeFiscalPeriod(
-        { AccountModel, JournalEntryModel: JEModel, FiscalPeriodModel: FPModel, country: testPack, retainedEarningsCode: '9999' },
+        { AccountModel, JournalEntryModel: JEModel, FiscalPeriodModel: FPModel, country: testPack, retainedEarningsAccountCode: '9999' },
         { periodId: period._id },
       ),
     ).rejects.toThrow('Retained earnings account');

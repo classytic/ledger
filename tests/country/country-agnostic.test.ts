@@ -26,7 +26,7 @@ const mockUsPack = defineCountryPack({
   code: 'US',
   name: 'United States',
   defaultCurrency: 'USD',
-  retainedEarningsCode: '3200',
+  retainedEarningsAccountCode: '3200',
   currentYearEarningsCode: '3210',
   cogsGroupCode: 'Cost of Goods Sold',
   reportLabels: {
@@ -158,7 +158,7 @@ describe('US Country Pack — Basics', () => {
   it('has correct metadata', () => {
     expect(mockUsPack.code).toBe('US');
     expect(mockUsPack.defaultCurrency).toBe('USD');
-    expect(mockUsPack.retainedEarningsCode).toBe('3200');
+    expect(mockUsPack.retainedEarningsAccountCode).toBe('3200');
     expect(mockUsPack.currentYearEarningsCode).toBe('3210');
     expect(mockUsPack.cogsGroupCode).toBe('Cost of Goods Sold');
   });
