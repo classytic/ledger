@@ -63,20 +63,23 @@ export function createAccountSchema(
 
   // ── Schema ───────────────────────────────────────────────────────────────
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schema = new mongoose.Schema(fields as any, { timestamps: true });
+  const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, { timestamps: true });
 
   // ── Pre-validate: auto-default accountNumber and name ──────────────────
 
-  schema.pre('validate', function () {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const doc = this as any;
-    if (!doc.accountNumber && doc.accountTypeCode) {
-      doc.accountNumber = doc.accountTypeCode;
+  interface AccountValidateDoc {
+    accountNumber?: string;
+    accountTypeCode?: string;
+    name?: string;
+  }
+
+  schema.pre('validate', function (this: mongoose.Document & AccountValidateDoc) {
+    if (!this.accountNumber && this.accountTypeCode) {
+      this.accountNumber = this.accountTypeCode;
     }
-    if (!doc.name && doc.accountTypeCode) {
-      const at = country.getAccountType(doc.accountTypeCode);
-      doc.name = at?.name ?? doc.accountTypeCode;
+    if (!this.name && this.accountTypeCode) {
+      const at = country.getAccountType(this.accountTypeCode);
+      this.name = at?.name ?? this.accountTypeCode;
     }
   });
 

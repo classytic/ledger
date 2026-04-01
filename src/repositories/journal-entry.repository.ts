@@ -1,15 +1,22 @@
 /**
  * Journal Entry Repository Factory
  *
- * Creates a mongokit Repository with post/reverse domain logic baked in.
- * Used by AccountingEngine.createJournalEntryRepository().
+ * Wires domain methods (post, unpost, archive, duplicate, reverse)
+ * onto a mongokit Repository. All reads go through repository.getByQuery()
+ * so plugins (multi-tenant, audit, cache) fire on every operation.
+ *
+ * Used by AccountingEngine.wireJournalEntryRepository() and
+ * AccountingEngine.createJournalEntryRepository().
  */
 
-import type { Model, ClientSession } from 'mongoose';
+import type { ClientSession } from 'mongoose';
+import type { Repository, RepositoryContext } from '@classytic/mongokit';
 import type { StrictnessConfig } from '../types/engine.js';
+import type { JournalEntryRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
-import { acquireSession, finalizeSession } from '../utils/session.js';
+
+// ── Interfaces ──────────────────────────────────────────────────────────────
 
 interface PostOptions {
   session?: ClientSession | null;
@@ -57,18 +64,65 @@ interface ReverseOptions extends PostOptions {
 /**
  * Wire post/reverse onto an existing mongokit Repository.
  *
+ * All reads use `repository.getByQuery()` so registered plugins
+ * (multi-tenant, audit, cache) fire on every operation.
+ *
  * @param repository - A mongokit Repository instance (already created)
- * @param JournalEntryModel - The Mongoose model for journal entries
+ * @param _JournalEntryModel - (Deprecated) The Mongoose model — no longer used internally; kept for API compat
  * @param orgField - The multi-tenant field name (e.g. 'business')
  * @param strictness - Strictness rules (immutable, requireActor, requireApproval)
  */
-export function wireJournalEntryMethods(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  repository: any,
-  JournalEntryModel: Model<unknown>,
+export function wireJournalEntryMethods<TDoc = unknown>(
+  repository: Repository<TDoc>,
+  _JournalEntryModel: unknown,
   orgField?: string,
   strictness?: StrictnessConfig,
-): void {
+): JournalEntryRepository<TDoc> {
+  // Bind mongokit Repository methods — retain `this` context when called standalone.
+  const getByQuery = repository.getByQuery.bind(repository);
+  const create = repository.create.bind(repository);
+  const withTransaction = repository.withTransaction.bind(repository);
+
+  // ── Shared helpers ──────────────────────────────────────────────────────
+
+  /** Build a tenant-scoped query for a single entry by ID (injection-safe) */
+  function buildQuery(id: unknown, orgId?: unknown): Record<string, unknown> {
+    // Prevent MongoDB operator injection — reject plain objects with $ keys
+    // Allow: strings, numbers, ObjectId instances (have _bsontype or toHexString)
+    validateScalarId(id, 'entry ID');
+    if (orgId != null) validateScalarId(orgId, 'organization ID');
+
+    const query: Record<string, unknown> = { _id: id };
+    if (orgField && orgId != null) query[orgField] = orgId;
+    return query;
+  }
+
+  /** Reject operator-injected objects like { $ne: null } but allow ObjectIds */
+  function validateScalarId(value: unknown, label: string): void {
+    if (value == null || typeof value !== 'object') return; // strings, numbers OK
+    // ObjectId instances have _bsontype or toHexString — allow them
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.toHexString === 'function' || obj._bsontype === 'ObjectId') return;
+    // Plain objects (potential injection) — check for $ operator keys
+    const keys = Object.keys(obj);
+    if (keys.some(k => k.startsWith('$'))) {
+      throw Errors.validation(`Invalid ${label} — MongoDB operators are not allowed.`);
+    }
+  }
+
+  /** Fetch an entry via the repository (fires all hooks) */
+  async function findEntry(
+    query: Record<string, unknown>,
+    options: { session?: ClientSession | null; populate?: string },
+  ): Promise<JournalEntryDoc | null> {
+    const opts: Record<string, unknown> = { lean: false };
+    if (options.populate) opts.populate = options.populate;
+    if (options.session) opts.session = options.session;
+    return await getByQuery(query, opts) as JournalEntryDoc | null;
+  }
+
+  // ── post() ──────────────────────────────────────────────────────────────
+
   /**
    * Post an entry (draft → posted).
    * Validates items, balance, and accounts before changing state.
@@ -78,12 +132,12 @@ export function wireJournalEntryMethods(
       throw Errors.validation('actorId is required for post operations.');
     }
     requireOrgScope(orgField, orgId);
-    const query: Record<string, unknown> = { _id: id };
-    if (orgField && orgId != null) query[orgField] = orgId;
+    const query = buildQuery(id, orgId);
 
-    const entry = (await JournalEntryModel.findOne(query)
-      .populate('journalItems.account')
-      .session(options.session || null)) as JournalEntryDoc | null;
+    const entry = await findEntry(query, {
+      session: options.session,
+      populate: 'journalItems.account',
+    });
 
     if (!entry) {
       throw Errors.notFound('Entry not found');
@@ -110,10 +164,25 @@ export function wireJournalEntryMethods(
       throw Errors.validation('Journal entry must have at least 2 items to post');
     }
 
-    // Every item must have a valid account
+    // Every item must have a valid account reference
     const missing = entry.journalItems.filter((i: JournalItem) => !i.account || i.account === '');
     if (missing.length > 0) {
       throw Errors.validation(`${missing.length} item(s) missing an account`);
+    }
+
+    // Verify all populated accounts actually exist (populate returns null for deleted/fake accounts)
+    const nullAccounts = entry.journalItems.filter((i: JournalItem) => {
+      // After populate, a valid account is an object with _id. A missing account is null or stays as a string ObjectId.
+      const acct = i.account;
+      if (!acct) return true;
+      if (typeof acct === 'string') return true; // populate failed — account doesn't exist
+      if (typeof acct === 'object' && !(acct as Record<string, unknown>)._id) return true;
+      return false;
+    });
+    if (nullAccounts.length > 0) {
+      throw Errors.validation(
+        `${nullAccounts.length} item(s) reference accounts that do not exist. Ensure all accounts are created before posting.`,
+      );
     }
 
     // Verify all populated accounts belong to the same org (multi-tenant integrity)
@@ -163,6 +232,8 @@ export function wireJournalEntryMethods(
     return entry;
   };
 
+  // ── unpost() ────────────────────────────────────────────────────────────
+
   /**
    * Unpost an entry (posted → draft).
    * Resets state to draft so the entry can be edited and re-posted.
@@ -176,11 +247,9 @@ export function wireJournalEntryMethods(
       throw Errors.validation('actorId is required for unpost operations.');
     }
     requireOrgScope(orgField, orgId);
-    const query: Record<string, unknown> = { _id: id };
-    if (orgField && orgId != null) query[orgField] = orgId;
+    const query = buildQuery(id, orgId);
 
-    const entry = (await JournalEntryModel.findOne(query)
-      .session(options.session || null)) as JournalEntryDoc | null;
+    const entry = await findEntry(query, { session: options.session });
 
     if (!entry) {
       throw Errors.notFound('Entry not found');
@@ -189,17 +258,24 @@ export function wireJournalEntryMethods(
       throw Errors.validation('Only posted entries can be unposted');
     }
 
+    // Prevent unposting a reversed entry — the reversal entry is still posted
+    // and references this entry via reversalOf. Unposting would create an
+    // inconsistent state where the reversal exists but the original appears unreversed.
+    if (entry.reversed) {
+      throw Errors.validation(
+        'Cannot unpost a reversed entry. The reversal entry is still posted and linked to this entry. ' +
+        'Reverse the reversal entry first, or create a new correcting entry instead.',
+      );
+    }
+
     entry.state = 'draft';
     entry.stateChangedAt = new Date();
-    // Clear reversal flags so the entry is fully editable as a draft
-    if (entry.reversed) {
-      entry.reversed = false;
-      entry.reversedBy = undefined;
-    }
     await entry.save({ session: options.session });
 
     return entry;
   };
+
+  // ── archive() ───────────────────────────────────────────────────────────
 
   /**
    * Archive a draft entry (draft → archived).
@@ -211,11 +287,9 @@ export function wireJournalEntryMethods(
       throw Errors.validation('actorId is required for archive operations.');
     }
     requireOrgScope(orgField, orgId);
-    const query: Record<string, unknown> = { _id: id };
-    if (orgField && orgId != null) query[orgField] = orgId;
+    const query = buildQuery(id, orgId);
 
-    const entry = (await JournalEntryModel.findOne(query)
-      .session(options.session || null)) as JournalEntryDoc | null;
+    const entry = await findEntry(query, { session: options.session });
 
     if (!entry) {
       throw Errors.notFound('Entry not found');
@@ -231,17 +305,17 @@ export function wireJournalEntryMethods(
     return entry;
   };
 
+  // ── duplicate() ─────────────────────────────────────────────────────────
+
   /**
    * Duplicate an entry as a new draft.
    * Copies journal items, journal type, and label. Assigns today's date.
    */
   repository.duplicate = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
     requireOrgScope(orgField, orgId);
-    const query: Record<string, unknown> = { _id: id };
-    if (orgField && orgId != null) query[orgField] = orgId;
+    const query = buildQuery(id, orgId);
 
-    const entry = (await JournalEntryModel.findOne(query)
-      .session(options.session || null)) as JournalEntryDoc | null;
+    const entry = await findEntry(query, { session: options.session });
 
     if (!entry) {
       throw Errors.notFound('Entry not found');
@@ -280,17 +354,18 @@ export function wireJournalEntryMethods(
       duplicateData[orgField] = entry[orgField];
     }
 
-    const duplicated = await repository.create(duplicateData, options.session ? { session: options.session } : {});
+    const duplicated = await create(duplicateData, options.session ? { session: options.session } : {});
     return duplicated;
   };
+
+  // ── reverse() ───────────────────────────────────────────────────────────
 
   /**
    * Reverse a posted entry by creating a mirror entry with flipped debits/credits.
    * Marks the original as reversed and links both entries bidirectionally.
    *
-   * Atomic: creates an internal transaction by default. Pass an external session
-   * to join a caller-managed transaction instead. On standalone MongoDB (no
-   * replica set), falls back to non-atomic execution with a warning.
+   * Uses repository.withTransaction() for automatic retry on transient failures.
+   * Pass an external session to join a caller-managed transaction instead.
    *
    * Routes the reversal through repository.create() so all plugins (fiscal-lock,
    * double-entry) enforce policy on the reversal entry.
@@ -300,19 +375,13 @@ export function wireJournalEntryMethods(
       throw Errors.validation('actorId is required for reverse operations.');
     }
     requireOrgScope(orgField, orgId);
-    const { session, ownSession } = await acquireSession(
-      JournalEntryModel.db,
-      options.session,
-    );
-    let success = false;
+    const query = buildQuery(id, orgId);
 
-    try {
-      const query: Record<string, unknown> = { _id: id };
-      if (orgField && orgId != null) query[orgField] = orgId;
-
-      const entry = (await JournalEntryModel.findOne(query)
-        .populate('journalItems.account')
-        .session(session || null)) as JournalEntryDoc | null;
+    const doReverse = async (session?: ClientSession | null) => {
+      const entry = await findEntry(query, {
+        session,
+        populate: 'journalItems.account',
+      });
 
       if (!entry) {
         throw Errors.notFound('Entry not found');
@@ -374,23 +443,51 @@ export function wireJournalEntryMethods(
       }
 
       // Create reversal via repository so plugins (fiscal-lock, double-entry) run
-      const reversalEntry = await repository.create(
-        reversalData,
-        session ? { session } : {},
-      );
+      const reversalEntry = await create(reversalData, session ? { session } : {}) as Record<string, unknown>;
 
       // Mark original as reversed (bidirectional link)
       entry.reversed = true;
-      entry.reversedBy = reversalEntry._id;
+      entry.reversedBy = reversalEntry['_id'];
       if (options.actorId) {
         entry.reversedByUser = options.actorId;
       }
       await entry.save({ session });
 
-      success = true;
       return { original: entry, reversal: reversalEntry };
-    } finally {
-      await finalizeSession(session, ownSession, success);
+    };
+
+    // External session: caller manages transaction; run directly
+    if (options.session) {
+      return await doReverse(options.session);
     }
+
+    // No external session: use withTransaction for automatic retry + standalone fallback
+    if (withTransaction) {
+      return await withTransaction(
+        (session) => doReverse(session),
+        { allowFallback: true },
+      );
+    }
+
+    // Fallback: no transaction support (test mocks, legacy repos)
+    return await doReverse();
   };
+
+  // Register methods for discoverability (mongokit 3.4+ registerMethod)
+  const methodNames = ['post', 'unpost', 'archive', 'duplicate', 'reverse'] as const;
+  if (typeof repository.registerMethod === 'function') {
+    for (const name of methodNames) {
+      const fn = repository[name] as (...args: unknown[]) => unknown;
+      try {
+        delete repository[name]; // Clear direct assignment first
+        repository.registerMethod(name, fn);
+      } catch {
+        // Restore if registerMethod fails (prevents orphaned methods)
+        repository[name] = fn;
+      }
+    }
+  }
+
+  // Methods are wired dynamically above — safe cast
+  return repository as unknown as JournalEntryRepository<TDoc>;
 }

@@ -47,6 +47,7 @@ export interface TrialBalanceRow {
 }
 
 export interface TrialBalanceReport {
+  metadata?: ReportMetadata & { periodStart: string; periodEnd: string; displayPeriod: string };
   rows: TrialBalanceRow[];
   period: DateRange;
 }
@@ -99,6 +100,7 @@ export interface GeneralLedgerAccount {
 }
 
 export interface GeneralLedgerReport {
+  metadata?: ReportMetadata & { periodStart: string; periodEnd: string; displayPeriod: string };
   accounts: GeneralLedgerAccount[];
   period: DateRange;
 }

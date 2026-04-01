@@ -1,21 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { doubleEntryPlugin } from '../../src/plugins/double-entry.plugin.js';
-
-/** Minimal mock repo — captures hooks registered by plugins */
-function createMockRepo() {
-  const hooks = new Map<string, Array<(ctx: unknown) => void | Promise<void>>>();
-  return {
-    on(event: string, handler: (ctx: unknown) => void | Promise<void>) {
-      if (!hooks.has(event)) hooks.set(event, []);
-      hooks.get(event)!.push(handler);
-    },
-    async emit(event: string, ctx: unknown) {
-      for (const fn of hooks.get(event) ?? []) {
-        await fn(ctx);
-      }
-    },
-  };
-}
+import { createMockRepository } from '../helpers/mock-repository.js';
 
 /** Mock AccountModel that returns the given accounts (or echoes requested IDs back) */
 function createMockAccountModel(accounts?: Array<{ _id: string; business?: string }>) {
@@ -40,7 +25,7 @@ describe('doubleEntryPlugin', () => {
 
   describe('before:create', () => {
     it('allows balanced posted entries', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin({ AccountModel: permissiveAccountModel as any }).apply(repo);
 
       const data = {
@@ -51,13 +36,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
       expect(data.totalDebit).toBe(10000);
       expect(data.totalCredit).toBe(10000);
     });
 
     it('rejects unbalanced posted entries', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = {
@@ -68,11 +53,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('Double-entry violation');
     });
 
     it('rejects posted entries with empty journal items', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = {
@@ -80,11 +65,11 @@ describe('doubleEntryPlugin', () => {
         journalItems: [],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow('at least 2 journal items required');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('at least 2 journal items required');
     });
 
     it('rejects posted entries with only 1 journal item', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = {
@@ -92,11 +77,11 @@ describe('doubleEntryPlugin', () => {
         journalItems: [{ debit: 10000, credit: 0 }],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow('at least 2 journal items required');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('at least 2 journal items required');
     });
 
     it('skips validation for draft entries (onlyOnPost = true)', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin({ onlyOnPost: true }).apply(repo);
 
       const data = {
@@ -106,11 +91,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
 
     it('validates drafts when onlyOnPost is false', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin({ onlyOnPost: false }).apply(repo);
 
       const data = {
@@ -121,11 +106,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('Double-entry violation');
     });
 
     it('rejects a 1-cent imbalance', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = {
@@ -136,11 +121,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('Double-entry violation');
     });
 
     it('accepts balanced entries', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin({ AccountModel: permissiveAccountModel as any }).apply(repo);
 
       const data = {
@@ -153,11 +138,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
 
     it('rejects a journal item with both debit and credit > 0', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = {
@@ -168,13 +153,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow(
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
         'a line cannot have both debit (10000) and credit (5000) greater than zero',
       );
     });
 
     it('allows items with debit=0 or credit=0', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin({ AccountModel: permissiveAccountModel as any }).apply(repo);
 
       const data = {
@@ -185,7 +170,7 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
   });
 
@@ -193,7 +178,7 @@ describe('doubleEntryPlugin', () => {
 
   describe('before:create (account validation)', () => {
     it('allows posted create when all accounts exist and belong to same org', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockAccounts = [
         { _id: 'acc1', business: 'org1' },
         { _id: 'acc2', business: 'org1' },
@@ -212,11 +197,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
 
     it('rejects posted create when account does not exist', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       // Only acc1 exists — acc2 is missing
       const mockAccounts = [{ _id: 'acc1', business: 'org1' }];
       doubleEntryPlugin({
@@ -233,13 +218,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow(
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
         '1 item(s) reference non-existent accounts',
       );
     });
 
     it('rejects posted create when account belongs to different org', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockAccounts = [
         { _id: 'acc1', business: 'org1' },
         { _id: 'acc2', business: 'org2' }, // Different org!
@@ -258,13 +243,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow(
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
         '1 item(s) reference accounts from another organization',
       );
     });
 
     it('skips account validation for draft creates', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       // AccountModel would reject, but plugin should skip for drafts
       doubleEntryPlugin({
         AccountModel: createMockAccountModel([]) as any,
@@ -279,11 +264,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
 
     it('rejects posted create when AccountModel not provided (fail-closed)', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo); // No AccountModel
 
       const data = {
@@ -294,13 +279,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).rejects.toThrow(
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
         'AccountModel is required to validate posted entries',
       );
     });
 
     it('skips tenant check when orgField not provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockAccounts = [
         { _id: 'acc1', business: 'org1' },
         { _id: 'acc2', business: 'org2' }, // Different org, but no orgField check
@@ -318,7 +303,7 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
   });
 
@@ -326,7 +311,7 @@ describe('doubleEntryPlugin', () => {
 
   describe('before:update (partial update)', () => {
     it('validates items when present in update payload', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = {
@@ -337,22 +322,22 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
 
     it('throws config error when state=posted, no items, and JournalEntryModel not provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo); // No JournalEntryModel!
 
       const data = { state: 'posted' }; // No journalItems — partial update
 
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('JournalEntryModel is required');
     });
 
     it('fetches persisted items and validates when JournalEntryModel is provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockModel = {
         findById: () => ({
           select: () => ({
@@ -371,13 +356,13 @@ describe('doubleEntryPlugin', () => {
       doubleEntryPlugin({ JournalEntryModel: mockModel as any }).apply(repo);
 
       const data = { state: 'posted' };
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
       expect(data.totalDebit).toBe(10000);
       expect(data.totalCredit).toBe(10000);
     });
 
     it('rejects when persisted items are unbalanced', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockModel = {
         findById: () => ({
           select: () => ({
@@ -397,12 +382,12 @@ describe('doubleEntryPlugin', () => {
 
       const data = { state: 'posted' };
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('Double-entry violation');
     });
 
     it('rejects when persisted doc has no journal items', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockModel = {
         findById: () => ({
           select: () => ({
@@ -417,12 +402,12 @@ describe('doubleEntryPlugin', () => {
 
       const data = { state: 'posted' };
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('at least 2 journal items required');
     });
 
     it('rejects when persisted doc has only 1 journal item', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockModel = {
         findById: () => ({
           select: () => ({
@@ -439,22 +424,22 @@ describe('doubleEntryPlugin', () => {
 
       const data = { state: 'posted' };
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('at least 2 journal items required, got 1');
     });
 
     it('rejects update with empty items in payload', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = { state: 'posted', journalItems: [] };
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('at least 2 journal items required');
     });
 
     it('throws when context.id is missing on partial post update', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockModel = {
         findById: () => ({ select: () => ({ session: () => ({ lean: () => Promise.resolve(null) }) }) }),
       };
@@ -462,16 +447,16 @@ describe('doubleEntryPlugin', () => {
 
       const data = { state: 'posted' }; // No items, no id
       await expect(
-        repo.emit('before:update', { data }), // no id in context
+        repo._emitHook('before:update', { data }), // no id in context
       ).rejects.toThrow('update context is missing "id"');
     });
 
     it('skips validation when state is not posted', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       doubleEntryPlugin().apply(repo);
 
       const data = { state: 'draft', label: 'updated label' };
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
   });
 
@@ -479,7 +464,7 @@ describe('doubleEntryPlugin', () => {
 
   describe('before:update (account validation)', () => {
     it('validates accounts when items are in update payload and AccountModel provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockAccounts = [
         { _id: 'acc1', business: 'org1' },
         { _id: 'acc2', business: 'org1' },
@@ -498,11 +483,11 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
 
     it('rejects update→posted when account belongs to different org', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockAccounts = [
         { _id: 'acc1', business: 'org1' },
         { _id: 'acc2', business: 'org2' }, // cross-tenant
@@ -521,13 +506,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:update', { id: 'abc', data })).rejects.toThrow(
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
         'accounts from another organization',
       );
     });
 
     it('rejects update→posted when account does not exist', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       // Only acc1 exists
       const mockAccounts = [{ _id: 'acc1' }];
       doubleEntryPlugin({
@@ -542,13 +527,13 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:update', { id: 'abc', data })).rejects.toThrow(
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
         'non-existent accounts',
       );
     });
 
     it('validates persisted accounts on partial update (state→posted, no items in payload)', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       const mockAccounts = [
         { _id: 'acc1', business: 'org1' },
         { _id: 'acc2', business: 'org2' }, // cross-tenant!
@@ -588,13 +573,13 @@ describe('doubleEntryPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted' };
-      await expect(repo.emit('before:update', { id: 'abc', data })).rejects.toThrow(
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
         'accounts from another organization',
       );
     });
 
     it('skips account validation on update when AccountModel not provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       // No AccountModel — should still pass (only balancing checked)
       doubleEntryPlugin().apply(repo);
 
@@ -606,7 +591,7 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
   });
 });

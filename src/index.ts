@@ -55,6 +55,7 @@ export { createFiscalPeriodSchema } from './schemas/fiscal-period.schema.js';
 
 // ── Plugins ────────────────────────────────────────────────────────────────
 
+export { dateLockPlugin } from './plugins/date-lock.plugin.js';
 export { doubleEntryPlugin } from './plugins/double-entry.plugin.js';
 export { fiscalLockPlugin } from './plugins/fiscal-lock.plugin.js';
 export { idempotencyPlugin } from './plugins/idempotency.plugin.js';
@@ -67,6 +68,13 @@ export { generateIncomeStatement } from './reports/income-statement.js';
 export { generateGeneralLedger } from './reports/general-ledger.js';
 export { generateCashFlow } from './reports/cash-flow.js';
 export { closeFiscalPeriod, reopenFiscalPeriod } from './reports/fiscal-close.js';
+export { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
+export { generateAgedBalance, DEFAULT_BUCKETS } from './reports/aged-balance.js';
+export type { AgedBucketConfig, AgedBalanceOptions, AgedBalanceParams, AgedBalanceRow, AgedBalanceReport } from './reports/aged-balance.js';
+export { generateRevaluation } from './reports/revaluation.js';
+export type { RevaluationOptions, RevaluationParams, RevaluationReport } from './reports/revaluation.js';
+export { computeRevaluation, buildRevaluationEntry } from './utils/revaluation.js';
+export type { RevaluationRate, AccountForeignBalance, RevaluationResult } from './utils/revaluation.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -109,6 +117,20 @@ export type {
 
 export { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
 export { wireAccountMethods } from './repositories/account.repository.js';
+export { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
+export type {
+  JournalEntryRepository,
+  AccountRepository,
+  ReconciliationRepository,
+  PostOptions,
+  ReverseOptions,
+  SeedOptions,
+  SeedResult,
+  BulkCreateInput,
+  BulkCreateResult,
+  ReverseResult,
+  ReconcileParams,
+} from './types/repositories.js';
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
@@ -130,6 +152,8 @@ export type { Logger } from './utils/logger.js';
 export { acquireSession, finalizeSession } from './utils/session.js';
 export type { SessionResult } from './utils/session.js';
 export { buildItemFilters } from './utils/filter-builder.js';
+export { buildDimensionFields, buildDimensionIndexes } from './utils/dimensions.js';
+export type { DimensionDefinition } from './utils/dimensions.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -183,6 +207,13 @@ export type {
   ReportGroup,
   ReportAccount,
 } from './types/index.js';
+
+export type {
+  DimensionBreakdownOptions,
+  DimensionBreakdownParams,
+  DimensionBreakdownRow,
+  DimensionBreakdownReport,
+} from './reports/dimension-breakdown.js';
 
 // ── Exports ───────────────────────────────────────────────────────────────
 

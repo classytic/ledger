@@ -31,6 +31,7 @@ export async function generateGeneralLedger(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     accountId?: string;
+    businessName?: string;
     filters?: Record<string, unknown>;
   },
 ): Promise<GeneralLedgerReport> {
@@ -58,6 +59,13 @@ export async function generateGeneralLedger(
   if (filtered.length === 0) {
     return { accounts: [], period: { startDate, endDate } };
   }
+
+  // Sort accounts by code for deterministic output
+  filtered.sort((a, b) => {
+    const codeA = (a.acc.accountNumber as string) ?? a.at.code;
+    const codeB = (b.acc.accountNumber as string) ?? b.at.code;
+    return codeA.localeCompare(codeB, undefined, { numeric: true });
+  });
 
   // Separate BS vs IS account IDs (different opening-balance date ranges)
   const bsAccountIds: unknown[] = [];
@@ -195,5 +203,19 @@ export async function generateGeneralLedger(
     });
   }
 
-  return { accounts: glAccounts, period: { startDate, endDate } };
+  const periodDisplay = params.dateOption === 'year'
+    ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+    : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+
+  return {
+    metadata: {
+      businessName: params.businessName,
+      generatedAt: new Date().toISOString(),
+      periodStart: startDate.toISOString().split('T')[0],
+      periodEnd: endDate.toISOString().split('T')[0],
+      displayPeriod: periodDisplay,
+    },
+    accounts: glAccounts,
+    period: { startDate, endDate },
+  };
 }

@@ -153,30 +153,34 @@ export function createJournalEntrySchema(
 
   // ── Schema ───────────────────────────────────────────────────────────────
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schema = new mongoose.Schema(fields as any, { timestamps: true });
+  const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, { timestamps: true });
 
   // ── Pre-validate: double-entry enforcement ───────────────────────────────
 
-  schema.pre('validate', function () {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const doc = this as any;
+  interface JournalValidateDoc {
+    journalItems: Array<{ date?: Date; debit?: number; credit?: number }>;
+    date?: Date;
+    state?: string;
+    totalDebit: number;
+    totalCredit: number;
+  }
 
+  schema.pre('validate', function (this: mongoose.Document & JournalValidateDoc) {
     // Propagate entry date to items without a date
-    for (const item of doc.journalItems) {
-      if (!item.date) item.date = doc.date;
+    for (const item of this.journalItems) {
+      if (!item.date) item.date = this.date;
     }
 
     // Each line must be debit OR credit (not both), and posted entries cannot have zero-value lines
-    for (let i = 0; i < doc.journalItems.length; i++) {
-      const d = doc.journalItems[i].debit || 0;
-      const c = doc.journalItems[i].credit || 0;
+    for (let i = 0; i < this.journalItems.length; i++) {
+      const d = this.journalItems[i].debit ?? 0;
+      const c = this.journalItems[i].credit ?? 0;
       if (d > 0 && c > 0) {
         throw new Error(
           `Journal item at index ${i}: cannot have both debit (${d}) and credit (${c}) greater than zero`,
         );
       }
-      if (doc.state === 'posted' && d === 0 && c === 0) {
+      if (this.state === 'posted' && d === 0 && c === 0) {
         throw new Error(
           `Journal item at index ${i}: posted entries cannot have zero-value lines (both debit and credit are 0)`,
         );
@@ -184,14 +188,12 @@ export function createJournalEntrySchema(
     }
 
     // Calculate totals
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const totalDebit = doc.journalItems.reduce((s: number, i: any) => s + (i.debit || 0), 0);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const totalCredit = doc.journalItems.reduce((s: number, i: any) => s + (i.credit || 0), 0);
+    const totalDebit = this.journalItems.reduce((s, item) => s + (item.debit ?? 0), 0);
+    const totalCredit = this.journalItems.reduce((s, item) => s + (item.credit ?? 0), 0);
 
     // Enforce minimum items and balance for posted entries
-    if (doc.state === 'posted') {
-      if (doc.journalItems.length < 2) {
+    if (this.state === 'posted') {
+      if (this.journalItems.length < 2) {
         throw new Error('Posted entries must have at least 2 journal items');
       }
       if (totalDebit !== totalCredit) {
@@ -199,8 +201,8 @@ export function createJournalEntrySchema(
       }
     }
 
-    doc.totalDebit = totalDebit;
-    doc.totalCredit = totalCredit;
+    this.totalDebit = totalDebit;
+    this.totalCredit = totalCredit;
   });
 
   // ── Pre-save: auto-generate reference number ─────────────────────────────
@@ -254,30 +256,49 @@ export function createJournalEntrySchema(
       return `${prefix}${String(seq).padStart(4, '0')}`;
     };
 
-    schema.pre('save', async function () {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const doc = this as any;
+    interface JournalSaveDoc {
+      referenceNumber?: string;
+      journalType?: string;
+      date?: Date;
+      isModified(path: string): boolean;
+      $session?(): mongoose.mongo.ClientSession | null;
+      constructor: mongoose.Model<unknown>;
+      [key: string]: unknown;
+    }
 
-      if (doc.isModified('journalType')) {
-        doc.referenceNumber = undefined;
+    schema.pre('save', async function (this: mongoose.Document & JournalSaveDoc) {
+      if (this.isModified('journalType')) {
+        this.referenceNumber = undefined;
       }
 
-      if (!doc.referenceNumber) {
-        const session = doc.$session?.() ?? null;
-        const Model = doc.constructor as mongoose.Model<unknown>;
-        doc.referenceNumber = await generateReferenceNumber(doc, Model, session);
+      if (!this.referenceNumber) {
+        const session = this.$session?.() ?? null;
+        const Model = this.constructor as mongoose.Model<unknown>;
+        this.referenceNumber = await generateReferenceNumber(this, Model, session);
       }
     });
+
+    interface MongoError extends Error {
+      code?: number;
+      keyPattern?: Record<string, unknown>;
+    }
+
+    interface RetryDoc {
+      __refRetries?: number;
+      referenceNumber?: string;
+      $session?(): mongoose.mongo.ClientSession | null;
+      constructor: mongoose.Model<unknown>;
+      save(options?: { session?: mongoose.mongo.ClientSession | null }): Promise<unknown>;
+      [key: string]: unknown;
+    }
 
     // Retry on duplicate key error (race condition between concurrent inserts)
     const MAX_REF_RETRIES = 3;
     schema.post('save', async function (error: Error, doc: unknown, next: (err?: Error) => void) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mongoError = error as any;
+      const mongoError = error as MongoError;
       // 11000 = MongoDB duplicate key error
       if (mongoError.code === 11000 && mongoError.keyPattern?.referenceNumber) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const entry = doc as any;
+        const entry = doc as RetryDoc;
         const retryCount: number = entry.__refRetries ?? 0;
         if (retryCount >= MAX_REF_RETRIES) {
           next(new Error(

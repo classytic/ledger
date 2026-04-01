@@ -17,6 +17,16 @@ import type { ClientSession, Connection } from 'mongoose';
 import type { Logger } from './logger.js';
 import { defaultLogger } from './logger.js';
 
+/**
+ * Internal MongoDB driver topology detection.
+ * `Connection.getClient()` is public but `topology` on the returned
+ * MongoClient is an internal driver property not reflected in public types.
+ */
+interface MongoTopologyInternals {
+  getClient?(): { topology?: { description?: { type?: string } } };
+  client?: { topology?: { description?: { type?: string } } };
+}
+
 export interface SessionResult {
   session: ClientSession | null;
   ownSession: boolean;
@@ -43,8 +53,8 @@ export async function acquireSession(
 
     // Detect standalone topology before starting a transaction.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const client = (db as any).getClient?.() ?? (db as any).client;
+      const conn = db as unknown as MongoTopologyInternals;
+      const client = conn.getClient?.() ?? conn.client;
       const topologyType = client?.topology?.description?.type;
       if (topologyType === 'Single') {
         session.endSession();

@@ -1,21 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { fiscalLockPlugin } from '../../src/plugins/fiscal-lock.plugin.js';
-
-/** Minimal mock repo — captures hooks registered by plugins */
-function createMockRepo() {
-  const hooks = new Map<string, Array<(ctx: unknown) => void | Promise<void>>>();
-  return {
-    on(event: string, handler: (ctx: unknown) => void | Promise<void>) {
-      if (!hooks.has(event)) hooks.set(event, []);
-      hooks.get(event)!.push(handler);
-    },
-    async emit(event: string, ctx: unknown) {
-      for (const fn of hooks.get(event) ?? []) {
-        await fn(ctx);
-      }
-    },
-  };
-}
+import { createMockRepository } from '../helpers/mock-repository.js';
 
 /** Mock FiscalPeriodModel — returns a closed period or null */
 function createFPModel(closedPeriod: Record<string, unknown> | null) {
@@ -46,17 +31,17 @@ describe('fiscalLockPlugin', () => {
 
   describe('before:create', () => {
     it('allows posting when no closed period exists', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel(null),
       }).apply(repo);
 
       const data = { state: 'posted', date: new Date('2025-03-15') };
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
 
     it('blocks posting in a closed period', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel({
           name: 'Q1 2025',
@@ -68,12 +53,12 @@ describe('fiscalLockPlugin', () => {
 
       const data = { state: 'posted', date: new Date('2025-03-15') };
       await expect(
-        repo.emit('before:create', { data }),
+        repo._emitHook('before:create', { data }),
       ).rejects.toThrow('fiscal period "Q1 2025" is closed');
     });
 
     it('skips check for draft entries', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel({
           name: 'Q1 2025',
@@ -82,7 +67,7 @@ describe('fiscalLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'draft', date: new Date('2025-03-15') };
-      await expect(repo.emit('before:create', { data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
     });
 
     it('checks fiscal lock using current date when posted create has no explicit date', async () => {
@@ -95,11 +80,11 @@ describe('fiscalLockPlugin', () => {
         },
       } as any;
 
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({ FiscalPeriodModel: fpModel }).apply(repo);
 
       const data = { state: 'posted' }; // no date
-      await repo.emit('before:create', { data });
+      await repo._emitHook('before:create', { data });
 
       // Should have queried with a date (current date), not skipped
       expect(capturedQuery).toBeDefined();
@@ -112,17 +97,17 @@ describe('fiscalLockPlugin', () => {
 
   describe('before:update (partial update)', () => {
     it('uses date from payload when present', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel(null),
       }).apply(repo);
 
       const data = { state: 'posted', date: new Date('2025-06-15') };
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
 
     it('throws config error when state=posted, no date, and JournalEntryModel not provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel(null),
         // No JournalEntryModel!
@@ -131,23 +116,23 @@ describe('fiscalLockPlugin', () => {
       const data = { state: 'posted' }; // no date
 
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('JournalEntryModel is required');
     });
 
     it('fetches persisted date when JournalEntryModel is provided', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel(null), // No closed period
         JournalEntryModel: createJEModel({ date: new Date('2025-06-15') }),
       }).apply(repo);
 
       const data = { state: 'posted' }; // no date in payload
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
 
     it('blocks posting when persisted date falls in closed period', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel({
           name: 'Q1 2025',
@@ -158,12 +143,12 @@ describe('fiscalLockPlugin', () => {
 
       const data = { state: 'posted' }; // no date
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('fiscal period "Q1 2025" is closed');
     });
 
     it('throws when context.id is missing on partial post update', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel(null),
         JournalEntryModel: createJEModel({ date: new Date('2025-06-15') }),
@@ -171,12 +156,12 @@ describe('fiscalLockPlugin', () => {
 
       const data = { state: 'posted' }; // no date, no id
       await expect(
-        repo.emit('before:update', { data }), // no id in context
+        repo._emitHook('before:update', { data }), // no id in context
       ).rejects.toThrow('update context is missing "id"');
     });
 
     it('skips check for non-posted updates', async () => {
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: createFPModel({
           name: 'Q1 2025',
@@ -185,7 +170,7 @@ describe('fiscalLockPlugin', () => {
       }).apply(repo);
 
       const data = { label: 'updated', state: 'draft' };
-      await expect(repo.emit('before:update', { id: 'abc', data })).resolves.toBeUndefined();
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).resolves.toBeUndefined();
     });
   });
 
@@ -201,14 +186,14 @@ describe('fiscalLockPlugin', () => {
         },
       } as any;
 
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: fpModel,
         orgField: 'business',
       }).apply(repo);
 
       const data = { state: 'posted', date: new Date('2025-03-15'), business: 'org123' };
-      await repo.emit('before:create', { data });
+      await repo._emitHook('before:create', { data });
 
       expect(capturedQuery).toBeDefined();
       expect(capturedQuery!.business).toBe('org123');
@@ -238,7 +223,7 @@ describe('fiscalLockPlugin', () => {
         }),
       } as any;
 
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: fpModel,
         JournalEntryModel: jeModel,
@@ -247,7 +232,7 @@ describe('fiscalLockPlugin', () => {
 
       // Partial update: no date, no business in payload
       const data = { state: 'posted' };
-      await repo.emit('before:update', { id: 'abc', data });
+      await repo._emitHook('before:update', { id: 'abc', data });
 
       expect(capturedQuery).toBeDefined();
       expect(capturedQuery!.business).toBe('org456');
@@ -272,7 +257,7 @@ describe('fiscalLockPlugin', () => {
         }),
       } as any;
 
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: fpModel,
         JournalEntryModel: jeModel,
@@ -281,7 +266,7 @@ describe('fiscalLockPlugin', () => {
 
       // Update has date but NOT business in payload
       const data = { state: 'posted', date: new Date('2025-06-15') };
-      await repo.emit('before:update', { id: 'abc', data });
+      await repo._emitHook('before:update', { id: 'abc', data });
 
       expect(capturedQuery).toBeDefined();
       expect(capturedQuery!.business).toBe('org789');
@@ -292,7 +277,7 @@ describe('fiscalLockPlugin', () => {
         findOne: () => ({ lean: () => Promise.resolve(null) }),
       } as any;
 
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: fpModel,
         orgField: 'business',
@@ -302,7 +287,7 @@ describe('fiscalLockPlugin', () => {
       // Create with org field configured but not in data
       const data = { state: 'posted', date: new Date('2025-03-15') };
       await expect(
-        repo.emit('before:create', { data }),
+        repo._emitHook('before:create', { data }),
       ).rejects.toThrow('could not be resolved');
     });
 
@@ -322,7 +307,7 @@ describe('fiscalLockPlugin', () => {
         }),
       } as any;
 
-      const repo = createMockRepo();
+      const repo = createMockRepository();
       fiscalLockPlugin({
         FiscalPeriodModel: fpModel,
         JournalEntryModel: jeModel,
@@ -331,7 +316,7 @@ describe('fiscalLockPlugin', () => {
 
       const data = { state: 'posted' };
       await expect(
-        repo.emit('before:update', { id: 'abc', data }),
+        repo._emitHook('before:update', { id: 'abc', data }),
       ).rejects.toThrow('could not be resolved');
     });
   });

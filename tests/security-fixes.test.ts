@@ -27,12 +27,14 @@ import { closeFiscalPeriod, reopenFiscalPeriod } from '../src/reports/fiscal-clo
 import { fiscalLockPlugin } from '../src/plugins/fiscal-lock.plugin.js';
 import { wireAccountMethods } from '../src/repositories/account.repository.js';
 import { wireJournalEntryMethods } from '../src/repositories/journal-entry.repository.js';
+import { mockRepository } from './helpers/mock-repository.js';
 import { AccountingError } from '../src/utils/errors.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
   code: 'SEC', name: 'Security Test', defaultCurrency: 'TST',
+  retainedEarningsAccountCode: '3660',
   accountTypes: [
     { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
     { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
@@ -582,7 +584,7 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
     BulkAcct = mongoose.model('SecBulkAcct', createAccountSchema(config));
     await BulkAcct.createIndexes();
 
-    repo = { on() {} }; // Minimal mock repo
+    repo = mockRepository(); // Minimal mock repo
     wireAccountMethods(repo, BulkAcct, testPack);
   });
 
@@ -713,7 +715,7 @@ describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefull
       ],
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry);
 
     const result = await repo.seedAccounts('org-1');
@@ -740,7 +742,7 @@ describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefull
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry);
 
     await expect(repo.seedAccounts('org-1')).rejects.toThrow('Connection lost');
@@ -764,7 +766,7 @@ describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefull
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry);
 
     await repo.seedAccounts('org-1');
@@ -797,16 +799,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       save: vi.fn(),
     };
 
-    const mockModel = {
-      findOne: () => ({
-        populate: () => ({
-          session: () => Promise.resolve(mockEntry),
-        }),
-      }),
-    } as any;
-
-    const repo: any = { on: vi.fn() };
-    wireJournalEntryMethods(repo, mockModel, 'business');
+    const repo: any = mockRepository({ getByQuery: vi.fn().mockResolvedValue(mockEntry) });
+    wireJournalEntryMethods(repo, {} as any, 'business');
 
     await expect(repo.post('entry-1', org1)).rejects.toThrow(
       'reference accounts from another organization',
@@ -828,16 +822,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       save: vi.fn().mockResolvedValue(undefined),
     };
 
-    const mockModel = {
-      findOne: () => ({
-        populate: () => ({
-          session: () => Promise.resolve(mockEntry),
-        }),
-      }),
-    } as any;
-
-    const repo: any = { on: vi.fn() };
-    wireJournalEntryMethods(repo, mockModel, 'business');
+    const repo: any = mockRepository({ getByQuery: vi.fn().mockResolvedValue(mockEntry) });
+    wireJournalEntryMethods(repo, {} as any, 'business');
 
     const result = await repo.post('entry-1', org1);
     expect(result.state).toBe('posted');
@@ -856,16 +842,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       save: vi.fn(),
     };
 
-    const mockModel = {
-      findOne: () => ({
-        populate: () => ({
-          session: () => Promise.resolve(mockEntry),
-        }),
-      }),
-    } as any;
-
-    const repo: any = { on: vi.fn() };
-    wireJournalEntryMethods(repo, mockModel, 'business');
+    const repo: any = mockRepository({ getByQuery: vi.fn().mockResolvedValue(mockEntry) });
+    wireJournalEntryMethods(repo, {} as any, 'business');
 
     try {
       await repo.post('entry-1', org1);
@@ -890,16 +868,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       save: vi.fn(),
     };
 
-    const mockModel = {
-      findOne: () => ({
-        populate: () => ({
-          session: () => Promise.resolve(mockEntry),
-        }),
-      }),
-    } as any;
-
-    const repo: any = { on: vi.fn() };
-    wireJournalEntryMethods(repo, mockModel, 'business');
+    const repo: any = mockRepository({ getByQuery: vi.fn().mockResolvedValue(mockEntry) });
+    wireJournalEntryMethods(repo, {} as any, 'business');
 
     await expect(repo.post('entry-1', org1)).rejects.toThrow(
       '2 item(s) reference accounts from another organization',
@@ -917,16 +887,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       save: vi.fn().mockResolvedValue(undefined),
     };
 
-    const mockModel = {
-      findOne: () => ({
-        populate: () => ({
-          session: () => Promise.resolve(mockEntry),
-        }),
-      }),
-    } as any;
-
-    const repo: any = { on: vi.fn() };
-    wireJournalEntryMethods(repo, mockModel); // no orgField
+    const repo: any = mockRepository({ getByQuery: vi.fn().mockResolvedValue(mockEntry) });
+    wireJournalEntryMethods(repo, {} as any); // no orgField
 
     const result = await repo.post('entry-1');
     expect(result.state).toBe('posted');
@@ -950,7 +912,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry, 'business');
 
     await expect(repo.seedAccounts(undefined)).rejects.toThrow('organizationId is required');
@@ -971,7 +933,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getAccountType: () => null,
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry, 'business');
 
     await expect(
@@ -1003,7 +965,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry, 'business');
 
     const result = await repo.seedAccounts('org-123');
@@ -1026,7 +988,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getAccountType: (code: string) => ({ code, name: `Account ${code}` }),
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry, 'business');
 
     const result = await repo.bulkCreate([{ accountTypeCode: '1000' }], 'org-123');
@@ -1050,7 +1012,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry); // no orgField
 
     // Should not throw — single-tenant mode
@@ -1074,7 +1036,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getAccountType: (code: string) => ({ code, name: `Account ${code}` }),
     } as any;
 
-    const repo: any = { on: vi.fn() };
+    const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry); // no orgField
 
     const result = await repo.bulkCreate([{ accountTypeCode: '1000' }], undefined);

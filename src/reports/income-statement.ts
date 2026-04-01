@@ -108,17 +108,32 @@ export async function generateIncomeStatement(
     groups[groupName].total += netAmount;
   }
 
+  // Sort accounts within each group by account code (deterministic, like Odoo)
+  const sortGroups = (groups: Record<string, ReportGroup>) => {
+    const sorted = Object.values(groups);
+    for (const g of sorted) {
+      g.accounts.sort((a, b) => (a.code ?? '').localeCompare(b.code ?? '', undefined, { numeric: true }));
+    }
+    // Sort groups by the lowest account code in each group
+    sorted.sort((a, b) => {
+      const codeA = a.accounts[0]?.code ?? '';
+      const codeB = b.accounts[0]?.code ?? '';
+      return codeA.localeCompare(codeB, undefined, { numeric: true });
+    });
+    return sorted;
+  };
+
   const labels = country.reportLabels ?? {};
   const revenue: ReportCategory = {
     name: labels.revenue ?? 'Revenue',
     total: Object.values(revenueGroups).reduce((s, g) => s + g.total, 0),
-    groups: Object.values(revenueGroups),
+    groups: sortGroups(revenueGroups),
   };
 
   const expenses: ReportCategory = {
     name: labels.expenses ?? 'Expenses',
     total: Object.values(expenseGroups).reduce((s, g) => s + g.total, 0),
-    groups: Object.values(expenseGroups),
+    groups: sortGroups(expenseGroups),
   };
 
   // Calculate COGS — use pack-declared group code, fall back to common names

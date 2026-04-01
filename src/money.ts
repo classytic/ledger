@@ -33,7 +33,14 @@ export function round(amount: number): number {
 /** Convert a decimal dollar amount to integer cents: 10.50 → 1050 */
 export function fromDecimal(dollars: number, minorUnit = 2): number {
   const factor = 10 ** minorUnit;
-  return Math.round(dollars * factor);
+  const cents = Math.round(dollars * factor);
+  if (!Number.isSafeInteger(cents)) {
+    throw new Error(
+      `Amount ${dollars} exceeds safe integer limit when converted to minor units. ` +
+      `Max safe amount: ${Number.MAX_SAFE_INTEGER / factor}`,
+    );
+  }
+  return cents;
 }
 
 /** Convert integer cents to a decimal dollar amount: 1050 → 10.50 */

@@ -1,26 +1,15 @@
 # @classytic/ledger
 
-Production-grade double-entry accounting engine for MongoDB. Built on [@classytic/mongokit](../mongokit). Designed for multi-tenant SaaS, AI-powered finance, and global tax compliance.
+Embeddable double-entry accounting engine for MongoDB. Integer-cents arithmetic, plugin-based, country-agnostic.
 
-## Features
-
-- **Double-entry bookkeeping** with balance validation and posted-entry protection (optionally immutable via strictness config)
-- **Multi-tenant** isolation via configurable org field
-- **Country packs** for localized chart of accounts and tax codes
-- **Financial reports** — trial balance, balance sheet, income statement, general ledger, cash flow
-- **Fiscal period management** — close and reopen with automatic year-end entries, overlap protection
-- **CSV export** — QuickBooks-compatible and universal field maps
-- **Cents-based Money** arithmetic for precision
-- **Plugin system** — fiscal lock, double-entry validation, idempotency (via mongokit hooks)
-- **Dimension fields** — custom fields on journal items (departmentId, projectId, etc.) preserved through all workflows
-- **Dimension filters** — filter all reports by custom journal item fields
-- **Strictness controls** — configurable immutability, actor tracking, and approval requirements
-- **Subledger contracts** — typed interfaces for integrating billing, inventory, payroll, and other subledgers
+Build QuickBooks, Xero, or TaxCycle-grade apps — the engine handles the accounting, you handle the UX.
 
 ## Install
 
 ```bash
 npm install @classytic/ledger @classytic/mongokit mongoose
+npm install @classytic/ledger-ca  # Canada (GIFI, GST/HST, CRA)
+npm install @classytic/ledger-bd  # Bangladesh (BFRS, VAT/TDS, Mushak)
 ```
 
 ## Quick Start
@@ -28,80 +17,188 @@ npm install @classytic/ledger @classytic/mongokit mongoose
 ```typescript
 import { createAccountingEngine } from '@classytic/ledger';
 import { canadaPack } from '@classytic/ledger-ca';
-import mongoose from 'mongoose';
 
-// 1. Create engine
 const accounting = createAccountingEngine({
   country: canadaPack,
   currency: 'CAD',
-  multiTenant: { orgField: 'business', orgRef: 'Business' },
-  audit: { trackActor: true },
-  idempotency: true,
-  strictness: { immutable: true, requireActor: true },
+  multiTenant: { orgField: 'organization', orgRef: 'Organization' },
 });
 
-// 2. Create schemas & models
+// Schemas
 const Account = mongoose.model('Account', accounting.createAccountSchema());
-const JournalEntry = mongoose.model('JournalEntry', accounting.createJournalEntrySchema('Account', {
-  extraItemFields: {
-    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-  },
-}));
+const JournalEntry = mongoose.model('JournalEntry', accounting.createJournalEntrySchema('Account'));
 const FiscalPeriod = mongoose.model('FiscalPeriod', accounting.createFiscalPeriodSchema());
 
-// 3. Wire repositories (adds post, reverse, duplicate, unpost, seedAccounts, bulkCreate)
-import { createRepository } from '@classytic/mongokit';
-
-const journalRepo = accounting.createJournalEntryRepository(
-  createRepository,
-  { JournalEntryModel: JournalEntry, AccountModel: Account, FiscalPeriodModel: FiscalPeriod },
-);
-
-const accountRepo = createRepository(Account, []);
-accounting.wireAccountRepository(accountRepo, Account);
-
-// 4. Generate reports (with optional dimension filters)
+// Reports
 const reports = accounting.createReports({ Account, JournalEntry });
-const bs = await reports.balanceSheet({
-  organizationId: orgId,
-  dateOption: 'year',
-  dateValue: 2025,
-  filters: { 'journalItems.departmentId': deptId },
+const bs = await reports.balanceSheet({ organizationId, dateOption: 'year', dateValue: 2025 });
+```
+
+## Core Features
+
+**Accounting Engine**
+- Double-entry validation with balance enforcement
+- Integer-cents storage — zero floating-point drift
+- Draft → Posted → Reversed state machine
+- Configurable immutability (corrections only via reversal)
+- Multi-tenant isolation at every layer
+- Country packs for localized charts of accounts and tax codes
+
+**10 Reports**
+- Trial Balance (3-column: initial + period + ending)
+- Balance Sheet (with computed retained earnings)
+- Income Statement (revenue, COGS, gross profit, operating expenses, net income)
+- General Ledger (per-account with running balances)
+- Cash Flow (Operating / Investing / Financing)
+- Aged Receivable / Payable (configurable buckets: current, 30, 60, 90+)
+- Budget vs Actual (variance analysis)
+- Dimension Breakdown (by department, project, cost center)
+- Foreign Exchange Revaluation (unrealized gain/loss computation)
+- Fiscal Year Close / Reopen (automatic closing entries)
+
+**Plugins**
+- `doubleEntryPlugin` — validates debits = credits, account existence, tenant integrity
+- `fiscalLockPlugin` — prevents posting to closed fiscal periods
+- `dateLockPlugin` — blocks entries before a configurable lock date
+- `taxHookPlugin` — auto-generates tax lines via user-defined `TaxLineGenerator`
+- `idempotencyPlugin` — prevents duplicate entries by key
+
+**Utilities**
+- `Money` — cents arithmetic, tax splitting, allocation with zero-sum guarantee
+- `buildDimensionFields` — schema helpers for analytic dimensions
+- `suggestMatches` — reconciliation matching suggestions
+- `computeRevaluation` — FX gain/loss computation
+
+## Engine Configuration
+
+```typescript
+createAccountingEngine({
+  country: canadaPack,                    // required
+  currency: 'CAD',                        // required — base/functional currency
+  multiTenant: { orgField, orgRef },      // optional — multi-tenant scoping
+  multiCurrency: { enabled: true, currencies: ['USD', 'EUR'] },
+  fiscalYearStartMonth: 1,               // 1=Jan (default), 4=Apr, 7=Jul
+  retainedEarningsAccountCode: '3600',   // overrides country pack
+  audit: { trackActor: true },
+  idempotency: true,
+  strictness: {
+    immutable: true,      // disable unpost, corrections via reverse only
+    requireActor: true,   // actorId required on post/reverse
+    requireApproval: true // entries must be approved before posting
+  },
+});
+```
+
+## Reports API
+
+```typescript
+const reports = accounting.createReports({ Account, JournalEntry, Budget });
+
+// All reports accept: { organizationId, dateOption, dateValue, filters? }
+await reports.trialBalance({ ... });
+await reports.balanceSheet({ ... });
+await reports.incomeStatement({ ... });
+await reports.generalLedger({ ... });
+await reports.cashFlow({ ... });
+await reports.agedBalance({ type: 'receivable', asOfDate: new Date() });
+await reports.budgetVsActual({ ... });        // requires Budget model
+await reports.dimensionBreakdown({ dimension: 'departmentId', ... });
+await reports.revaluation({ rates: [{ currency: 'USD', rate: 1.40 }], ... });
+```
+
+All report data is sorted by account code. All monetary values are integer cents — use `Money.toDecimal()` at your API boundary.
+
+## Schemas
+
+```typescript
+accounting.createAccountSchema(options?)
+accounting.createJournalEntrySchema(accountModelName, {
+  extraItemFields: { departmentId: { type: ObjectId, ref: 'Department' } },
+})
+accounting.createFiscalPeriodSchema(options?)
+accounting.createBudgetSchema(options?)
+accounting.createReconciliationSchema(accountModelName, journalEntryModelName, options?)
+```
+
+## Plugins
+
+```typescript
+import { dateLockPlugin, taxHookPlugin } from '@classytic/ledger';
+
+// Date lock — block posting before a date
+dateLockPlugin({
+  getLockDate: async (orgId) => db.getOrgLockDate(orgId),
+  JournalEntryModel,
+});
+
+// Tax hook — auto-generate tax lines
+taxHookPlugin({
+  generator: {
+    generateTaxLines(input) {
+      if (!input.taxCode) return [];
+      const tax = Money.percentage(input.amount, 1300); // 13%
+      return [{ account: hstAccountId, debit: 0, credit: tax, taxDetails: [{ taxCode: 'HST' }] }];
+    },
+  },
 });
 ```
 
 ## Subpath Exports
 
-| Import path | Contents |
-|---|---|
-| `@classytic/ledger` | Engine, Money, schemas, plugins, reports, repositories, constants, types |
-| `@classytic/ledger/money` | `Money` class (cents-based arithmetic) |
-| `@classytic/ledger/schemas` | `createAccountSchema`, `createJournalEntrySchema`, `createFiscalPeriodSchema` |
-| `@classytic/ledger/reports` | Report generators (trial balance, balance sheet, etc.) |
-| `@classytic/ledger/plugins` | `doubleEntryPlugin`, `fiscalLockPlugin`, `idempotencyPlugin` |
-| `@classytic/ledger/repositories` | `wireJournalEntryMethods`, `wireAccountMethods` |
-| `@classytic/ledger/exports` | CSV export: `exportToCsv`, `flattenJournalEntries`, field maps |
-| `@classytic/ledger/constants` | Categories, journal types, currencies |
+| Path | Contents |
+|------|----------|
+| `@classytic/ledger` | Engine, Money, all schemas, plugins, reports, types |
+| `@classytic/ledger/money` | `Money` class |
+| `@classytic/ledger/schemas` | Schema factories |
+| `@classytic/ledger/reports` | Report generators |
+| `@classytic/ledger/plugins` | All plugins |
+| `@classytic/ledger/repositories` | Repository wiring |
+| `@classytic/ledger/exports` | CSV export + QuickBooks field maps |
 | `@classytic/ledger/country` | `defineCountryPack`, `CountryPack` interface |
+| `@classytic/ledger/constants` | Categories, journal types, currencies |
 
-## Documentation
+## Country Packs
 
-- [Engine & Configuration](docs/engine.md)
-- [Schemas](docs/schemas.md)
-- [Repositories](docs/repositories.md)
-- [Reports](docs/reports.md)
-- [Plugins](docs/plugins.md)
-- [Exports](docs/exports.md)
-- [Country Packs](docs/country-packs.md)
-- [Money](docs/money.md)
-- [Subledger Integration](docs/subledger-integration.md)
+Build your own or use an existing one:
+
+```typescript
+import { defineCountryPack } from '@classytic/ledger';
+
+export const myPack = defineCountryPack({
+  code: 'US',
+  name: 'United States',
+  defaultCurrency: 'USD',
+  retainedEarningsAccountCode: '3200',
+  accountTypes: [ /* your chart of accounts */ ],
+  taxCodes: { /* your tax codes */ },
+  taxCodesByRegion: {},
+  regions: [],
+});
+```
+
+Available packs: `@classytic/ledger-ca` (Canada), `@classytic/ledger-bd` (Bangladesh).
+
+## Testing
+
+949 tests covering unit, integration, and end-to-end scenarios:
+
+```bash
+npm test                    # run all
+npx vitest run tests/e2e/   # e2e scenarios only
+```
+
+E2E suites include:
+- Canadian small business full-year lifecycle
+- Multi-currency trading with FX revaluation
+- All plugins + dimensions + budgets + fiscal close
+- O-Level / A-Level / university textbook accounting problems
 
 ## Requirements
 
 - Node.js >= 22
 - MongoDB (replica set recommended for transactions)
 - Mongoose >= 9
-- @classytic/mongokit >= 3.3.2
+- @classytic/mongokit >= 3
 
 ## License
 

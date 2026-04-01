@@ -7,9 +7,17 @@
  */
 
 import type { Model, ClientSession } from 'mongoose';
+import type { Repository, RepositoryContext } from '@classytic/mongokit';
 import type { CountryPack } from '../country/index.js';
+import type { AccountRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+
+interface MongoBulkWriteError extends Error {
+  code?: number;
+  writeErrors?: unknown[];
+  insertedDocs?: Array<Record<string, unknown>>;
+}
 
 interface SeedOptions {
   session?: ClientSession | null;
@@ -24,17 +32,15 @@ interface SeedOptions {
  * @param country - The CountryPack for account type lookups
  * @param orgField - The multi-tenant field name (e.g. 'business')
  */
-export function wireAccountMethods(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  repository: any,
+export function wireAccountMethods<TDoc = unknown>(
+  repository: Repository<TDoc>,
   AccountModel: Model<unknown>,
   country: CountryPack,
   orgField?: string,
-): void {
+): AccountRepository<TDoc> {
   // Validate posting accounts on create
-  repository.on('before:create', (ctx: Record<string, unknown>) => {
-    const data = ctx.data as Record<string, unknown> | undefined;
-    const code = data?.accountTypeCode as string | undefined;
+  repository.on('before:create', (ctx: RepositoryContext) => {
+    const code = ctx.data?.accountTypeCode as string | undefined;
     if (code && !country.isPostingAccount(code)) {
       throw Errors.validation(
         `Cannot create account with type "${code}" — it is a structural group or calculated total, not a posting account.`,
@@ -77,8 +83,7 @@ export function wireAccountMethods(
       });
       return { created: inserted.length, skipped: existingNumbers.size };
     } catch (err: unknown) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const bulkError = err as any;
+      const bulkError = err as MongoBulkWriteError;
       if (bulkError.code === 11000 || bulkError.writeErrors) {
         // Partial success: some docs inserted, some hit dup-key from concurrent caller
         const insertedDocs = bulkError.insertedDocs ?? [];
@@ -130,13 +135,13 @@ export function wireAccountMethods(
         results.errors.push({
           index: i,
           accountTypeCode,
-          reason: `Not a posting account (${(at as unknown as Record<string, unknown>).isGroup ? 'group' : 'total'})`,
+          reason: `Not a posting account (${at.isGroup ? 'group' : 'total'})`,
         });
         continue;
       }
 
       const resolvedNumber = accountNumber ?? accountTypeCode;
-      const resolvedName = name ?? (at as unknown as Record<string, unknown>).name as string ?? accountTypeCode;
+      const resolvedName = name ?? at.name ?? accountTypeCode;
       validAccounts.push({ index: i, accountTypeCode, accountNumber: resolvedNumber, name: resolvedName, active: Boolean(active), isCashAccount: Boolean(isCashAccount) });
     }
 
@@ -190,8 +195,7 @@ export function wireAccountMethods(
           _id: (inserted[idx] as unknown as Record<string, unknown>)._id,
         }));
       } catch (err: unknown) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const bulkError = err as any;
+        const bulkError = err as MongoBulkWriteError;
         if (bulkError.code === 11000 || bulkError.writeErrors) {
           // Partial success: some docs inserted, some hit dup-key from concurrent caller
           const insertedDocs = bulkError.insertedDocs ?? [];
@@ -233,4 +237,20 @@ export function wireAccountMethods(
       ...results,
     };
   };
+
+  // Register methods for discoverability (mongokit 3.4+)
+  if (typeof repository.registerMethod === 'function') {
+    for (const name of ['seedAccounts', 'bulkCreate'] as const) {
+      const fn = repository[name] as (...args: unknown[]) => unknown;
+      try {
+        delete repository[name];
+        repository.registerMethod(name, fn);
+      } catch {
+        repository[name] = fn;
+      }
+    }
+  }
+
+  // Methods are wired dynamically above — safe cast
+  return repository as unknown as AccountRepository<TDoc>;
 }

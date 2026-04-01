@@ -4,7 +4,7 @@
  * Tests scenarios NOT covered by the existing reports.test.ts:
  *   1. Different fiscal year start months (Apr-Mar, Jul-Jun, Oct-Sep)
  *   2. Multi-year retained earnings carryforward
- *   3. currentYearEarningsCode vs retainedEarningsCode on balance sheet
+ *   3. currentYearEarningsCode vs retainedEarningsAccountCode on balance sheet
  *   4. Fiscal periods spanning calendar year boundary
  *   5. 3+ period cascade reopening
  *   6. Posting to open period while adjacent period is closed
@@ -28,6 +28,8 @@ import { generateTrialBalance } from '../../src/reports/trial-balance.js';
 
 const testPack = defineCountryPack({
   code: 'FY', name: 'Fiscal Year Test', defaultCurrency: 'TST',
+  retainedEarningsAccountCode: '3660',
+  currentYearEarningsCode: '3680',
   accountTypes: [
     { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null },
     { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null },
@@ -285,9 +287,9 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
   });
 });
 
-// ── 2. Balance Sheet displays retainedEarningsCode and currentYearEarningsCode ──
+// ── 2. Balance Sheet displays retainedEarningsDisplayCode and currentYearEarningsCode ──
 
-describe('retainedEarningsCode and currentYearEarningsCode on Balance Sheet', () => {
+describe('retainedEarningsAccountCode and currentYearEarningsCode on Balance Sheet', () => {
   it('displays custom codes for retained earnings line items', async () => {
     await postEntry('2024-01-01', [
       { account: cashId, debit: 1000000, credit: 0 },
@@ -309,7 +311,7 @@ describe('retainedEarningsCode and currentYearEarningsCode on Balance Sheet', ()
     const report = await generateBalanceSheet(
       {
         AccountModel, JournalEntryModel: JEModel, country: testPack,
-        retainedEarningsCode: '3660',
+        retainedEarningsDisplayCode: '3660',
         currentYearEarningsCode: '3680',
       },
       { dateOption: 'month', dateValue: '2025-06' },
@@ -449,22 +451,21 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
     // Current year = FY2025 IS activity = 50k
     expect(currentNI.balance).toBe(50000);
 
-    // Prior retained earnings is calculated from IS account activity before the fiscal year start.
-    // Since the closing entries DEBIT the IS accounts (zeroing them out) and CREDIT the retained
-    // earnings BS account, the net IS activity before fiscal year = 0.
-    // The 300k accumulated retained earnings shows up in the retained earnings BS account
-    // balance directly (as a Balance Sheet account), not in this calculated line.
-    expect(priorRE.balance).toBe(0);
+    // Prior retained earnings = RE account balance (300k from closing entries)
+    // + unclosed prior P&L (0, because closings zeroed IS accounts).
+    // The RE account (3660) is excluded from normal equity grouping and folded here.
+    expect(priorRE.balance).toBe(300000);
 
-    // The retained earnings BS account should hold the 300k from closing entries
-    const retainedEarningsGroup = report.equity.groups.find(g =>
+    // The RE account should NOT appear separately in any equity group
+    const retainedInEquity = report.equity.groups.find(g =>
       g.accounts.some(a => String(a.id) === String(retainedId)),
     );
-    expect(retainedEarningsGroup).toBeDefined();
-    const retainedAcct = retainedEarningsGroup!.accounts.find(
+    // It should only appear in the computed "Retained Earnings" group (id = 'prior-retained')
+    // not as a standalone account with its actual DB id
+    const standaloneRetained = retainedInEquity?.accounts.find(
       a => String(a.id) === String(retainedId),
     );
-    expect(retainedAcct!.balance).toBe(300000);
+    expect(standaloneRetained).toBeUndefined();
   });
 });
 

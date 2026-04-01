@@ -19,3 +19,35 @@ export type { CashFlowOptions } from './cash-flow.js';
 
 export { closeFiscalPeriod, reopenFiscalPeriod } from './fiscal-close.js';
 export type { FiscalCloseOptions, FiscalCloseResult, FiscalReopenResult } from './fiscal-close.js';
+
+export { generateDimensionBreakdown } from './dimension-breakdown.js';
+export type {
+  DimensionBreakdownOptions,
+  DimensionBreakdownParams,
+  DimensionBreakdownRow,
+  DimensionBreakdownReport,
+} from './dimension-breakdown.js';
+
+export { generateAgedBalance, DEFAULT_BUCKETS } from './aged-balance.js';
+export type {
+  AgedBalanceOptions,
+  AgedBalanceParams,
+  AgedBalanceRow,
+  AgedBalanceReport,
+  AgedBucketConfig,
+} from './aged-balance.js';
+
+export { generateBudgetVsActual } from './budget-vs-actual.js';
+export type {
+  BudgetVsActualOptions,
+  BudgetVsActualParams,
+  BudgetVsActualRow,
+  BudgetVsActualReport,
+} from './budget-vs-actual.js';
+
+export { generateRevaluation } from './revaluation.js';
+export type {
+  RevaluationOptions,
+  RevaluationParams,
+  RevaluationReport,
+} from './revaluation.js';

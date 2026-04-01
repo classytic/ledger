@@ -78,9 +78,23 @@ export interface CountryPack {
 
   // ── Country-specific report defaults ──
 
-  /** Account code for prior retained earnings (e.g. '3660' CA, '3200' US) */
-  readonly retainedEarningsCode?: string;
-  /** Account code for current year net income (e.g. '3680' CA, '3210' US) */
+  /**
+   * The retained earnings account code — the account that holds accumulated
+   * retained earnings (e.g. '3600' CA, '3310' BD).
+   *
+   * On the balance sheet, this account is excluded from normal equity grouping
+   * and its balance is folded into the computed "Retained Earnings" section
+   * (opening RE = RE account balance + prior-year unclosed P&L).
+   *
+   * Inspired by Odoo's `equity_unaffected` account type.
+   */
+  readonly retainedEarningsAccountCode?: string;
+  /**
+   * Display code for the "Previous Years Retained Earnings" line on the
+   * balance sheet (e.g. '3660' for CA GIFI). Defaults to retainedEarningsAccountCode.
+   */
+  readonly retainedEarningsDisplayCode?: string;
+  /** Display code for current year net income line (e.g. '3680' CA, '3311' BD) */
   readonly currentYearEarningsCode?: string;
   /** Group label code used to identify Cost of Sales in the income statement */
   readonly cogsGroupCode?: string;
@@ -125,7 +139,8 @@ export interface CountryPackInput {
   taxCodesByRegion: TaxCodesByRegion;
   regions: readonly string[];
   taxReport?: TaxReportTemplate;
-  retainedEarningsCode?: string;
+  retainedEarningsAccountCode?: string;
+  retainedEarningsDisplayCode?: string;
   currentYearEarningsCode?: string;
   cogsGroupCode?: string;
   reportLabels?: {
