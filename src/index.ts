@@ -28,6 +28,14 @@
 // ── Engine ─────────────────────────────────────────────────────────────────
 
 export { AccountingEngine, createAccountingEngine } from './engine.js';
+export type { LedgerModels, ResolvedModelNames } from './models/factory.js';
+export { createModels, resolveModelNames } from './models/factory.js';
+export type {
+  LedgerPaginationConfig,
+  LedgerRepositories,
+  LedgerRepositoryPlugins,
+} from './repositories/factory.js';
+export { createRepositories } from './repositories/factory.js';
 
 // ── Money ──────────────────────────────────────────────────────────────────
 
@@ -207,6 +215,7 @@ export type {
   JournalType,
   LedgerEntry,
   MainType,
+  ModelNames,
   MultiCurrencyConfig,
   MultiTenantConfig,
   NormalBalance,

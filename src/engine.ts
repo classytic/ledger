@@ -1,30 +1,34 @@
 /**
  * AccountingEngine — The main entry point for @classytic/ledger.
  *
- * Usage:
- *   const accounting = createAccountingEngine({
- *     country: canadaPack,
- *     currency: 'CAD',
- *     multiTenant: { orgField: 'business', orgRef: 'Business' },
- *   });
+ * **Recommended usage (engine owns models):**
+ * ```typescript
+ * import mongoose from 'mongoose';
+ * import { createAccountingEngine } from '@classytic/ledger';
+ * import { canadaPack } from '@classytic/ledger-ca';
  *
- *   const AccountSchema = accounting.createAccountSchema();
- *   const JournalEntrySchema = accounting.createJournalEntrySchema('Account');
- *   const FiscalPeriodSchema = accounting.createFiscalPeriodSchema();
+ * const engine = createAccountingEngine({
+ *   mongoose: mongoose.connection,
+ *   country: canadaPack,
+ *   currency: 'CAD',
+ *   multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+ * });
  *
- *   // Register models
- *   const Account = mongoose.model('Account', AccountSchema);
- *   const JournalEntry = mongoose.model('JournalEntry', JournalEntrySchema);
- *   const FiscalPeriod = mongoose.model('FiscalPeriod', FiscalPeriodSchema);
+ * // Models and repositories are auto-created — no manual wiring
+ * const account = await engine.repositories.accounts.seedAccounts(orgId);
+ * const entry = await engine.repositories.journalEntries.post(entryId, orgId);
+ * const bs = await engine.reports.balanceSheet({ dateOption: 'year', dateValue: 2025, organizationId: orgId });
+ * ```
  *
- *   // Reports
- *   const reports = accounting.createReports({ Account, JournalEntry });
- *   const bs = await reports.balanceSheet({ dateOption: 'year', dateValue: 2025, organizationId: '...' });
+ * **Low-level usage (manual schema/model setup):**
+ * If you need custom model names or don't want the engine to own models,
+ * omit `mongoose` from config and use `engine.createAccountSchema()` etc.
  */
 
 import type { PluginType, Repository } from '@classytic/mongokit';
 import type { Model } from 'mongoose';
 import type { CountryPack } from './country/index.js';
+import { createModels, type LedgerModels } from './models/factory.js';
 import { Money } from './money.js';
 import { doubleEntryPlugin } from './plugins/double-entry.plugin.js';
 import { fiscalLockPlugin } from './plugins/fiscal-lock.plugin.js';
@@ -39,6 +43,12 @@ import { generateIncomeStatement } from './reports/income-statement.js';
 import { generateRevaluation } from './reports/revaluation.js';
 import { generateTrialBalance } from './reports/trial-balance.js';
 import { wireAccountMethods } from './repositories/account.repository.js';
+import {
+  createRepositories,
+  type LedgerPaginationConfig,
+  type LedgerRepositories,
+  type LedgerRepositoryPlugins,
+} from './repositories/factory.js';
 import { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
 import { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
 import { createAccountSchema } from './schemas/account.schema.js';
@@ -63,10 +73,78 @@ export class AccountingEngine {
   readonly currency: string;
   readonly money = Money;
 
-  constructor(config: AccountingEngineConfig) {
+  private _models?: LedgerModels;
+  private _repositories?: LedgerRepositories;
+  private _reports?: ReturnType<AccountingEngine['_buildReports']>;
+
+  constructor(
+    config: AccountingEngineConfig,
+    plugins: LedgerRepositoryPlugins = {},
+    pagination: LedgerPaginationConfig = {},
+  ) {
     this.config = config;
     this.country = config.country;
     this.currency = config.currency;
+
+    // Eagerly build models + repositories if mongoose connection is provided.
+    // Matches the flow/promo pattern: engine owns models, consumers use them.
+    if (config.mongoose) {
+      this._models = createModels(config.mongoose, config);
+      this._repositories = createRepositories(this._models, config, plugins, pagination);
+    }
+  }
+
+  /**
+   * Auto-created Mongoose models. Requires `mongoose` in config.
+   *
+   * @throws if `mongoose` was not provided in config
+   */
+  get models(): LedgerModels {
+    if (!this._models) {
+      throw new Error(
+        'engine.models requires a Mongoose connection. ' +
+          'Pass `mongoose: connection` in createAccountingEngine config.',
+      );
+    }
+    return this._models;
+  }
+
+  /**
+   * Auto-wired repositories with plugins + domain methods (post, reverse, etc.).
+   * Requires `mongoose` in config.
+   *
+   * @throws if `mongoose` was not provided in config
+   */
+  get repositories(): LedgerRepositories {
+    if (!this._repositories) {
+      throw new Error(
+        'engine.repositories requires a Mongoose connection. ' +
+          'Pass `mongoose: connection` in createAccountingEngine config.',
+      );
+    }
+    return this._repositories;
+  }
+
+  /**
+   * Pre-built reports bound to auto-created models. Requires `mongoose` in config.
+   * For custom models, use `engine.createReports({ Account, JournalEntry, Budget })`.
+   */
+  get reports() {
+    if (!this._reports) {
+      if (!this._models) {
+        throw new Error(
+          'engine.reports requires a Mongoose connection. ' +
+            'Pass `mongoose: connection` in createAccountingEngine config, ' +
+            'or use engine.createReports({ Account, JournalEntry }) for manual models.',
+        );
+      }
+      this._reports = this._buildReports({
+        Account: this._models.Account,
+        JournalEntry: this._models.JournalEntry,
+        Budget: this._models.Budget,
+      });
+    }
+    return this._reports;
   }
 
   // ── Schema Factories ───────────────────────────────────────────────────────
@@ -102,7 +180,20 @@ export class AccountingEngine {
 
   // ── Report Engine ──────────────────────────────────────────────────────────
 
+  /**
+   * Build a reports object bound to the given models. Use this when you
+   * need custom/external models. Prefer `engine.reports` when the engine
+   * owns the models (via `mongoose` in config).
+   */
   createReports(models: {
+    Account: Model<unknown>;
+    JournalEntry: Model<unknown>;
+    Budget?: Model<unknown>;
+  }) {
+    return this._buildReports(models);
+  }
+
+  private _buildReports(models: {
     Account: Model<unknown>;
     JournalEntry: Model<unknown>;
     Budget?: Model<unknown>;
@@ -366,6 +457,10 @@ export class AccountingEngine {
 
 // ── Factory ────────────────────────────────────────────────────────────────
 
-export function createAccountingEngine(config: AccountingEngineConfig): AccountingEngine {
-  return new AccountingEngine(config);
+export function createAccountingEngine(
+  config: AccountingEngineConfig,
+  plugins: LedgerRepositoryPlugins = {},
+  pagination: LedgerPaginationConfig = {},
+): AccountingEngine {
+  return new AccountingEngine(config, plugins, pagination);
 }

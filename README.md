@@ -15,30 +15,49 @@ npm install @classytic/ledger-bd  # Bangladesh (BFRS, VAT/TDS, Mushak)
 ## Quick Start
 
 ```typescript
-import { createAccountingEngine, registerJournalType } from '@classytic/ledger';
+import mongoose from 'mongoose';
+import { createAccountingEngine } from '@classytic/ledger';
 import { canadaPack } from '@classytic/ledger-ca';
 
-// Register custom journal types BEFORE schema creation
-registerJournalType('POS_SALES', {
-  code: 'POS_SALES',
-  name: 'POS Sales Journal',
-  description: 'Daily aggregated point-of-sale transactions',
-});
-
-const accounting = createAccountingEngine({
+// The engine owns the models — matches flow/promo pattern
+const engine = createAccountingEngine({
+  mongoose: mongoose.connection,
   country: canadaPack,
   currency: 'CAD',
-  multiTenant: { orgField: 'organization', orgRef: 'Organization' },
+  multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
 });
 
-// Schemas (freezes the journal type registry)
-const Account = mongoose.model('Account', accounting.createAccountSchema());
-const JournalEntry = mongoose.model('JournalEntry', accounting.createJournalEntrySchema('Account'));
-const FiscalPeriod = mongoose.model('FiscalPeriod', accounting.createFiscalPeriodSchema());
+// Models, repositories, and reports are auto-created
+await engine.repositories.accounts.seedAccounts(orgId);
+const entry = await engine.repositories.journalEntries.post(entryId, orgId);
+const bs = await engine.reports.balanceSheet({ organizationId: orgId, dateOption: 'year', dateValue: 2025 });
+```
 
-// Reports
-const reports = accounting.createReports({ Account, JournalEntry });
-const bs = await reports.balanceSheet({ organizationId, dateOption: 'year', dateValue: 2025 });
+### Engine-owned models (recommended)
+
+Pass `mongoose: connection` in config and the engine creates and wires everything:
+
+| Property | What it gives you |
+|----------|-------------------|
+| `engine.models.Account` / `JournalEntry` / `FiscalPeriod` / `Budget` / `Reconciliation` | Mongoose models, ready to query |
+| `engine.repositories.accounts.seedAccounts()` / `bulkCreate()` | Account repo with domain methods |
+| `engine.repositories.journalEntries.post()` / `reverse()` / `unpost()` / `duplicate()` | JE repo with plugins pre-wired (double-entry, fiscal-lock, idempotency) |
+| `engine.repositories.fiscalPeriods` / `budgets` | Plain CRUD repos |
+| `engine.repositories.reconciliations.reconcile()` / `unreconcile()` / `getUnreconciled()` | Reconciliation repo with domain methods |
+| `engine.reports.trialBalance()` / `balanceSheet()` / etc. | All 10 reports, bound to the owned models |
+
+This pattern unblocks framework auto-discovery (Arc `loadResources`, Fastify plugins, etc.) because resources can be defined at module top-level without factory wrappers.
+
+### Low-level (manual schema/model setup)
+
+If you need custom naming or don't want the engine to own models, omit `mongoose` from config:
+
+```typescript
+const engine = createAccountingEngine({ country: canadaPack, currency: 'CAD' });
+const Account = mongoose.model('GLAccount', engine.createAccountSchema());
+const JournalEntry = mongoose.model('GLEntry', engine.createJournalEntrySchema('GLAccount'));
+const accountRepo = engine.wireAccountRepository(new Repository(Account), Account);
+const reports = engine.createReports({ Account, JournalEntry });
 ```
 
 ## Core Features
