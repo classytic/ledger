@@ -1,6 +1,6 @@
 # @classytic/ledger
 
-Embeddable double-entry accounting engine for MongoDB. Integer-cents arithmetic, plugin-based, country-agnostic.
+Embeddable double-entry accounting engine for MongoDB. Integer-cents arithmetic, plugin-based, country-agnostic. Extensible journal types, multi-tenant isolation at every layer.
 
 Build QuickBooks, Xero, or TaxCycle-grade apps — the engine handles the accounting, you handle the UX.
 
@@ -15,8 +15,15 @@ npm install @classytic/ledger-bd  # Bangladesh (BFRS, VAT/TDS, Mushak)
 ## Quick Start
 
 ```typescript
-import { createAccountingEngine } from '@classytic/ledger';
+import { createAccountingEngine, registerJournalType } from '@classytic/ledger';
 import { canadaPack } from '@classytic/ledger-ca';
+
+// Register custom journal types BEFORE schema creation
+registerJournalType('POS_SALES', {
+  code: 'POS_SALES',
+  name: 'POS Sales Journal',
+  description: 'Daily aggregated point-of-sale transactions',
+});
 
 const accounting = createAccountingEngine({
   country: canadaPack,
@@ -24,7 +31,7 @@ const accounting = createAccountingEngine({
   multiTenant: { orgField: 'organization', orgRef: 'Organization' },
 });
 
-// Schemas
+// Schemas (freezes the journal type registry)
 const Account = mongoose.model('Account', accounting.createAccountSchema());
 const JournalEntry = mongoose.model('JournalEntry', accounting.createJournalEntrySchema('Account'));
 const FiscalPeriod = mongoose.model('FiscalPeriod', accounting.createFiscalPeriodSchema());
@@ -41,8 +48,9 @@ const bs = await reports.balanceSheet({ organizationId, dateOption: 'year', date
 - Integer-cents storage — zero floating-point drift
 - Draft → Posted → Reversed state machine
 - Configurable immutability (corrections only via reversal)
-- Multi-tenant isolation at every layer
+- Multi-tenant isolation at every layer (reports, schemas, repositories)
 - Country packs for localized charts of accounts and tax codes
+- Extensible journal type registry — add domain-specific types (POS, E-Commerce, Payroll) at startup
 
 **10 Reports**
 - Trial Balance (3-column: initial + period + ending)
@@ -155,7 +163,36 @@ taxHookPlugin({
 | `@classytic/ledger/repositories` | Repository wiring |
 | `@classytic/ledger/exports` | CSV export + QuickBooks field maps |
 | `@classytic/ledger/country` | `defineCountryPack`, `CountryPack` interface |
-| `@classytic/ledger/constants` | Categories, journal types, currencies |
+| `@classytic/ledger/constants` | Categories, journal types (+ registry), currencies |
+
+## Extensible Journal Types
+
+The 15 built-in journal types (SALES, PURCHASES, GENERAL, PAYROLL, etc.) cover standard accounting. For domain-specific needs, register custom types **before** schema creation:
+
+```typescript
+import { registerJournalType, getJournalTypeCodes, isValidJournalType } from '@classytic/ledger';
+
+// Register at startup, before createJournalEntrySchema()
+registerJournalType('POS_SALES', {
+  code: 'POS_SALES',
+  name: 'POS Sales Journal',
+  description: 'Daily aggregated point-of-sale transactions',
+});
+
+registerJournalType('ECOM_SALES', {
+  code: 'ECOM_SALES',
+  name: 'E-Commerce Sales Journal',
+  description: 'Per-order online transactions',
+});
+
+// Custom types pass Mongoose enum validation, appear in all lookups
+isValidJournalType('POS_SALES');  // true
+getJournalTypeCodes();            // [...15 built-in, 'POS_SALES', 'ECOM_SALES']
+
+// Reference numbers use the custom type prefix: POS_SALES/2025/03/0001
+```
+
+The registry freezes when `createJournalEntrySchema()` is called. Late registration throws. Built-in types cannot be overridden.
 
 ## Country Packs
 
@@ -180,25 +217,31 @@ Available packs: `@classytic/ledger-ca` (Canada), `@classytic/ledger-bd` (Bangla
 
 ## Testing
 
-949 tests covering unit, integration, and end-to-end scenarios:
-
 ```bash
-npm test                    # run all
-npx vitest run tests/e2e/   # e2e scenarios only
+npm test                           # run all
+npx vitest run tests/e2e/          # e2e scenarios only
+npx vitest run tests/scenarios/    # integration scenarios
+npx vitest run tests/hardening/    # edge cases & invariants
 ```
 
-E2E suites include:
+Test suites cover:
 - Canadian small business full-year lifecycle
 - Multi-currency trading with FX revaluation
-- All plugins + dimensions + budgets + fiscal close
+- Multi-tenant report isolation (org A cannot see org B)
+- Posting pipeline → Trial Balance → Income Statement → Balance Sheet
+- Reversal & correction workflows with audit trail
+- Custom journal type registry → schema → posting pipeline
+- Double-entry conservation law (debit = credit across all entries)
+- Money arithmetic hardening (overflow, penny-leak, float traps)
+- Public API surface & subpath export verification
 - O-Level / A-Level / university textbook accounting problems
 
 ## Requirements
 
 - Node.js >= 22
 - MongoDB (replica set recommended for transactions)
-- Mongoose >= 9
-- @classytic/mongokit >= 3
+- Mongoose >= 9.4.1
+- @classytic/mongokit >= 3.5.3
 
 ## License
 
