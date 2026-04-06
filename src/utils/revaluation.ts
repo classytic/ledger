@@ -65,7 +65,7 @@ export function computeRevaluation(
   rates: RevaluationRate[],
   baseCurrency: string,
 ): RevaluationResult[] {
-  const rateMap = new Map(rates.map(r => [r.currency, r.rate]));
+  const rateMap = new Map(rates.map((r) => [r.currency, r.rate]));
   const results: RevaluationResult[] = [];
 
   for (const acct of accounts) {
@@ -112,12 +112,26 @@ export function buildRevaluationEntry(
   unrealizedGainLossAccountId: unknown,
   date: Date,
 ): {
-  journalItems: Array<{ account: unknown; debit: number; credit: number; label: string; originalDebit: number; originalCredit: number }>;
+  journalItems: Array<{
+    account: unknown;
+    debit: number;
+    credit: number;
+    label: string;
+    originalDebit: number;
+    originalCredit: number;
+  }>;
   totalDebit: number;
   totalCredit: number;
   label: string;
 } {
-  const journalItems: Array<{ account: unknown; debit: number; credit: number; label: string; originalDebit: number; originalCredit: number }> = [];
+  const journalItems: Array<{
+    account: unknown;
+    debit: number;
+    credit: number;
+    label: string;
+    originalDebit: number;
+    originalCredit: number;
+  }> = [];
   let totalDebit = 0;
   let totalCredit = 0;
 

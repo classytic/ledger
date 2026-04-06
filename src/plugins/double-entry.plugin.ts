@@ -7,8 +7,8 @@
  * Plugs into the before:create and before:update hooks.
  */
 
-import type { Model, ClientSession } from 'mongoose';
-import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
+import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
+import type { ClientSession, Model } from 'mongoose';
 import { Errors } from '../utils/errors.js';
 
 export interface DoubleEntryPluginOptions {
@@ -52,7 +52,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
     if (totalDebit !== totalCredit) {
       throw Errors.validation(
         `Double-entry violation: debits (${totalDebit}) ≠ credits (${totalCredit}). ` +
-        `Difference: ${Math.abs(totalDebit - totalCredit)}`,
+          `Difference: ${Math.abs(totalDebit - totalCredit)}`,
       );
     }
 
@@ -71,7 +71,9 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         // Skip draft entries if configured
         if (onlyOnPost && data.state !== 'posted') return;
 
-        const items = data.journalItems as Array<{ debit?: number; credit?: number; account?: unknown }> | undefined;
+        const items = data.journalItems as
+          | Array<{ debit?: number; credit?: number; account?: unknown }>
+          | undefined;
 
         // Posted entries must have at least 2 journal items
         if (data.state === 'posted' && (!items || items.length < 2)) {
@@ -89,7 +91,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
           if (!AccountModel) {
             throw new Error(
               'doubleEntryPlugin: AccountModel is required to validate posted entries. ' +
-              'Pass AccountModel in plugin options to enable account existence and tenant integrity checks.',
+                'Pass AccountModel in plugin options to enable account existence and tenant integrity checks.',
             );
           }
           await validateAccounts(items, data, context);
@@ -102,33 +104,29 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         data: Record<string, unknown>,
         context: RepositoryContext,
       ) => {
-        const accountIds = items
-          .map(i => i.account)
-          .filter(a => a != null && a !== '');
+        const accountIds = items.map((i) => i.account).filter((a) => a != null && a !== '');
 
         if (accountIds.length === 0) {
           throw Errors.validation('Posted entry has items with missing accounts.');
         }
 
         const selectFields = orgField ? `_id ${orgField}` : '_id';
-        const accounts = await AccountModel!.find({ _id: { $in: accountIds } })
+        const accounts = (await AccountModel?.find({ _id: { $in: accountIds } })
           .select(selectFields)
           .session((context.session as ClientSession) ?? null)
-          .lean() as Array<Record<string, unknown>>;
+          .lean()) as Array<Record<string, unknown>>;
 
         // Check all accounts exist
-        const foundIds = new Set(accounts.map(a => String(a._id)));
-        const missingCount = accountIds.filter(id => !foundIds.has(String(id))).length;
+        const foundIds = new Set(accounts.map((a) => String(a._id)));
+        const missingCount = accountIds.filter((id) => !foundIds.has(String(id))).length;
         if (missingCount > 0) {
-          throw Errors.validation(
-            `${missingCount} item(s) reference non-existent accounts.`,
-          );
+          throw Errors.validation(`${missingCount} item(s) reference non-existent accounts.`);
         }
 
         // Check tenant scoping
         if (orgField && data[orgField] != null) {
           const dataOrg = String(data[orgField]);
-          const crossTenant = accounts.filter(a => String(a[orgField]) !== dataOrg);
+          const crossTenant = accounts.filter((a) => String(a[orgField]) !== dataOrg);
           if (crossTenant.length > 0) {
             throw Errors.validation(
               `${crossTenant.length} item(s) reference accounts from another organization.`,
@@ -149,10 +147,10 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
           const id = context.id;
           if (id) {
             // Check if target entry is already posted
-            const target = await JournalEntryModel.findById(id)
+            const target = (await JournalEntryModel.findById(id)
               .select('state')
               .session((context.session as ClientSession) ?? null)
-              .lean() as Record<string, unknown> | null;
+              .lean()) as Record<string, unknown> | null;
 
             if (target?.state === 'posted') {
               // Block any state transition away from 'posted' (immutable ledger)
@@ -168,7 +166,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
               // attempt to set these flags through the generic update path is illegitimate.
               const allowedKeys = new Set(['state']);
               const dataKeys = Object.keys(data);
-              const hasDisallowedKeys = dataKeys.some(k => !allowedKeys.has(k));
+              const hasDisallowedKeys = dataKeys.some((k) => !allowedKeys.has(k));
 
               if (hasDisallowedKeys) {
                 throw Errors.immutable(
@@ -203,7 +201,7 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         if (!JournalEntryModel) {
           throw new Error(
             'doubleEntryPlugin: JournalEntryModel is required to validate partial updates that set state to "posted". ' +
-            'Pass JournalEntryModel in plugin options.',
+              'Pass JournalEntryModel in plugin options.',
           );
         }
 
@@ -214,14 +212,16 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
           );
         }
 
-        const existing = await JournalEntryModel.findById(id)
+        const existing = (await JournalEntryModel.findById(id)
           .select('journalItems')
           .session((context.session as ClientSession) ?? null)
-          .lean() as Record<string, unknown> | null;
+          .lean()) as Record<string, unknown> | null;
 
         if (!existing) return; // will 404 downstream
 
-        const persistedItems = existing.journalItems as Array<{ debit?: number; credit?: number; account?: unknown }> | undefined;
+        const persistedItems = existing.journalItems as
+          | Array<{ debit?: number; credit?: number; account?: unknown }>
+          | undefined;
         if (!persistedItems || persistedItems.length < 2) {
           throw Errors.validation(
             `Cannot post entry: at least 2 journal items required, got ${persistedItems?.length ?? 0}.`,

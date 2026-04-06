@@ -4,7 +4,7 @@
  * All inputs are validated to prevent silent failures from invalid dates.
  */
 
-import type { DateOption, DateRange, QuarterValue, CustomDateRange } from '../types/core.js';
+import type { CustomDateRange, DateOption, DateRange, QuarterValue } from '../types/core.js';
 
 /**
  * Compute start/end dates from a date option + value.
@@ -19,7 +19,10 @@ import type { DateOption, DateRange, QuarterValue, CustomDateRange } from '../ty
  */
 export function getDateRange(option: DateOption, value: unknown): DateRange {
   // Validate: value is required for known date options (not the default fallback)
-  if (value == null && (option === 'month' || option === 'quarter' || option === 'year' || option === 'custom')) {
+  if (
+    value == null &&
+    (option === 'month' || option === 'quarter' || option === 'year' || option === 'custom')
+  ) {
     throw new Error(`dateValue is required for dateOption "${option}"`);
   }
 
@@ -35,7 +38,7 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
         month = parseInt(match[2], 10) - 1; // 0-indexed
       } else {
         const date = new Date(value as string | number | Date);
-        if (isNaN(date.getTime())) {
+        if (Number.isNaN(date.getTime())) {
           throw new Error(`Invalid month value: ${String(value)}`);
         }
         year = date.getFullYear();
@@ -68,7 +71,7 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
 
     case 'year': {
       const year = typeof value === 'number' ? value : parseInt(String(value), 10);
-      if (isNaN(year) || year < 1900 || year > 9999) {
+      if (Number.isNaN(year) || year < 1900 || year > 9999) {
         throw new Error(`Invalid year: ${String(value)}. Must be a number between 1900–9999.`);
       }
       const startDate = new Date(year, 0, 1);
@@ -86,14 +89,19 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
       }
       const start = new Date(rawStart);
       const end = new Date(rawEnd);
-      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
         throw new Error('Custom date range contains invalid dates');
       }
       if (start > end) {
         throw new Error('startDate must be before endDate');
       }
       // Normalize end date to end-of-day if time is midnight (00:00:00)
-      if (end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0 && end.getMilliseconds() === 0) {
+      if (
+        end.getHours() === 0 &&
+        end.getMinutes() === 0 &&
+        end.getSeconds() === 0 &&
+        end.getMilliseconds() === 0
+      ) {
         end.setHours(23, 59, 59, 999);
       }
       return { startDate: start, endDate: end };

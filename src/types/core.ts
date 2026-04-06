@@ -11,7 +11,7 @@
  * to convert cents back to dollars for display or CSV export.
  */
 
-import type { Types, ClientSession } from 'mongoose';
+import type { ClientSession, Types } from 'mongoose';
 
 // ─── Primitives ──────────────────────────────────────────────────────────────
 
@@ -124,8 +124,8 @@ export interface JournalItem {
   account: ObjectId | string;
   label?: string;
   date?: Date;
-  debit: number;   // Integer cents (e.g. 10050 = $100.50)
-  credit: number;  // Integer cents (e.g. 10050 = $100.50)
+  debit: number; // Integer cents (e.g. 10050 = $100.50)
+  credit: number; // Integer cents (e.g. 10050 = $100.50)
   taxDetails?: TaxDetail[];
   /** Extra dimension fields injected via extraItemFields */
   [key: string]: unknown;

@@ -7,12 +7,12 @@
  */
 
 import type { Model } from 'mongoose';
+import { extractMainType } from '../constants/categories.js';
 import type { CountryPack } from '../country/index.js';
 import type { IncomeStatementReport, ReportCategory, ReportGroup } from '../types/report.js';
 import { getDateRange } from '../utils/date-range.js';
-import { extractMainType } from '../constants/categories.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface IncomeStatementOptions {
   AccountModel: Model<unknown>;
@@ -39,14 +39,14 @@ export async function generateIncomeStatement(
   // Fetch accounts
   const q: Record<string, unknown> = { active: true };
   if (orgField && params.organizationId) q[orgField] = params.organizationId;
-  const allAccounts = await AccountModel.find(q).lean() as Array<Record<string, unknown>>;
+  const allAccounts = (await AccountModel.find(q).lean()) as Array<Record<string, unknown>>;
 
   // Income statement posting accounts only
-  const isAccounts = allAccounts.filter(a => {
+  const isAccounts = allAccounts.filter((a) => {
     const at = country.getAccountType(a.accountTypeCode as string);
     return at && !at.isGroup && !at.isTotal && at.category.startsWith('Income Statement');
   });
-  const isIds = isAccounts.map(a => a._id);
+  const isIds = isAccounts.map((a) => a._id);
 
   const baseMatch: Record<string, unknown> = {
     state: 'posted',
@@ -54,14 +54,20 @@ export async function generateIncomeStatement(
   };
   if (orgField && params.organizationId) baseMatch[orgField] = params.organizationId;
 
-  const results = await JournalEntryModel.aggregate([
+  const results = (await JournalEntryModel.aggregate([
     { $match: baseMatch },
     { $unwind: '$journalItems' },
     { $match: { 'journalItems.account': { $in: isIds }, ...itemFilters } },
-    { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
-  ]) as Array<{ _id: unknown; d: number; c: number }>;
+    {
+      $group: {
+        _id: '$journalItems.account',
+        d: { $sum: '$journalItems.debit' },
+        c: { $sum: '$journalItems.credit' },
+      },
+    },
+  ])) as Array<{ _id: unknown; d: number; c: number }>;
 
-  const accountMap = new Map(allAccounts.map(a => [String(a._id), a]));
+  const accountMap = new Map(allAccounts.map((a) => [String(a._id), a]));
 
   // Organize into revenue and expenses
   const revenueGroups: Record<string, ReportGroup> = {};
@@ -112,7 +118,9 @@ export async function generateIncomeStatement(
   const sortGroups = (groups: Record<string, ReportGroup>) => {
     const sorted = Object.values(groups);
     for (const g of sorted) {
-      g.accounts.sort((a, b) => (a.code ?? '').localeCompare(b.code ?? '', undefined, { numeric: true }));
+      g.accounts.sort((a, b) =>
+        (a.code ?? '').localeCompare(b.code ?? '', undefined, { numeric: true }),
+      );
     }
     // Sort groups by the lowest account code in each group
     sorted.sort((a, b) => {
@@ -139,15 +147,13 @@ export async function generateIncomeStatement(
   // Calculate COGS — use pack-declared group code, fall back to common names
   const cogsCode = country.cogsGroupCode;
   const isCogs = (name: string) =>
-    cogsCode
-      ? name === cogsCode
-      : name === 'Cost of Sales' || name === 'Cost of Goods Sold';
+    cogsCode ? name === cogsCode : name === 'Cost of Sales' || name === 'Cost of Goods Sold';
 
-  const cogsGroup = expenses.groups.find(g => isCogs(g.name));
+  const cogsGroup = expenses.groups.find((g) => isCogs(g.name));
   const costOfSales = cogsGroup?.total ?? 0;
   const grossProfit = revenue.total - costOfSales;
   const operatingExpenses = expenses.groups
-    .filter(g => !isCogs(g.name))
+    .filter((g) => !isCogs(g.name))
     .reduce((s, g) => s + g.total, 0);
   const operatingIncome = grossProfit - operatingExpenses;
   const netIncome = revenue.total - expenses.total;

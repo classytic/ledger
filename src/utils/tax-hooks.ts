@@ -12,16 +12,16 @@ import type { JournalItem, TaxDetail } from '../types/core.js';
 
 export interface TaxLineInput {
   account: unknown;
-  amount: number;            // integer cents
+  amount: number; // integer cents
   side: 'debit' | 'credit';
   taxCode?: string;
   extraFields?: Record<string, unknown>;
 }
 
 export interface GeneratedTaxLine {
-  account: unknown;          // tax account to post to
-  debit: number;             // integer cents
-  credit: number;            // integer cents
+  account: unknown; // tax account to post to
+  debit: number; // integer cents
+  credit: number; // integer cents
   label?: string;
   taxDetails?: Array<{ taxCode: string; taxName?: string }>;
 }
@@ -41,10 +41,7 @@ export interface TaxLineGenerator {
  *
  * @returns The original items + generated tax items
  */
-export function applyTaxHook(
-  items: JournalItem[],
-  generator: TaxLineGenerator,
-): JournalItem[] {
+export function applyTaxHook(items: JournalItem[], generator: TaxLineGenerator): JournalItem[] {
   const taxLines: JournalItem[] = [];
 
   for (const item of items) {
@@ -52,7 +49,7 @@ export function applyTaxHook(
     if (!taxDetails || taxDetails.length === 0) continue;
 
     // Find the first taxCode in the item's taxDetails
-    const taxCode = taxDetails.find(td => td.taxCode != null)?.taxCode;
+    const taxCode = taxDetails.find((td) => td.taxCode != null)?.taxCode;
     if (!taxCode) continue;
 
     // Determine side and amount from the item

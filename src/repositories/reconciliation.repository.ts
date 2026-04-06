@@ -8,8 +8,8 @@
  * Used by AccountingEngine to add reconciliation capabilities.
  */
 
-import type { Model } from 'mongoose';
 import type { Repository } from '@classytic/mongokit';
+import type { Model } from 'mongoose';
 import type { ReconciliationRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
@@ -62,7 +62,7 @@ export function wireReconciliationMethods<TDoc = unknown>(
    * Create a reconciliation record linking matched journal entries.
    * Validates that all entries exist, are posted, and belong to the same account/org.
    */
-  repository.reconcile = async function (input: ReconcileInput) {
+  repository.reconcile = async (input: ReconcileInput) => {
     const { account, journalEntryIds, note, reconciledBy, organizationId } = input;
 
     requireOrgScope(orgField, organizationId);
@@ -85,7 +85,7 @@ export function wireReconciliationMethods<TDoc = unknown>(
     }
 
     // All entries must be posted
-    const notPosted = entries.filter(e => e.state !== 'posted');
+    const notPosted = entries.filter((e) => e.state !== 'posted');
     if (notPosted.length > 0) {
       throw Errors.validation(
         `${notPosted.length} entry(ies) are not posted. Only posted entries can be reconciled.`,
@@ -96,9 +96,7 @@ export function wireReconciliationMethods<TDoc = unknown>(
     // must actually reference that account
     const accountStr = String(account);
     for (const entry of entries) {
-      const hasAccount = entry.journalItems.some(
-        (item) => String(item.account) === accountStr,
-      );
+      const hasAccount = entry.journalItems.some((item) => String(item.account) === accountStr);
       if (!hasAccount) {
         throw Errors.validation(
           `Entry ${entry._id} does not contain any items for account ${account}.`,
@@ -141,7 +139,7 @@ export function wireReconciliationMethods<TDoc = unknown>(
   /**
    * Remove a reconciliation record via repository.delete().
    */
-  repository.unreconcile = async function (input: UnreconcileInput) {
+  repository.unreconcile = async (input: UnreconcileInput) => {
     const { reconciliationId, organizationId } = input;
 
     requireOrgScope(orgField, organizationId);
@@ -150,8 +148,10 @@ export function wireReconciliationMethods<TDoc = unknown>(
     // Defense-in-depth: even if multi-tenant plugin is registered, we explicitly
     // check ownership to prevent cross-org deletion via ID guessing.
     if (orgField && organizationId != null) {
-      const existing = await repository._executeQuery(
-        async (Model) => Model.findOne({ _id: reconciliationId, [orgField]: organizationId }).select('_id').lean(),
+      const existing = await repository._executeQuery(async (Model) =>
+        Model.findOne({ _id: reconciliationId, [orgField]: organizationId })
+          .select('_id')
+          .lean(),
       );
       if (!existing) {
         throw Errors.notFound('Reconciliation record not found.');
@@ -160,7 +160,7 @@ export function wireReconciliationMethods<TDoc = unknown>(
 
     // Route through repository.delete() so hooks fire
     const result = await deleteById(String(reconciliationId));
-    if (!result) {
+    if (!result.success) {
       throw Errors.notFound('Reconciliation record not found.');
     }
 
@@ -172,7 +172,7 @@ export function wireReconciliationMethods<TDoc = unknown>(
    * Uses repository.getAll() for reconciliation lookups (hooks fire),
    * and direct JournalEntryModel for cross-repo reads (acceptable).
    */
-  repository.getUnreconciled = async function (input: GetUnreconciledInput) {
+  repository.getUnreconciled = async (input: GetUnreconciledInput) => {
     const { accountId, organizationId, limit = 100, skip = 0 } = input;
 
     requireOrgScope(orgField, organizationId);
@@ -181,9 +181,9 @@ export function wireReconciliationMethods<TDoc = unknown>(
     const reconFilter: Record<string, unknown> = { account: accountId };
     if (orgField && organizationId != null) reconFilter[orgField] = organizationId;
 
-    const reconciliations = await repository._executeQuery(
-      async (Model) => Model.find(reconFilter).select('journalEntryIds').lean(),
-    ) as unknown as Array<{ journalEntryIds: unknown[] }>;
+    const reconciliations = (await repository._executeQuery(async (Model) =>
+      Model.find(reconFilter).select('journalEntryIds').lean(),
+    )) as unknown as Array<{ journalEntryIds: unknown[] }>;
 
     const reconciledIds = new Set<string>();
     for (const rec of reconciliations) {

@@ -10,8 +10,8 @@ export function requireOrgScope(orgField: string | undefined, organizationId: un
   if (orgField && !organizationId) {
     throw Errors.validation(
       'organizationId is required when multi-tenant mode is configured (orgField: "' +
-      orgField +
-      '"). Refusing to run unscoped query.',
+        orgField +
+        '"). Refusing to run unscoped query.',
     );
   }
 }
@@ -20,7 +20,10 @@ export function requireOrgScope(orgField: string | undefined, organizationId: un
  * Build org-scoped query filter.
  * Returns an object like `{ business: orgId }` or `{}`.
  */
-export function orgFilter(orgField: string | undefined, organizationId: unknown): Record<string, unknown> {
+export function orgFilter(
+  orgField: string | undefined,
+  organizationId: unknown,
+): Record<string, unknown> {
   if (!orgField) return {};
   // requireOrgScope should be called first; this is a convenience builder
   return organizationId ? { [orgField]: organizationId } : {};

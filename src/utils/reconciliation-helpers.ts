@@ -7,8 +7,8 @@
 
 export interface UnreconciledEntry {
   id: unknown;
-  debit: number;   // integer cents
-  credit: number;  // integer cents
+  debit: number; // integer cents
+  credit: number; // integer cents
   date: Date;
   label?: string;
 }
@@ -16,7 +16,7 @@ export interface UnreconciledEntry {
 export interface MatchSuggestion {
   debitEntryIds: unknown[];
   creditEntryIds: unknown[];
-  amount: number;    // matched amount in cents
+  amount: number; // matched amount in cents
 }
 
 /**
@@ -32,8 +32,8 @@ export function suggestMatches(
   tolerance: number = 0,
 ): MatchSuggestion[] {
   // Separate into debit and credit entries
-  const debits = entries.filter(e => e.debit > 0);
-  const credits = entries.filter(e => e.credit > 0);
+  const debits = entries.filter((e) => e.debit > 0);
+  const credits = entries.filter((e) => e.credit > 0);
 
   const suggestions: MatchSuggestion[] = [];
   const usedDebitIds = new Set<unknown>();

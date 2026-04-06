@@ -5,13 +5,12 @@
  * for a given period. All monetary values are integer cents.
  */
 
-import mongoose from 'mongoose';
 import type { Model, PipelineStage } from 'mongoose';
+import mongoose from 'mongoose';
+import { extractMainType } from '../constants/categories.js';
 import type { CountryPack } from '../country/index.js';
-import type { CategoryKey } from '../types/core.js';
 import { getDateRange } from '../utils/date-range.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
-import { extractMainType } from '../constants/categories.js';
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -73,7 +72,7 @@ export async function generateBudgetVsActual(
     budgetQuery.account = { $in: params.accountIds };
   }
 
-  const budgets = await BudgetModel.find(budgetQuery).lean() as Array<Record<string, unknown>>;
+  const budgets = (await BudgetModel.find(budgetQuery).lean()) as Array<Record<string, unknown>>;
 
   if (budgets.length === 0) {
     return {
@@ -99,8 +98,8 @@ export async function generateBudgetVsActual(
   // 3. Fetch account details
   const accountQuery: Record<string, unknown> = { _id: { $in: accountIds } };
   if (orgField && params.organizationId) accountQuery[orgField] = params.organizationId;
-  const accounts = await AccountModel.find(accountQuery).lean() as Array<Record<string, unknown>>;
-  const accountMap = new Map(accounts.map(a => [String(a._id), a]));
+  const accounts = (await AccountModel.find(accountQuery).lean()) as Array<Record<string, unknown>>;
+  const accountMap = new Map(accounts.map((a) => [String(a._id), a]));
 
   // 4. Aggregate actual balances from posted journal entries
   const baseMatch: Record<string, unknown> = {
@@ -112,12 +111,18 @@ export async function generateBudgetVsActual(
   const pipeline: PipelineStage[] = [
     { $match: baseMatch },
     { $unwind: '$journalItems' },
-    { $match: { 'journalItems.account': { $in: accountIds.map(id => new mongoose.Types.ObjectId(id)) } } },
-    { $group: {
-      _id: '$journalItems.account',
-      totalDebit: { $sum: '$journalItems.debit' },
-      totalCredit: { $sum: '$journalItems.credit' },
-    } },
+    {
+      $match: {
+        'journalItems.account': { $in: accountIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      },
+    },
+    {
+      $group: {
+        _id: '$journalItems.account',
+        totalDebit: { $sum: '$journalItems.debit' },
+        totalCredit: { $sum: '$journalItems.credit' },
+      },
+    },
   ];
 
   const actuals = await JournalEntryModel.aggregate(pipeline);
@@ -154,9 +159,8 @@ export async function generateBudgetVsActual(
     }
 
     const variance = actualAmount - budgetAmount;
-    const variancePercent = budgetAmount !== 0
-      ? Math.round((variance / budgetAmount) * 10000) / 100
-      : 0;
+    const variancePercent =
+      budgetAmount !== 0 ? Math.round((variance / budgetAmount) * 10000) / 100 : 0;
 
     rows.push({
       accountId: acc._id,

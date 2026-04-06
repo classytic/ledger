@@ -55,7 +55,11 @@ export function createFiscalPeriodSchema(
 
   // ── Overlap guard: prevent overlapping date ranges within a tenant ─────
   schema.pre('validate', async function () {
-    const doc = this as unknown as mongoose.Document & { startDate: Date; endDate: Date; [key: string]: unknown };
+    const doc = this as unknown as mongoose.Document & {
+      startDate: Date;
+      endDate: Date;
+      [key: string]: unknown;
+    };
     if (!doc.startDate || !doc.endDate) return;
 
     // A period overlaps if: existing.startDate < this.endDate AND existing.endDate > this.startDate

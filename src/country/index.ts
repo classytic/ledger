@@ -10,7 +10,7 @@
  *   const engine = createAccountingEngine({ country: canadaPack, currency: 'CAD' });
  */
 
-import type { AccountType, CategoryKey } from '../types/core.js';
+import type { AccountType } from '../types/core.js';
 
 // ─── Tax Code ────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,10 @@ export interface TaxReportLine {
 export interface TaxReportTemplate {
   readonly name: string;
   readonly lines: Readonly<Record<string | number, TaxReportLine>>;
-  calculate(inputData: Record<string | number, number>, manualData?: Record<string | number, number>): Record<string | number, number>;
+  calculate(
+    inputData: Record<string | number, number>,
+    manualData?: Record<string | number, number>,
+  ): Record<string | number, number>;
   summarize(calculated: Record<string | number, number>): Record<string, unknown>;
 }
 
@@ -162,7 +165,7 @@ export function defineCountryPack(input: CountryPackInput): CountryPack {
     accountMap.set(at.code, at);
   }
 
-  const postingTypes = input.accountTypes.filter(at => !at.isTotal && !at.isGroup);
+  const postingTypes = input.accountTypes.filter((at) => !at.isTotal && !at.isGroup);
 
   return {
     ...input,
@@ -180,7 +183,7 @@ export function defineCountryPack(input: CountryPackInput): CountryPack {
 
     getTaxCodesForRegion: (region: string) => {
       const codes = input.taxCodesByRegion[region] ?? [];
-      return codes.map(c => input.taxCodes[c]).filter(Boolean) as TaxCode[];
+      return codes.map((c) => input.taxCodes[c]).filter(Boolean) as TaxCode[];
     },
 
     flattenAccountTypes: () => input.accountTypes,

@@ -15,8 +15,8 @@ import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface AgedBucketConfig {
   label: string;
-  minDays: number;   // inclusive
-  maxDays: number;   // exclusive, use Infinity for the last bucket
+  minDays: number; // inclusive
+  maxDays: number; // exclusive, use Infinity for the last bucket
 }
 
 export const DEFAULT_BUCKETS: AgedBucketConfig[] = [
@@ -35,12 +35,12 @@ export interface AgedBalanceOptions {
 
 export interface AgedBalanceParams {
   organizationId?: unknown;
-  asOfDate?: Date;                    // defaults to now
+  asOfDate?: Date; // defaults to now
   type: 'receivable' | 'payable';
-  accountIds?: unknown[];              // specific AR/AP accounts
-  dueDateField?: string;               // field path for due date (default: 'journalItems.dueDate')
-  contactField?: string;               // field path for contact grouping (e.g. 'journalItems.contactId')
-  buckets?: AgedBucketConfig[];        // custom buckets, defaults to DEFAULT_BUCKETS
+  accountIds?: unknown[]; // specific AR/AP accounts
+  dueDateField?: string; // field path for due date (default: 'journalItems.dueDate')
+  contactField?: string; // field path for contact grouping (e.g. 'journalItems.contactId')
+  buckets?: AgedBucketConfig[]; // custom buckets, defaults to DEFAULT_BUCKETS
 }
 
 export interface AgedBalanceRow {
@@ -48,15 +48,15 @@ export interface AgedBalanceRow {
   accountName: string;
   accountCode: string;
   contactId?: unknown;
-  total: number;                       // integer cents
-  buckets: Record<string, number>;     // bucket label -> cents
+  total: number; // integer cents
+  buckets: Record<string, number>; // bucket label -> cents
 }
 
 export interface AgedBalanceReport {
   metadata: { generatedAt: string; asOfDate: string; type: string };
   bucketLabels: string[];
   rows: AgedBalanceRow[];
-  totals: Record<string, number>;      // bucket label -> total cents
+  totals: Record<string, number>; // bucket label -> total cents
   grandTotal: number;
 }
 
@@ -71,7 +71,7 @@ export async function generateAgedBalance(
 
   const asOfDate = params.asOfDate ?? new Date();
   const buckets = params.buckets ?? DEFAULT_BUCKETS;
-  const bucketLabels = buckets.map(b => b.label);
+  const bucketLabels = buckets.map((b) => b.label);
   const dueDateField = params.dueDateField ?? 'journalItems.dueDate';
   const contactField = params.contactField;
 
@@ -85,17 +85,18 @@ export async function generateAgedBalance(
   if (params.accountIds && params.accountIds.length > 0) {
     targetAccountIds = params.accountIds;
   } else {
-    const allAccounts = await AccountModel.find(accountQuery).lean() as Array<Record<string, unknown>>;
-    const categoryPrefix = params.type === 'receivable'
-      ? 'Balance Sheet-Asset'
-      : 'Balance Sheet-Liability';
+    const allAccounts = (await AccountModel.find(accountQuery).lean()) as Array<
+      Record<string, unknown>
+    >;
+    const categoryPrefix =
+      params.type === 'receivable' ? 'Balance Sheet-Asset' : 'Balance Sheet-Liability';
 
     targetAccountIds = allAccounts
-      .filter(a => {
+      .filter((a) => {
         const at = country.getAccountType(a.accountTypeCode as string);
         return at && !at.isGroup && at.category.startsWith(categoryPrefix);
       })
-      .map(a => a._id);
+      .map((a) => a._id);
   }
 
   if (targetAccountIds.length === 0) {
@@ -107,15 +108,17 @@ export async function generateAgedBalance(
       },
       bucketLabels,
       rows: [],
-      totals: Object.fromEntries(bucketLabels.map(l => [l, 0])),
+      totals: Object.fromEntries(bucketLabels.map((l) => [l, 0])),
       grandTotal: 0,
     };
   }
 
   // ── 2. Fetch all accounts for lookup ────────────────────────────────────
 
-  const allAccounts = await AccountModel.find(accountQuery).lean() as Array<Record<string, unknown>>;
-  const accountLookup = new Map(allAccounts.map(a => [String(a._id), a]));
+  const allAccounts = (await AccountModel.find(accountQuery).lean()) as Array<
+    Record<string, unknown>
+  >;
+  const accountLookup = new Map(allAccounts.map((a) => [String(a._id), a]));
 
   // ── 3. Aggregate journal items with due dates ───────────────────────────
 
@@ -127,7 +130,7 @@ export async function generateAgedBalance(
 
   // Compute days past due in the pipeline using $ifNull to handle missing due dates
   // Missing due dates are treated as the entry date (current bucket).
-  const asOfMs = asOfDate.getTime();
+  const _asOfMs = asOfDate.getTime();
 
   // Build the $group _id based on whether contact grouping is requested
   const groupId: Record<string, unknown> = { account: '$journalItems.account' };
@@ -137,11 +140,13 @@ export async function generateAgedBalance(
   }
 
   // Build bucket conditional expressions for $switch
-  const bucketBranches = buckets.map(b => {
-    const condition: Record<string, unknown> = b.maxDays === Infinity
-      ? { $gte: ['$daysPastDue', b.minDays] }
-      : { $and: [{ $gte: ['$daysPastDue', b.minDays] }, { $lt: ['$daysPastDue', b.maxDays] }] };
+  const bucketBranches = buckets.map((b) => {
+    const condition: Record<string, unknown> =
+      b.maxDays === Infinity
+        ? { $gte: ['$daysPastDue', b.minDays] }
+        : { $and: [{ $gte: ['$daysPastDue', b.minDays] }, { $lt: ['$daysPastDue', b.maxDays] }] };
 
+    // biome-ignore lint/suspicious/noThenProperty: MongoDB $switch branch syntax
     return { case: condition, then: b.label };
   });
 
@@ -156,10 +161,7 @@ export async function generateAgedBalance(
           $floor: {
             $divide: [
               {
-                $subtract: [
-                  asOfDate,
-                  { $ifNull: [`$${dueDateField}`, asOfDate] },
-                ],
+                $subtract: [asOfDate, { $ifNull: [`$${dueDateField}`, asOfDate] }],
               },
               1000 * 60 * 60 * 24,
             ],
@@ -187,9 +189,10 @@ export async function generateAgedBalance(
     // Compute net balance (debit - credit for assets/receivables, credit - debit for liabilities/payables)
     {
       $addFields: {
-        netAmount: params.type === 'receivable'
-          ? { $subtract: ['$journalItems.debit', '$journalItems.credit'] }
-          : { $subtract: ['$journalItems.credit', '$journalItems.debit'] },
+        netAmount:
+          params.type === 'receivable'
+            ? { $subtract: ['$journalItems.debit', '$journalItems.credit'] }
+            : { $subtract: ['$journalItems.credit', '$journalItems.debit'] },
       },
     },
     // Group by account (+ optional contact) + bucket
@@ -201,7 +204,7 @@ export async function generateAgedBalance(
     },
   ];
 
-  const results = await JournalEntryModel.aggregate(pipeline) as Array<{
+  const results = (await JournalEntryModel.aggregate(pipeline)) as Array<{
     _id: { account: unknown; contact?: unknown; bucket: string };
     amount: number;
   }>;
@@ -224,7 +227,7 @@ export async function generateAgedBalance(
         accountCode: (acc?.accountNumber as string) ?? '',
         ...(contactField ? { contactId: r._id.contact } : {}),
         total: 0,
-        buckets: Object.fromEntries(bucketLabels.map(l => [l, 0])),
+        buckets: Object.fromEntries(bucketLabels.map((l) => [l, 0])),
       });
     }
 
@@ -243,7 +246,7 @@ export async function generateAgedBalance(
 
   // ── 6. Compute totals ──────────────────────────────────────────────────
 
-  const totals: Record<string, number> = Object.fromEntries(bucketLabels.map(l => [l, 0]));
+  const totals: Record<string, number> = Object.fromEntries(bucketLabels.map((l) => [l, 0]));
   let grandTotal = 0;
 
   for (const row of rows) {

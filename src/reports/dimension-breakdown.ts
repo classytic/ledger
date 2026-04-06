@@ -9,8 +9,8 @@
 import type { Model, PipelineStage } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import { getDateRange } from '../utils/date-range.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -67,17 +67,19 @@ export async function generateDimensionBreakdown(
   const accountQuery: Record<string, unknown> = { active: true };
   if (orgField && params.organizationId) accountQuery[orgField] = params.organizationId;
 
-  const allAccounts = await AccountModel.find(accountQuery).lean() as Array<Record<string, unknown>>;
+  const allAccounts = (await AccountModel.find(accountQuery).lean()) as Array<
+    Record<string, unknown>
+  >;
 
   // Filter to posting accounts, optionally by category
-  const eligibleAccounts = allAccounts.filter(a => {
+  const eligibleAccounts = allAccounts.filter((a) => {
     const at = country.getAccountType(a.accountTypeCode as string);
     if (!at || at.isGroup || at.isTotal) return false;
     if (params.accountCategory && at.category !== params.accountCategory) return false;
     return true;
   });
 
-  const accountIds = eligibleAccounts.map(a => a._id);
+  const accountIds = eligibleAccounts.map((a) => a._id);
   if (accountIds.length === 0) {
     return {
       metadata: {
@@ -91,7 +93,7 @@ export async function generateDimensionBreakdown(
     };
   }
 
-  const accountMap = new Map(allAccounts.map(a => [String(a._id), a]));
+  const accountMap = new Map(allAccounts.map((a) => [String(a._id), a]));
 
   // ── Aggregation pipeline ────────────────────────────────────────────────
 
@@ -124,7 +126,7 @@ export async function generateDimensionBreakdown(
     },
   ];
 
-  const results = await JournalEntryModel.aggregate(pipeline) as Array<{
+  const results = (await JournalEntryModel.aggregate(pipeline)) as Array<{
     _id: { dimension: unknown; account: unknown };
     d: number;
     c: number;
@@ -142,7 +144,7 @@ export async function generateDimensionBreakdown(
     if (!dimensionMap.has(dimKey)) {
       dimensionMap.set(dimKey, new Map());
     }
-    dimensionMap.get(dimKey)!.set(accKey, { d: r.d, c: r.c });
+    dimensionMap.get(dimKey)?.set(accKey, { d: r.d, c: r.c });
   }
 
   // Convert to rows
@@ -157,9 +159,10 @@ export async function generateDimensionBreakdown(
 
   for (const dimKey of sortedDimKeys) {
     const accountBalances = dimensionMap.get(dimKey)!;
-    const dimensionValue = dimKey === '__null__' ? null : results.find(
-      r => String(r._id.dimension) === dimKey,
-    )?._id.dimension ?? null;
+    const dimensionValue =
+      dimKey === '__null__'
+        ? null
+        : (results.find((r) => String(r._id.dimension) === dimKey)?._id.dimension ?? null);
 
     const accounts: Array<{ id: unknown; name: string; code: string; balance: number }> = [];
     let total = 0;
@@ -171,9 +174,13 @@ export async function generateDimensionBreakdown(
       const at = country.getAccountType(acc.accountTypeCode as string);
       // For expense/asset/debit-normal accounts: balance = debit - credit
       // For income/liability/credit-normal accounts: balance = credit - debit
-      const balance = at && (at.category === 'Income Statement-Income' || at.category === 'Balance Sheet-Liability' || at.category === 'Balance Sheet-Equity')
-        ? bal.c - bal.d
-        : bal.d - bal.c;
+      const balance =
+        at &&
+        (at.category === 'Income Statement-Income' ||
+          at.category === 'Balance Sheet-Liability' ||
+          at.category === 'Balance Sheet-Equity')
+          ? bal.c - bal.d
+          : bal.d - bal.c;
 
       accounts.push({
         id: acc._id,

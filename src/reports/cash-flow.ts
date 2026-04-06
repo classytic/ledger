@@ -10,10 +10,10 @@ import type { Model } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import type { CashFlowCategory, CategoryKey } from '../types/core.js';
 import type { CashFlowReport } from '../types/report.js';
-import { getDateRange } from '../utils/date-range.js';
 import { computeEndingBalance } from '../utils/account-helpers.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
+import { getDateRange } from '../utils/date-range.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface CashFlowOptions {
   AccountModel: Model<unknown>;
@@ -40,11 +40,11 @@ export async function generateCashFlow(
   // Fetch accounts
   const q: Record<string, unknown> = { active: true };
   if (orgField && params.organizationId) q[orgField] = params.organizationId;
-  const allAccounts = await AccountModel.find(q).lean() as Array<Record<string, unknown>>;
+  const allAccounts = (await AccountModel.find(q).lean()) as Array<Record<string, unknown>>;
 
   // Build maps: accountId -> metadata, accountId -> raw account doc
   const accountCfMap = new Map<string, { category: CategoryKey; cfCategory: CashFlowCategory }>();
-  const accountMap = new Map(allAccounts.map(a => [String(a._id), a]));
+  const accountMap = new Map(allAccounts.map((a) => [String(a._id), a]));
   const cfAccountIds: unknown[] = [];
 
   for (const acc of allAccounts) {
@@ -67,17 +67,27 @@ export async function generateCashFlow(
   };
   if (orgField && params.organizationId) baseMatch[orgField] = params.organizationId;
 
-  const results = cfAccountIds.length > 0
-    ? await JournalEntryModel.aggregate([
-        { $match: baseMatch },
-        { $unwind: '$journalItems' },
-        { $match: { 'journalItems.account': { $in: cfAccountIds }, ...itemFilters } },
-        { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
-      ]) as Array<{ _id: unknown; d: number; c: number }>
-    : [];
+  const results =
+    cfAccountIds.length > 0
+      ? ((await JournalEntryModel.aggregate([
+          { $match: baseMatch },
+          { $unwind: '$journalItems' },
+          { $match: { 'journalItems.account': { $in: cfAccountIds }, ...itemFilters } },
+          {
+            $group: {
+              _id: '$journalItems.account',
+              d: { $sum: '$journalItems.debit' },
+              c: { $sum: '$journalItems.credit' },
+            },
+          },
+        ])) as Array<{ _id: unknown; d: number; c: number }>)
+      : [];
 
   // Accumulate by category
-  const flows: Record<CashFlowCategory, { total: number; accounts: Array<{ name: string; code: string; amount: number }> }> = {
+  const flows: Record<
+    CashFlowCategory,
+    { total: number; accounts: Array<{ name: string; code: string; amount: number }> }
+  > = {
     Operating: { total: 0, accounts: [] },
     Investing: { total: 0, accounts: [] },
     Financing: { total: 0, accounts: [] },

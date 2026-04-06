@@ -6,8 +6,13 @@
  */
 
 const BLOCKED_OPERATORS = new Set([
-  '$where', '$expr', '$function', '$accumulator',
-  '$merge', '$out', '$unionWith',
+  '$where',
+  '$expr',
+  '$function',
+  '$accumulator',
+  '$merge',
+  '$out',
+  '$unionWith',
 ]);
 
 /**

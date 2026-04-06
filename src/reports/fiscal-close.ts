@@ -11,13 +11,13 @@
  * Pass an external session to join a caller-managed transaction instead.
  */
 
-import type { Model, ClientSession } from 'mongoose';
+import type { ClientSession, Model } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
 import { Errors } from '../utils/errors.js';
 import type { Logger } from '../utils/logger.js';
 import { defaultLogger } from '../utils/logger.js';
 import { acquireSession, finalizeSession } from '../utils/session.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface FiscalCloseOptions {
   AccountModel: Model<unknown>;
@@ -59,11 +59,7 @@ export async function closeFiscalPeriod(
   const { periodId, organizationId, closedBy } = params;
   requireOrgScope(orgField, organizationId);
 
-  const { session, ownSession } = await acquireSession(
-    AccountModel.db,
-    params.session,
-    logger,
-  );
+  const { session, ownSession } = await acquireSession(AccountModel.db, params.session, logger);
   let success = false;
 
   try {
@@ -72,7 +68,10 @@ export async function closeFiscalPeriod(
     // 1. Fetch and validate the fiscal period (org-scoped)
     const periodQuery: Record<string, unknown> = { _id: periodId };
     if (orgField && organizationId) periodQuery[orgField] = organizationId;
-    const period = await FiscalPeriodModel.findOne(periodQuery, null, queryOpts).lean() as Record<string, unknown> | null;
+    const period = (await FiscalPeriodModel.findOne(periodQuery, null, queryOpts).lean()) as Record<
+      string,
+      unknown
+    > | null;
     if (!period) throw Errors.notFound('Fiscal period not found');
     if (period.closed) throw Errors.fiscal('Fiscal period is already closed');
 
@@ -82,7 +81,9 @@ export async function closeFiscalPeriod(
     // 2. Find all income statement accounts for this org
     const accountQuery: Record<string, unknown> = { active: true };
     if (orgField && organizationId) accountQuery[orgField] = organizationId;
-    const allAccounts = await AccountModel.find(accountQuery, null, queryOpts).lean() as Array<Record<string, unknown>>;
+    const allAccounts = (await AccountModel.find(accountQuery, null, queryOpts).lean()) as Array<
+      Record<string, unknown>
+    >;
 
     const isAccounts: Array<{ id: unknown; code: string; isIncome: boolean }> = [];
     let retainedEarningsId: unknown = null;
@@ -108,7 +109,7 @@ export async function closeFiscalPeriod(
     if (!retainedEarningsId) {
       throw Errors.fiscal(
         `Retained earnings account (code: ${retainedEarningsAccountCode}) not found. ` +
-        'Create this account before closing the fiscal period.',
+          'Create this account before closing the fiscal period.',
       );
     }
 
@@ -119,21 +120,32 @@ export async function closeFiscalPeriod(
     };
     if (orgField && organizationId) baseMatch[orgField] = organizationId;
 
-    const isIds = isAccounts.map(a => a.id);
-    const balances = isIds.length > 0
-      ? await JournalEntryModel.aggregate([
-          { $match: baseMatch },
-          { $unwind: '$journalItems' },
-          { $match: { 'journalItems.account': { $in: isIds } } },
-          { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
-        ], queryOpts) as Array<{ _id: unknown; d: number; c: number }>
-      : [];
+    const isIds = isAccounts.map((a) => a.id);
+    const balances =
+      isIds.length > 0
+        ? ((await JournalEntryModel.aggregate(
+            [
+              { $match: baseMatch },
+              { $unwind: '$journalItems' },
+              { $match: { 'journalItems.account': { $in: isIds } } },
+              {
+                $group: {
+                  _id: '$journalItems.account',
+                  d: { $sum: '$journalItems.debit' },
+                  c: { $sum: '$journalItems.credit' },
+                },
+              },
+            ],
+            queryOpts,
+          )) as Array<{ _id: unknown; d: number; c: number }>)
+        : [];
 
     // 4. Build closing journal entry items
-    const closingItems: Array<{ account: unknown; debit: number; credit: number; label: string }> = [];
+    const closingItems: Array<{ account: unknown; debit: number; credit: number; label: string }> =
+      [];
     let netIncome = 0;
 
-    const balMap = new Map(balances.map(b => [String(b._id), b]));
+    const balMap = new Map(balances.map((b) => [String(b._id), b]));
 
     for (const acc of isAccounts) {
       const bal = balMap.get(String(acc.id));
@@ -240,7 +252,10 @@ export async function reopenFiscalPeriod(
     // 1. Fetch and validate the period (org-scoped)
     const periodQuery: Record<string, unknown> = { _id: periodId };
     if (orgField && organizationId) periodQuery[orgField] = organizationId;
-    const period = await FiscalPeriodModel.findOne(periodQuery, null, queryOpts).lean() as Record<string, unknown> | null;
+    const period = (await FiscalPeriodModel.findOne(periodQuery, null, queryOpts).lean()) as Record<
+      string,
+      unknown
+    > | null;
     if (!period) throw Errors.notFound('Fiscal period not found');
     if (!period.closed) throw Errors.fiscal('Fiscal period is not closed');
 

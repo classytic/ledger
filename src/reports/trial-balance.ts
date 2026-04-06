@@ -6,13 +6,11 @@
  */
 
 import type { Model, PipelineStage } from 'mongoose';
-import type { AccountType, CategoryKey } from '../types/core.js';
-import type { TrialBalanceRow, TrialBalanceReport } from '../types/report.js';
 import type { CountryPack } from '../country/index.js';
+import type { TrialBalanceReport, TrialBalanceRow } from '../types/report.js';
 import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
-import { computeEndingBalance } from '../utils/account-helpers.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface TrialBalanceOptions {
   AccountModel: Model<unknown>;
@@ -43,7 +41,9 @@ export async function generateTrialBalance(
   const accountQuery: Record<string, unknown> = { active: true };
   if (orgField && params.organizationId) accountQuery[orgField] = params.organizationId;
 
-  const allAccounts = await AccountModel.find(accountQuery).lean() as Array<Record<string, unknown>>;
+  const allAccounts = (await AccountModel.find(accountQuery).lean()) as Array<
+    Record<string, unknown>
+  >;
 
   // Split by statement type
   const bsIds: unknown[] = [];
@@ -67,7 +67,13 @@ export async function generateTrialBalance(
     { $match: { ...baseMatch, date: { $gte: dateFrom, $lt: dateTo } } },
     { $unwind: '$journalItems' },
     { $match: { 'journalItems.account': { $in: ids }, ...accountFilter, ...itemFilters } },
-    { $group: { _id: '$journalItems.account', d: { $sum: '$journalItems.debit' }, c: { $sum: '$journalItems.credit' } } },
+    {
+      $group: {
+        _id: '$journalItems.account',
+        d: { $sum: '$journalItems.debit' },
+        c: { $sum: '$journalItems.credit' },
+      },
+    },
   ];
 
   // BS initial: all history before startDate
@@ -75,8 +81,12 @@ export async function generateTrialBalance(
   // Current: startDate → endDate
   const [bsInitial, isInitial, current] = await Promise.all([
     bsIds.length ? JournalEntryModel.aggregate(buildPipeline(bsIds, new Date(0), startDate)) : [],
-    isIds.length ? JournalEntryModel.aggregate(buildPipeline(isIds, fiscalYearStart, startDate)) : [],
-    JournalEntryModel.aggregate(buildPipeline([...bsIds, ...isIds], startDate, new Date(endDate.getTime() + 1))),
+    isIds.length
+      ? JournalEntryModel.aggregate(buildPipeline(isIds, fiscalYearStart, startDate))
+      : [],
+    JournalEntryModel.aggregate(
+      buildPipeline([...bsIds, ...isIds], startDate, new Date(endDate.getTime() + 1)),
+    ),
   ]);
 
   // Merge
@@ -95,7 +105,7 @@ export async function generateTrialBalance(
   }
 
   // Build rows
-  const accountLookup = new Map(allAccounts.map(a => [String(a._id), a]));
+  const accountLookup = new Map(allAccounts.map((a) => [String(a._id), a]));
 
   const rows: TrialBalanceRow[] = [];
   for (const [id, bal] of map) {
@@ -114,16 +124,21 @@ export async function generateTrialBalance(
 
   // Sort rows by account code for deterministic output
   rows.sort((a, b) => {
-    const codeA = (a.account as Record<string, unknown>)?.accountNumber as string
-      ?? (a.account as Record<string, unknown>)?.accountTypeCode as string ?? '';
-    const codeB = (b.account as Record<string, unknown>)?.accountNumber as string
-      ?? (b.account as Record<string, unknown>)?.accountTypeCode as string ?? '';
+    const codeA =
+      ((a.account as Record<string, unknown>)?.accountNumber as string) ??
+      ((a.account as Record<string, unknown>)?.accountTypeCode as string) ??
+      '';
+    const codeB =
+      ((b.account as Record<string, unknown>)?.accountNumber as string) ??
+      ((b.account as Record<string, unknown>)?.accountTypeCode as string) ??
+      '';
     return codeA.localeCompare(codeB, undefined, { numeric: true });
   });
 
-  const periodDisplay = params.dateOption === 'year'
-    ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
-    : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+  const periodDisplay =
+    params.dateOption === 'year'
+      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
 
   return {
     metadata: {

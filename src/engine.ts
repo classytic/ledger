@@ -22,32 +22,40 @@
  *   const bs = await reports.balanceSheet({ dateOption: 'year', dateValue: 2025, organizationId: '...' });
  */
 
-import type { Model } from 'mongoose';
 import type { PluginType, Repository } from '@classytic/mongokit';
-import type { AccountingEngineConfig, SchemaOptions, JournalSchemaOptions } from './types/engine.js';
-import type { JournalEntryRepository, AccountRepository, ReconciliationRepository } from './types/repositories.js';
+import type { Model } from 'mongoose';
 import type { CountryPack } from './country/index.js';
-import { createAccountSchema } from './schemas/account.schema.js';
-import { createJournalEntrySchema } from './schemas/journal-entry.schema.js';
-import { createFiscalPeriodSchema } from './schemas/fiscal-period.schema.js';
-import { generateTrialBalance } from './reports/trial-balance.js';
-import { generateBalanceSheet } from './reports/balance-sheet.js';
-import { generateIncomeStatement } from './reports/income-statement.js';
-import { generateGeneralLedger } from './reports/general-ledger.js';
-import { generateCashFlow } from './reports/cash-flow.js';
-import { generateAgedBalance } from './reports/aged-balance.js';
-import { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
-import { generateBudgetVsActual } from './reports/budget-vs-actual.js';
-import { generateRevaluation } from './reports/revaluation.js';
-import { createBudgetSchema } from './schemas/budget.schema.js';
-import { createReconciliationSchema } from './schemas/reconciliation.schema.js';
-import { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
 import { Money } from './money.js';
-import { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
-import { wireAccountMethods } from './repositories/account.repository.js';
 import { doubleEntryPlugin } from './plugins/double-entry.plugin.js';
 import { fiscalLockPlugin } from './plugins/fiscal-lock.plugin.js';
 import { idempotencyPlugin } from './plugins/idempotency.plugin.js';
+import { generateAgedBalance } from './reports/aged-balance.js';
+import { generateBalanceSheet } from './reports/balance-sheet.js';
+import { generateBudgetVsActual } from './reports/budget-vs-actual.js';
+import { generateCashFlow } from './reports/cash-flow.js';
+import { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
+import { generateGeneralLedger } from './reports/general-ledger.js';
+import { generateIncomeStatement } from './reports/income-statement.js';
+import { generateRevaluation } from './reports/revaluation.js';
+import { generateTrialBalance } from './reports/trial-balance.js';
+import { wireAccountMethods } from './repositories/account.repository.js';
+import { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
+import { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
+import { createAccountSchema } from './schemas/account.schema.js';
+import { createBudgetSchema } from './schemas/budget.schema.js';
+import { createFiscalPeriodSchema } from './schemas/fiscal-period.schema.js';
+import { createJournalEntrySchema } from './schemas/journal-entry.schema.js';
+import { createReconciliationSchema } from './schemas/reconciliation.schema.js';
+import type {
+  AccountingEngineConfig,
+  JournalSchemaOptions,
+  SchemaOptions,
+} from './types/engine.js';
+import type {
+  AccountRepository,
+  JournalEntryRepository,
+  ReconciliationRepository,
+} from './types/repositories.js';
 
 export class AccountingEngine {
   readonly config: AccountingEngineConfig;
@@ -79,8 +87,17 @@ export class AccountingEngine {
     return createBudgetSchema(this.config, options);
   }
 
-  createReconciliationSchema(accountModelName: string, journalEntryModelName: string, options?: SchemaOptions) {
-    return createReconciliationSchema(this.config, accountModelName, journalEntryModelName, options);
+  createReconciliationSchema(
+    accountModelName: string,
+    journalEntryModelName: string,
+    options?: SchemaOptions,
+  ) {
+    return createReconciliationSchema(
+      this.config,
+      accountModelName,
+      journalEntryModelName,
+      options,
+    );
   }
 
   // ── Report Engine ──────────────────────────────────────────────────────────
@@ -119,7 +136,16 @@ export class AccountingEngine {
         filters?: Record<string, unknown>;
       }) =>
         generateBalanceSheet(
-          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth, retainedEarningsAccountCode, retainedEarningsDisplayCode, currentYearEarningsCode },
+          {
+            AccountModel,
+            JournalEntryModel,
+            country,
+            orgField,
+            fiscalYearStartMonth,
+            retainedEarningsAccountCode,
+            retainedEarningsDisplayCode,
+            currentYearEarningsCode,
+          },
           params,
         ),
 
@@ -129,11 +155,7 @@ export class AccountingEngine {
         dateValue: unknown;
         businessName?: string;
         filters?: Record<string, unknown>;
-      }) =>
-        generateIncomeStatement(
-          { AccountModel, JournalEntryModel, country, orgField },
-          params,
-        ),
+      }) => generateIncomeStatement({ AccountModel, JournalEntryModel, country, orgField }, params),
 
       generalLedger: (params: {
         organizationId?: unknown;
@@ -153,11 +175,7 @@ export class AccountingEngine {
         dateValue: unknown;
         businessName?: string;
         filters?: Record<string, unknown>;
-      }) =>
-        generateCashFlow(
-          { AccountModel, JournalEntryModel, country, orgField },
-          params,
-        ),
+      }) => generateCashFlow({ AccountModel, JournalEntryModel, country, orgField }, params),
 
       agedBalance: (params: {
         organizationId?: unknown;
@@ -167,11 +185,7 @@ export class AccountingEngine {
         dueDateField?: string;
         contactField?: string;
         buckets?: Array<{ label: string; minDays: number; maxDays: number }>;
-      }) =>
-        generateAgedBalance(
-          { AccountModel, JournalEntryModel, country, orgField },
-          params,
-        ),
+      }) => generateAgedBalance({ AccountModel, JournalEntryModel, country, orgField }, params),
 
       dimensionBreakdown: (params: {
         organizationId?: unknown;
@@ -181,10 +195,7 @@ export class AccountingEngine {
         accountCategory?: string;
         filters?: Record<string, unknown>;
       }) =>
-        generateDimensionBreakdown(
-          { AccountModel, JournalEntryModel, country, orgField },
-          params,
-        ),
+        generateDimensionBreakdown({ AccountModel, JournalEntryModel, country, orgField }, params),
 
       budgetVsActual: (params: {
         organizationId?: unknown;
@@ -315,7 +326,10 @@ export class AccountingEngine {
    * @param JournalEntryModel - The Mongoose model for journal entries
    * @returns The same repository, now with `.post()` and `.reverse()`
    */
-  wireJournalEntryRepository<TDoc = unknown>(repository: Repository<TDoc>, JournalEntryModel: Model<unknown>): JournalEntryRepository<TDoc> {
+  wireJournalEntryRepository<TDoc = unknown>(
+    repository: Repository<TDoc>,
+    JournalEntryModel: Model<unknown>,
+  ): JournalEntryRepository<TDoc> {
     const orgField = this.config.multiTenant?.orgField;
     return wireJournalEntryMethods(repository, JournalEntryModel, orgField, this.config.strictness);
   }
@@ -329,7 +343,10 @@ export class AccountingEngine {
    * @param AccountModel - The Mongoose model for accounts
    * @returns The same repository, now with `.seedAccounts()` and `.bulkCreate()`
    */
-  wireAccountRepository<TDoc = unknown>(repository: Repository<TDoc>, AccountModel: Model<unknown>): AccountRepository<TDoc> {
+  wireAccountRepository<TDoc = unknown>(
+    repository: Repository<TDoc>,
+    AccountModel: Model<unknown>,
+  ): AccountRepository<TDoc> {
     const orgField = this.config.multiTenant?.orgField;
     return wireAccountMethods(repository, AccountModel, this.country, orgField);
   }

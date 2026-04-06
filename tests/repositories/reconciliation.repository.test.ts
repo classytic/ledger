@@ -87,7 +87,8 @@ function createRepo(orgField?: string) {
     create: async (data: any) => reconModel.create(data),
     delete: async (id: any) => {
       const doc = await reconModel.findByIdAndDelete(id);
-      return doc ? { success: true } : null;
+      if (!doc) throw new Error('Document not found');
+      return { success: true, message: 'Deleted successfully', id: String(id) };
     },
     _executeQuery: async (fn: any) => fn(reconModel),
   };
