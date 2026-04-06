@@ -52,8 +52,8 @@ const JournalEntry = mongoose.model('JournalEntry', JournalEntrySchema);
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `journalType` | String | Yes | One of: `GENERAL`, `SALES`, `PURCHASE`, `CASH_RECEIPT`, `CASH_DISBURSEMENT`, `PAYROLL`, `ADJUSTMENT`, `YEAR_END`, `MISC` |
-| `referenceNumber` | String | Auto | Auto-generated (e.g. `GJ-0001`). Unique per org |
+| `journalType` | String | Yes | Built-in: `SALES`, `PURCHASES`, `CASH_RECEIPTS`, `CASH_PAYMENTS`, `PAYROLL`, `GENERAL`, `INVENTORY`, `FIXED_ASSETS`, `BANK_RECONCILIATION`, `DEPRECIATION`, `YEAR_END`, `ACCOUNTS_RECEIVABLE`, `ACCOUNTS_PAYABLE`, `TAX`, `MISC`. Extensible via `registerJournalType()` before schema creation. |
+| `referenceNumber` | String | Auto | Auto-generated as `{JOURNAL_TYPE}/{YYYY}/{MM}/{NNNN}` (e.g. `SALES/2025/03/0001`). Unique per org. Sequence increments per journal type per month. |
 | `label` | String | No | Description/memo |
 | `date` | Date | No | Defaults to `new Date()` |
 | `state` | String | No | `draft` (default), `posted`, or `archived` |
