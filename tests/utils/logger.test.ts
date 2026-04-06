@@ -1,6 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
-import { defaultLogger } from '../../src/utils/logger.js';
+import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../../src/utils/logger.js';
+import { defaultLogger } from '../../src/utils/logger.js';
 
 describe('defaultLogger', () => {
   it('implements Logger interface', () => {

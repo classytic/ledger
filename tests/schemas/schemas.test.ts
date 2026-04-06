@@ -1,23 +1,68 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
-import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema.js';
+import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // Minimal country pack for testing
 const testPack = defineCountryPack({
-  code: 'TEST', name: 'Test Country', defaultCurrency: 'TST',
+  code: 'TEST',
+  name: 'Test Country',
+  defaultCurrency: 'TST',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '2000', name: 'Payables', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '8000', name: 'Revenue', category: 'Income Statement-Income', description: 'Sales', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '9000', name: 'Expenses', category: 'Income Statement-Expense', description: 'Costs', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: 'GROUP', name: 'Assets', category: 'Balance Sheet-Asset', description: 'Group', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '2000',
+      name: 'Payables',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8000',
+      name: 'Revenue',
+      category: 'Income Statement-Income',
+      description: 'Sales',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '9000',
+      name: 'Expenses',
+      category: 'Income Statement-Expense',
+      description: 'Costs',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'GROUP',
+      name: 'Assets',
+      category: 'Balance Sheet-Asset',
+      description: 'Group',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 let mongod: MongoMemoryServer;
@@ -71,7 +116,7 @@ describe('Account Schema', () => {
   it('validates accountTypeCode against country pack', async () => {
     const schema = createAccountSchema(stConfig);
     // Clear any previous model registrations for this test
-    if (mongoose.models['TestAccount']) delete mongoose.models['TestAccount'];
+    if (mongoose.models.TestAccount) delete mongoose.models.TestAccount;
     const Model = mongoose.model('TestAccount', schema);
 
     // Valid code
@@ -85,7 +130,7 @@ describe('Account Schema', () => {
 
   it('enforces unique accountTypeCode per org in multi-tenant mode', async () => {
     const schema = createAccountSchema(mtConfig);
-    if (mongoose.models['MTAccount']) delete mongoose.models['MTAccount'];
+    if (mongoose.models.MTAccount) delete mongoose.models.MTAccount;
     const Model = mongoose.model('MTAccount', schema);
     await Model.createIndexes();
 
@@ -93,9 +138,7 @@ describe('Account Schema', () => {
     await Model.create({ business: orgId, accountTypeCode: '1000' });
 
     // Duplicate should fail
-    await expect(
-      Model.create({ business: orgId, accountTypeCode: '1000' }),
-    ).rejects.toThrow();
+    await expect(Model.create({ business: orgId, accountTypeCode: '1000' })).rejects.toThrow();
 
     // Different org should succeed
     const otherOrg = new mongoose.Types.ObjectId();
@@ -118,11 +161,11 @@ describe('Journal Entry Schema', () => {
 
   it('enforces double-entry on posted entries', async () => {
     const accountSchema = createAccountSchema(mtConfig);
-    if (mongoose.models['JEAccount']) delete mongoose.models['JEAccount'];
+    if (mongoose.models.JEAccount) delete mongoose.models.JEAccount;
     const AccountModel = mongoose.model('JEAccount', accountSchema);
 
     const jeSchema = createJournalEntrySchema(mtConfig, 'JEAccount');
-    if (mongoose.models['JE']) delete mongoose.models['JE'];
+    if (mongoose.models.JE) delete mongoose.models.JE;
     const JEModel = mongoose.model('JE', jeSchema);
 
     const orgId = new mongoose.Types.ObjectId();
@@ -162,11 +205,11 @@ describe('Journal Entry Schema', () => {
 
   it('rejects journal items with both debit and credit > 0', async () => {
     const accountSchema = createAccountSchema(mtConfig);
-    if (mongoose.models['DualAccount']) delete mongoose.models['DualAccount'];
+    if (mongoose.models.DualAccount) delete mongoose.models.DualAccount;
     const AccountModel = mongoose.model('DualAccount', accountSchema);
 
     const jeSchema = createJournalEntrySchema(mtConfig, 'DualAccount');
-    if (mongoose.models['DualJE']) delete mongoose.models['DualJE'];
+    if (mongoose.models.DualJE) delete mongoose.models.DualJE;
     const JEModel = mongoose.model('DualJE', jeSchema);
 
     const orgId = new mongoose.Types.ObjectId();
@@ -190,11 +233,11 @@ describe('Journal Entry Schema', () => {
 
   it('rejects non-integer journal item amounts', async () => {
     const accountSchema = createAccountSchema(stConfig);
-    if (mongoose.models['PrecAccount']) delete mongoose.models['PrecAccount'];
+    if (mongoose.models.PrecAccount) delete mongoose.models.PrecAccount;
     const AccountModel = mongoose.model('PrecAccount', accountSchema);
 
     const jeSchema = createJournalEntrySchema(stConfig, 'PrecAccount');
-    if (mongoose.models['PrecJE']) delete mongoose.models['PrecJE'];
+    if (mongoose.models.PrecJE) delete mongoose.models.PrecJE;
     const JEModel = mongoose.model('PrecJE', jeSchema);
 
     const acc1 = await AccountModel.create({ accountTypeCode: '1000' });
@@ -216,11 +259,11 @@ describe('Journal Entry Schema', () => {
 
   it('allows unbalanced drafts', async () => {
     const accountSchema = createAccountSchema(stConfig);
-    if (mongoose.models['DraftAccount']) delete mongoose.models['DraftAccount'];
+    if (mongoose.models.DraftAccount) delete mongoose.models.DraftAccount;
     const AccountModel = mongoose.model('DraftAccount', accountSchema);
 
     const jeSchema = createJournalEntrySchema(stConfig, 'DraftAccount');
-    if (mongoose.models['DraftJE']) delete mongoose.models['DraftJE'];
+    if (mongoose.models.DraftJE) delete mongoose.models.DraftJE;
     const JEModel = mongoose.model('DraftJE', jeSchema);
 
     const acc = await AccountModel.create({ accountTypeCode: '1000' });
@@ -239,11 +282,11 @@ describe('Journal Entry Schema', () => {
 
   it('auto-generates reference numbers on save', async () => {
     const accountSchema = createAccountSchema(stConfig);
-    if (mongoose.models['RefAccount']) delete mongoose.models['RefAccount'];
+    if (mongoose.models.RefAccount) delete mongoose.models.RefAccount;
     const AccountModel = mongoose.model('RefAccount', accountSchema);
 
     const jeSchema = createJournalEntrySchema(stConfig, 'RefAccount');
-    if (mongoose.models['RefJE']) delete mongoose.models['RefJE'];
+    if (mongoose.models.RefJE) delete mongoose.models.RefJE;
     const JEModel = mongoose.model('RefJE', jeSchema);
     await JEModel.createIndexes();
 
@@ -293,7 +336,7 @@ describe('Fiscal Period Schema', () => {
 
   it('defaults closed to false', async () => {
     const schema = createFiscalPeriodSchema(stConfig);
-    if (mongoose.models['FP']) delete mongoose.models['FP'];
+    if (mongoose.models.FP) delete mongoose.models.FP;
     const FPModel = mongoose.model('FP', schema);
 
     const fp = await FPModel.create({
@@ -307,7 +350,7 @@ describe('Fiscal Period Schema', () => {
 
   it('rejects overlapping fiscal periods (single-tenant)', async () => {
     const schema = createFiscalPeriodSchema(stConfig);
-    if (mongoose.models['FPOverlap']) delete mongoose.models['FPOverlap'];
+    if (mongoose.models.FPOverlap) delete mongoose.models.FPOverlap;
     const FPModel = mongoose.model('FPOverlap', schema);
     await FPModel.createIndexes();
 
@@ -330,7 +373,7 @@ describe('Fiscal Period Schema', () => {
 
   it('allows non-overlapping fiscal periods', async () => {
     const schema = createFiscalPeriodSchema(stConfig);
-    if (mongoose.models['FPNoOverlap']) delete mongoose.models['FPNoOverlap'];
+    if (mongoose.models.FPNoOverlap) delete mongoose.models.FPNoOverlap;
     const FPModel = mongoose.model('FPNoOverlap', schema);
     await FPModel.createIndexes();
 
@@ -352,7 +395,7 @@ describe('Fiscal Period Schema', () => {
 
   it('rejects overlapping fiscal periods within same tenant (multi-tenant)', async () => {
     const schema = createFiscalPeriodSchema(mtConfig);
-    if (mongoose.models['FPMTOverlap']) delete mongoose.models['FPMTOverlap'];
+    if (mongoose.models.FPMTOverlap) delete mongoose.models.FPMTOverlap;
     const FPModel = mongoose.model('FPMTOverlap', schema);
     await FPModel.createIndexes();
 

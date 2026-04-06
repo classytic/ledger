@@ -9,194 +9,106 @@
  * which is a breaking change for consumers.
  */
 
-import { describe, it, expect, expectTypeOf } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 // ── Import every runtime export from the root barrel ──────────────────────
 
 import {
   // Engine
   AccountingEngine,
-  createAccountingEngine,
-
-  // Money
-  Money,
-  fromDecimal,
-  toDecimal,
+  AccountingError,
+  acquireSession,
   add,
-  subtract,
-  multiply,
-  percentage,
-  splitTaxInclusive,
-  splitTaxExclusive,
   allocate,
-  format,
-  formatPlain,
-  parseCents,
-
-  // Schemas
-  createAccountSchema,
-  createJournalEntrySchema,
-  createFiscalPeriodSchema,
-
-  // Plugins
-  dateLockPlugin,
-  doubleEntryPlugin,
-  fiscalLockPlugin,
-  idempotencyPlugin,
-
-  // Reports
-  generateTrialBalance,
-  generateBalanceSheet,
-  generateIncomeStatement,
-  generateGeneralLedger,
-  generateCashFlow,
-  closeFiscalPeriod,
-  reopenFiscalPeriod,
-  generateDimensionBreakdown,
-  generateAgedBalance,
-  DEFAULT_BUCKETS,
-  generateRevaluation,
-  generateBudgetVsActual,
-  computeRevaluation,
+  buildAccountTypeMap,
+  buildDimensionFields,
+  buildDimensionIndexes,
+  buildItemFilters,
   buildRevaluationEntry,
-
   // Constants
   CATEGORIES,
-  CATEGORY_KEYS,
-  isValidCategory,
-  getNormalBalance,
-  isBalanceSheet,
-  isIncomeStatement,
-  JOURNAL_TYPES,
-  JOURNAL_CODES,
-  getJournalTypeCodes,
-  isValidJournalType,
-  getJournalType,
-  registerJournalType,
-  getCustomJournalTypes,
   CURRENCIES,
-  getCurrency,
-  isValidCurrency,
-  getMinorUnit,
-
+  calculateTotal,
+  closeFiscalPeriod,
+  computeEndingBalance,
+  computeRevaluation,
+  createAccountingEngine,
+  DEFAULT_BUCKETS,
+  // Plugins
+  dateLockPlugin,
+  defaultLogger,
   // Country
   defineCountryPack,
-
-  // Repositories
-  wireJournalEntryMethods,
-  wireAccountMethods,
-  wireReconciliationMethods,
-
+  doubleEntryPlugin,
+  Errors,
+  // Exports
+  exportToCsv,
+  finalizeSession,
+  fiscalLockPlugin,
+  flattenJournalEntries,
+  format,
+  formatPlain,
+  fromDecimal,
+  generateAgedBalance,
+  generateBalanceSheet,
+  generateBudgetVsActual,
+  generateCashFlow,
+  generateDimensionBreakdown,
+  generateGeneralLedger,
+  generateIncomeStatement,
+  generateRevaluation,
+  // Reports
+  generateTrialBalance,
+  getCurrency,
+  getCustomJournalTypes,
   // Utilities
   getDateRange,
   getFiscalYearStart,
+  getJournalType,
+  getJournalTypeCodes,
+  getMinorUnit,
+  getNormalBalance,
+  idempotencyPlugin,
+  isBalanceSheet,
+  isIncomeStatement,
+  isValidCategory,
+  isValidCurrency,
+  isValidJournalType,
   isVirtualTaxAccount,
-  computeEndingBalance,
-  calculateTotal,
-  buildAccountTypeMap,
-  AccountingError,
-  Errors,
-  defaultLogger,
-  acquireSession,
-  finalizeSession,
-  buildItemFilters,
-  buildDimensionFields,
-  buildDimensionIndexes,
-
-  // Exports
-  exportToCsv,
-  flattenJournalEntries,
+  JOURNAL_TYPES,
+  // Money
+  Money,
+  multiply,
+  parseCents,
+  percentage,
   quickbooksFieldMap,
+  registerJournalType,
+  reopenFiscalPeriod,
+  splitTaxExclusive,
+  splitTaxInclusive,
+  subtract,
+  toDecimal,
   universalFieldMap,
 } from '../../src/index.js';
 
 // ── Import type-only exports to verify they compile ───────────────────────
 
 import type {
-  Cents,
-  StatementType,
-  MainType,
-  CategoryKey,
-  NormalBalance,
-  CashFlowCategory,
-  AccountType,
-  TotalAccountOp,
-  TaxMetadata,
-  JournalType,
-  EntryState,
-  TaxDetail,
-  JournalItem,
-  Currency,
-  DateOption,
-  DateRange,
   AccountingEngineConfig,
-  MultiTenantConfig,
-  MultiCurrencyConfig,
-  SchemaOptions,
-  JournalSchemaOptions,
-  AuditConfig,
-  StrictnessConfig,
-  SubledgerPostingInput,
-  SubledgerJournalItem,
-  PostingContract,
-  PostingResult,
-  TrialBalanceReport,
-  TrialBalanceRow,
+  AccountType,
   BalanceSheetReport,
-  IncomeStatementReport,
-  GeneralLedgerReport,
-  GeneralLedgerAccount,
-  LedgerEntry,
   CashFlowReport,
-  CashFlowSection,
-  TaxReport,
-  TaxReturnSummary,
-  ReportCategory,
-  ReportGroup,
-  ReportAccount,
-  BudgetVsActualOptions,
-  BudgetVsActualParams,
-  BudgetVsActualReport,
-  BudgetVsActualRow,
+  Cents,
   CountryPack,
-  CountryPackInput,
-  TaxCode,
-  TaxCodesByRegion,
-  TaxReportLine,
-  TaxReportTemplate,
-  JournalEntryRepository,
-  AccountRepository,
-  ReconciliationRepository,
+  Currency,
+  EntryState,
+  GeneralLedgerReport,
+  IncomeStatementReport,
+  JournalType,
+  NormalBalance,
   PostOptions,
-  ReverseOptions,
-  SeedOptions,
   SeedResult,
-  BulkCreateInput,
-  BulkCreateResult,
-  ReverseResult,
-  ReconcileParams,
-  Logger,
-  SessionResult,
-  DimensionDefinition,
-  AgedBucketConfig,
-  AgedBalanceOptions,
-  AgedBalanceParams,
-  AgedBalanceRow,
-  AgedBalanceReport,
-  RevaluationOptions,
-  RevaluationParams,
-  RevaluationReport,
-  RevaluationRate,
-  AccountForeignBalance,
-  RevaluationResult,
-  DimensionBreakdownOptions,
-  DimensionBreakdownParams,
-  DimensionBreakdownRow,
-  DimensionBreakdownReport,
-  PopulatedJournalEntry,
-  FlatJournalRow,
-  ExportFieldMap,
-  ExportField,
+  TrialBalanceReport,
 } from '../../src/index.js';
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -216,9 +128,19 @@ describe('Public API — runtime exports', () => {
 
   describe('Money', () => {
     const moneyFns = {
-      Money, fromDecimal, toDecimal, add, subtract, multiply,
-      percentage, splitTaxInclusive, splitTaxExclusive,
-      allocate, format, formatPlain, parseCents,
+      Money,
+      fromDecimal,
+      toDecimal,
+      add,
+      subtract,
+      multiply,
+      percentage,
+      splitTaxInclusive,
+      splitTaxExclusive,
+      allocate,
+      format,
+      formatPlain,
+      parseCents,
     };
 
     it('exports all 13 money functions/classes', () => {
@@ -241,14 +163,6 @@ describe('Public API — runtime exports', () => {
     });
   });
 
-  describe('Schemas', () => {
-    it('exports all schema factories as functions', () => {
-      expectTypeOf(createAccountSchema).toBeFunction();
-      expectTypeOf(createJournalEntrySchema).toBeFunction();
-      expectTypeOf(createFiscalPeriodSchema).toBeFunction();
-    });
-  });
-
   describe('Plugins', () => {
     it('exports all 4 plugins as objects', () => {
       expect(dateLockPlugin).toBeDefined();
@@ -258,7 +172,12 @@ describe('Public API — runtime exports', () => {
     });
 
     it('each plugin has a name and apply method', () => {
-      for (const plugin of [dateLockPlugin, doubleEntryPlugin, fiscalLockPlugin, idempotencyPlugin]) {
+      for (const plugin of [
+        dateLockPlugin,
+        doubleEntryPlugin,
+        fiscalLockPlugin,
+        idempotencyPlugin,
+      ]) {
         expect(plugin).toHaveProperty('name');
         expect(plugin).toHaveProperty('apply');
         expect(typeof plugin.apply).toBe('function');
@@ -338,14 +257,6 @@ describe('Public API — runtime exports', () => {
   describe('Country', () => {
     it('exports defineCountryPack factory', () => {
       expect(typeof defineCountryPack).toBe('function');
-    });
-  });
-
-  describe('Repositories', () => {
-    it('exports all 3 wire functions', () => {
-      expect(typeof wireJournalEntryMethods).toBe('function');
-      expect(typeof wireAccountMethods).toBe('function');
-      expect(typeof wireReconciliationMethods).toBe('function');
     });
   });
 

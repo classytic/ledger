@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildItemFilters } from '../../src/utils/filter-builder.js';
 
 describe('buildItemFilters', () => {
@@ -57,45 +57,45 @@ describe('buildItemFilters', () => {
   });
 
   it('rejects blocked $where operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $where: 'malicious code' } }),
-    ).toThrow('Filter operator "$where" is not allowed');
+    expect(() => buildItemFilters({ field: { $where: 'malicious code' } })).toThrow(
+      'Filter operator "$where" is not allowed',
+    );
   });
 
   it('rejects blocked $expr operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $expr: { $gt: ['$a', 1] } } }),
-    ).toThrow('Filter operator "$expr" is not allowed');
+    expect(() => buildItemFilters({ field: { $expr: { $gt: ['$a', 1] } } })).toThrow(
+      'Filter operator "$expr" is not allowed',
+    );
   });
 
   it('rejects blocked $function operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $function: { body: 'return true' } } }),
-    ).toThrow('Filter operator "$function" is not allowed');
+    expect(() => buildItemFilters({ field: { $function: { body: 'return true' } } })).toThrow(
+      'Filter operator "$function" is not allowed',
+    );
   });
 
   it('rejects blocked $accumulator operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $accumulator: {} } }),
-    ).toThrow('Filter operator "$accumulator" is not allowed');
+    expect(() => buildItemFilters({ field: { $accumulator: {} } })).toThrow(
+      'Filter operator "$accumulator" is not allowed',
+    );
   });
 
   it('rejects blocked $merge operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $merge: 'other_collection' } }),
-    ).toThrow('Filter operator "$merge" is not allowed');
+    expect(() => buildItemFilters({ field: { $merge: 'other_collection' } })).toThrow(
+      'Filter operator "$merge" is not allowed',
+    );
   });
 
   it('rejects blocked $out operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $out: 'other_collection' } }),
-    ).toThrow('Filter operator "$out" is not allowed');
+    expect(() => buildItemFilters({ field: { $out: 'other_collection' } })).toThrow(
+      'Filter operator "$out" is not allowed',
+    );
   });
 
   it('rejects blocked $unionWith operator in nested values', () => {
-    expect(() =>
-      buildItemFilters({ field: { $unionWith: 'other_collection' } }),
-    ).toThrow('Filter operator "$unionWith" is not allowed');
+    expect(() => buildItemFilters({ field: { $unionWith: 'other_collection' } })).toThrow(
+      'Filter operator "$unionWith" is not allowed',
+    );
   });
 
   // ── Array values are passed through (not treated as objects) ─────────────

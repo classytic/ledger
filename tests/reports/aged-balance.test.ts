@@ -1,29 +1,97 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { defineCountryPack } from '../../src/country/index.js';
+import type { AgedBucketConfig } from '../../src/reports/aged-balance.js';
+import { generateAgedBalance } from '../../src/reports/aged-balance.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { defineCountryPack } from '../../src/country/index.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { generateAgedBalance } from '../../src/reports/aged-balance.js';
-import type { AgedBucketConfig } from '../../src/reports/aged-balance.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'AGD', name: 'Aged Test', defaultCurrency: 'TST',
+  code: 'AGD',
+  name: 'Aged Test',
+  defaultCurrency: 'TST',
   retainedEarningsAccountCode: '3660',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1300', name: 'Other Receivable', category: 'Balance Sheet-Asset', description: 'Other AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2100', name: 'Other Payable', category: 'Balance Sheet-Liability', description: 'Other AP', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Equity', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1200',
+      name: 'Accounts Receivable',
+      category: 'Balance Sheet-Asset',
+      description: 'AR',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1300',
+      name: 'Other Receivable',
+      category: 'Balance Sheet-Asset',
+      description: 'Other AR',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2100',
+      name: 'Other Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'Other AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '3000',
+      name: 'Share Capital',
+      category: 'Balance Sheet-Equity',
+      description: 'Equity',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3660',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: 'RE',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const config: AccountingEngineConfig = {
@@ -50,13 +118,13 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
 
   const acctSchema = createAccountSchema(config);
-  if (mongoose.models['AgedAccount']) delete mongoose.models['AgedAccount'];
+  if (mongoose.models.AgedAccount) delete mongoose.models.AgedAccount;
   AccountModel = mongoose.model('AgedAccount', acctSchema);
 
   const jeSchema = createJournalEntrySchema(config, 'AgedAccount', {
     extraItemFields: { dueDate: { type: Date, default: null } },
   });
-  if (mongoose.models['AgedJE']) delete mongoose.models['AgedJE'];
+  if (mongoose.models.AgedJE) delete mongoose.models.AgedJE;
   JEModel = mongoose.model('AgedJE', jeSchema);
 
   await AccountModel.createIndexes();
@@ -92,13 +160,18 @@ beforeEach(async () => {
 /** Helper: create a posted journal entry with due dates on items */
 async function postEntry(
   date: string,
-  items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number; dueDate?: string | null }>,
+  items: Array<{
+    account: mongoose.Types.ObjectId;
+    debit: number;
+    credit: number;
+    dueDate?: string | null;
+  }>,
 ) {
   return JEModel.create({
     journalType: 'GENERAL',
     state: 'posted',
     date: new Date(date),
-    journalItems: items.map(i => ({
+    journalItems: items.map((i) => ({
       account: i.account,
       debit: i.debit,
       credit: i.credit,
@@ -148,13 +221,13 @@ describe('Aged Balance Report', () => {
       expect(report.bucketLabels).toEqual(['Current', '31-60', '61-90', '90+']);
 
       // AR account row (only AR has due-dated items; cash has none)
-      const arRow = report.rows.find(r => String(r.accountId) === String(arId));
+      const arRow = report.rows.find((r) => String(r.accountId) === String(arId));
       expect(arRow).toBeDefined();
-      expect(arRow!.buckets['Current']).toBe(10000);
-      expect(arRow!.buckets['31-60']).toBe(20000);
-      expect(arRow!.buckets['61-90']).toBe(30000);
-      expect(arRow!.buckets['90+']).toBe(40000);
-      expect(arRow!.total).toBe(100000);
+      expect(arRow?.buckets.Current).toBe(10000);
+      expect(arRow?.buckets['31-60']).toBe(20000);
+      expect(arRow?.buckets['61-90']).toBe(30000);
+      expect(arRow?.buckets['90+']).toBe(40000);
+      expect(arRow?.total).toBe(100000);
     });
   });
 
@@ -191,11 +264,11 @@ describe('Aged Balance Report', () => {
 
       expect(report.bucketLabels).toEqual(['0-15', '16-45', '46+']);
 
-      const arRow = report.rows.find(r => String(r.accountId) === String(arId));
+      const arRow = report.rows.find((r) => String(r.accountId) === String(arId));
       expect(arRow).toBeDefined();
-      expect(arRow!.buckets['0-15']).toBe(5000);
-      expect(arRow!.buckets['16-45']).toBe(7000);
-      expect(arRow!.buckets['46+']).toBe(9000);
+      expect(arRow?.buckets['0-15']).toBe(5000);
+      expect(arRow?.buckets['16-45']).toBe(7000);
+      expect(arRow?.buckets['46+']).toBe(9000);
     });
   });
 
@@ -218,7 +291,7 @@ describe('Aged Balance Report', () => {
         { type: 'receivable', asOfDate },
       );
 
-      const accountIds = report.rows.map(r => String(r.accountId));
+      const accountIds = report.rows.map((r) => String(r.accountId));
       expect(accountIds).toContain(String(arId));
       expect(accountIds).not.toContain(String(apId));
     });
@@ -241,7 +314,7 @@ describe('Aged Balance Report', () => {
         { type: 'payable', asOfDate },
       );
 
-      const accountIds = report.rows.map(r => String(r.accountId));
+      const accountIds = report.rows.map((r) => String(r.accountId));
       expect(accountIds).toContain(String(apId));
       expect(accountIds).not.toContain(String(arId));
     });
@@ -281,7 +354,7 @@ describe('Aged Balance Report', () => {
 
       expect(report.rows).toEqual([]);
       expect(report.grandTotal).toBe(0);
-      expect(report.totals['Current']).toBe(0);
+      expect(report.totals.Current).toBe(0);
       expect(report.totals['31-60']).toBe(0);
       expect(report.totals['61-90']).toBe(0);
       expect(report.totals['90+']).toBe(0);
@@ -321,8 +394,8 @@ describe('Aged Balance Report', () => {
       );
 
       // Filter to only AR rows (cash may have zero balance and not appear)
-      const arRows = report.rows.filter(r =>
-        String(r.accountId) === String(arId) || String(r.accountId) === String(otherArId),
+      const arRows = report.rows.filter(
+        (r) => String(r.accountId) === String(arId) || String(r.accountId) === String(otherArId),
       );
 
       expect(arRows.length).toBe(2);
@@ -362,7 +435,7 @@ describe('Aged Balance Report', () => {
         { type: 'receivable', asOfDate },
       );
 
-      expect(report.totals['Current']).toBe(25000);   // 10000 + 15000
+      expect(report.totals.Current).toBe(25000); // 10000 + 15000
       expect(report.totals['31-60']).toBe(20000);
       expect(report.totals['61-90']).toBe(0);
       expect(report.totals['90+']).toBe(30000);
@@ -383,10 +456,10 @@ describe('Aged Balance Report', () => {
         { type: 'receivable', asOfDate },
       );
 
-      const arRow = report.rows.find(r => String(r.accountId) === String(arId));
+      const arRow = report.rows.find((r) => String(r.accountId) === String(arId));
       expect(arRow).toBeDefined();
-      expect(arRow!.buckets['Current']).toBe(12000);
-      expect(arRow!.total).toBe(12000);
+      expect(arRow?.buckets.Current).toBe(12000);
+      expect(arRow?.total).toBe(12000);
     });
   });
 

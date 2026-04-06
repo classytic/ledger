@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { wireJournalEntryMethods } from '../../src/repositories/journal-entry.repository.js';
 import type { StrictnessConfig } from '../../src/types/engine.js';
 
@@ -22,9 +22,9 @@ function setup(
   const repo: Record<string, unknown> = {
     getByQuery: vi.fn().mockResolvedValue(doc),
     create: vi.fn().mockResolvedValue({ _id: 'reversal-1' }),
-    withTransaction: vi.fn().mockImplementation(
-      async (cb: (session: unknown) => Promise<unknown>) => cb(null),
-    ),
+    withTransaction: vi
+      .fn()
+      .mockImplementation(async (cb: (session: unknown) => Promise<unknown>) => cb(null)),
   };
   wireJournalEntryMethods(repo as any, {} as any, opts.orgField, opts.strictness);
   return { repo };
@@ -118,9 +118,7 @@ describe('wireJournalEntryMethods — post()', () => {
     });
     const { repo } = setup(entry);
 
-    await expect((repo.post as Function)('entry-1')).rejects.toThrow(
-      'at least 2 items',
-    );
+    await expect((repo.post as Function)('entry-1')).rejects.toThrow('at least 2 items');
   });
 
   it('throws when an item has no account', async () => {
@@ -161,9 +159,7 @@ describe('wireJournalEntryMethods — post()', () => {
     });
     const { repo } = setup(entry);
 
-    await expect((repo.post as Function)('entry-1')).rejects.toThrow(
-      'both debit and credit set',
-    );
+    await expect((repo.post as Function)('entry-1')).rejects.toThrow('both debit and credit set');
   });
 
   it('throws when entry is not balanced', async () => {
@@ -322,10 +318,10 @@ describe('wireJournalEntryMethods — reverse()', () => {
 
     // Verify create was called with swapped amounts
     const createCall = (repo.create as any).mock.calls[0][0];
-    expect(createCall.journalItems[0].debit).toBe(0);    // was credit: 0 → debit: 0
+    expect(createCall.journalItems[0].debit).toBe(0); // was credit: 0 → debit: 0
     expect(createCall.journalItems[0].credit).toBe(1000); // was debit: 1000 → credit: 1000
-    expect(createCall.journalItems[1].debit).toBe(1000);  // was credit: 1000 → debit: 1000
-    expect(createCall.journalItems[1].credit).toBe(0);    // was debit: 0 → credit: 0
+    expect(createCall.journalItems[1].debit).toBe(1000); // was credit: 1000 → debit: 1000
+    expect(createCall.journalItems[1].credit).toBe(0); // was debit: 0 → credit: 0
     expect(createCall.label).toBe('Reversal of JE-001');
     expect(createCall.state).toBe('posted');
     expect(createCall.reversalOf).toBe('entry-1');
@@ -352,7 +348,13 @@ describe('wireJournalEntryMethods — reverse()', () => {
     const entry = createEntryDoc({
       state: 'posted',
       journalItems: [
-        { account: { _id: 'a1' }, debit: 1000, credit: 0, departmentId: 'dept-1', projectId: 'proj-1' },
+        {
+          account: { _id: 'a1' },
+          debit: 1000,
+          credit: 0,
+          departmentId: 'dept-1',
+          projectId: 'proj-1',
+        },
         { account: { _id: 'a2' }, debit: 0, credit: 1000, departmentId: 'dept-2' },
       ],
     });

@@ -8,12 +8,35 @@
  * - Improvement 3: Account identity split (accountNumber + name)
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { AccountingError, Errors } from '../src/utils/errors.js';
-import { defaultLogger } from '../src/utils/logger.js';
-import type { Logger } from '../src/utils/logger.js';
+import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { doubleEntryPlugin } from '../src/plugins/double-entry.plugin.js';
+import { AccountingError, Errors } from '../src/utils/errors.js';
+import type { Logger } from '../src/utils/logger.js';
+import { defaultLogger } from '../src/utils/logger.js';
 import { mockRepository } from './helpers/mock-repository.js';
+
+let __mongod: MongoMemoryServer;
+beforeAll(async () => {
+  __mongod = await MongoMemoryServer.create();
+  await mongoose.connect(__mongod.getUri());
+});
+afterAll(async () => {
+  await mongoose.disconnect();
+  await __mongod.stop();
+});
+let __archCounter = 0;
+const __archModelNames = () => {
+  const i = ++__archCounter;
+  return {
+    account: `Arch_Acct_${i}`,
+    journalEntry: `Arch_JE_${i}`,
+    fiscalPeriod: `Arch_FP_${i}`,
+    budget: `Arch_B_${i}`,
+    reconciliation: `Arch_R_${i}`,
+  };
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -22,7 +45,7 @@ function createMockRepo() {
   return {
     on(event: string, handler: (ctx: unknown) => void | Promise<void>) {
       if (!hooks.has(event)) hooks.set(event, []);
-      hooks.get(event)!.push(handler);
+      hooks.get(event)?.push(handler);
     },
     async emit(event: string, ctx: unknown) {
       for (const fn of hooks.get(event) ?? []) {
@@ -138,7 +161,9 @@ describe('Improvement 1: Immutability Guard', () => {
       data: { label: 'Updated label' }, // modifying a posted entry's label
     };
 
-    await expect(repo.emit('before:update', ctx)).rejects.toThrow('Cannot modify a posted journal entry');
+    await expect(repo.emit('before:update', ctx)).rejects.toThrow(
+      'Cannot modify a posted journal entry',
+    );
   });
 
   it('blocks journalItems updates on posted entries', async () => {
@@ -147,10 +172,17 @@ describe('Improvement 1: Immutability Guard', () => {
 
     const ctx = {
       id: 'entry-1',
-      data: { journalItems: [{ debit: 5000, credit: 0 }, { debit: 0, credit: 5000 }] },
+      data: {
+        journalItems: [
+          { debit: 5000, credit: 0 },
+          { debit: 0, credit: 5000 },
+        ],
+      },
     };
 
-    await expect(repo.emit('before:update', ctx)).rejects.toThrow('Cannot modify a posted journal entry');
+    await expect(repo.emit('before:update', ctx)).rejects.toThrow(
+      'Cannot modify a posted journal entry',
+    );
   });
 
   it('blocks state:posted + extra fields on posted entries (bypass attempt)', async () => {
@@ -162,7 +194,9 @@ describe('Improvement 1: Immutability Guard', () => {
       data: { state: 'posted', label: 'Sneaky update' },
     };
 
-    await expect(repo.emit('before:update', ctx)).rejects.toThrow('Cannot modify a posted journal entry');
+    await expect(repo.emit('before:update', ctx)).rejects.toThrow(
+      'Cannot modify a posted journal entry',
+    );
   });
 
   it('blocks state:draft on posted entries (posted→draft bypass attempt)', async () => {
@@ -212,7 +246,9 @@ describe('Improvement 1: Immutability Guard', () => {
   it('reverse() bypasses immutability guard because it uses entry.save() directly', async () => {
     // Verify that reverse() sets reversed/reversedBy via entry.save(),
     // NOT via repository.update() — so the plugin never sees these fields
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -253,10 +289,14 @@ describe('Improvement 1: Immutability Guard', () => {
       findById: () => ({
         select: () => ({
           session: () => ({
-            lean: () => Promise.resolve({
-              state: 'posted',
-              journalItems: [{ debit: 10000, credit: 0 }, { debit: 0, credit: 10000 }],
-            }),
+            lean: () =>
+              Promise.resolve({
+                state: 'posted',
+                journalItems: [
+                  { debit: 10000, credit: 0 },
+                  { debit: 0, credit: 10000 },
+                ],
+              }),
           }),
         }),
       }),
@@ -277,10 +317,14 @@ describe('Improvement 1: Immutability Guard', () => {
       findById: () => ({
         select: () => ({
           session: () => ({
-            lean: () => Promise.resolve({
-              state: 'draft',
-              journalItems: [{ debit: 10000, credit: 0 }, { debit: 0, credit: 10000 }],
-            }),
+            lean: () =>
+              Promise.resolve({
+                state: 'draft',
+                journalItems: [
+                  { debit: 10000, credit: 0 },
+                  { debit: 0, credit: 10000 },
+                ],
+              }),
           }),
         }),
       }),
@@ -334,7 +378,9 @@ describe('Improvement 1: reverse()', () => {
   // We need to import it and test with mock models
 
   it('reverse() is exported from the repository module', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
     expect(typeof wireJournalEntryMethods).toBe('function');
   });
 
@@ -353,7 +399,9 @@ describe('Improvement 1: reverse()', () => {
   }
 
   it('reverse() rejects non-posted entries', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -374,7 +422,9 @@ describe('Improvement 1: reverse()', () => {
   });
 
   it('reverse() rejects already-reversed entries', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -395,7 +445,9 @@ describe('Improvement 1: reverse()', () => {
   });
 
   it('reverse() creates mirror entry with swapped debits/credits via repository.create', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const accId = 'acc-123';
     const mockEntry = {
@@ -431,10 +483,10 @@ describe('Improvement 1: reverse()', () => {
     expect(repoCreate).toHaveBeenCalledTimes(1);
     const [reversalData] = repoCreate.mock.calls[0];
 
-    expect(reversalData.journalItems[0].debit).toBe(0);  // was credit: 0 → debit: 0
+    expect(reversalData.journalItems[0].debit).toBe(0); // was credit: 0 → debit: 0
     expect(reversalData.journalItems[0].credit).toBe(10000); // was debit: 10000 → credit: 10000
     expect(reversalData.journalItems[1].debit).toBe(10000); // was credit: 10000 → debit: 10000
-    expect(reversalData.journalItems[1].credit).toBe(0);  // was debit: 0 → credit: 0
+    expect(reversalData.journalItems[1].credit).toBe(0); // was debit: 0 → credit: 0
 
     // Verify reversal metadata
     expect(reversalData.reversalOf).toBe('entry-1');
@@ -452,7 +504,9 @@ describe('Improvement 1: reverse()', () => {
   });
 
   it('reverse() returns 404 for non-existent entry', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {} as any;
 
@@ -470,7 +524,9 @@ describe('Improvement 1: reverse()', () => {
   });
 
   it('reverse() respects org scoping', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockGetByQuery = vi.fn().mockResolvedValue(null);
     const mockModel = {} as any;
@@ -494,7 +550,9 @@ describe('Improvement 1: reverse()', () => {
 
 describe('Multi-tenant org enforcement', () => {
   it('post() throws when orgField is configured but orgId is missing', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {} as any;
 
@@ -505,7 +563,9 @@ describe('Multi-tenant org enforcement', () => {
   });
 
   it('post() allows call without orgId when orgField is not configured', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {} as any;
 
@@ -519,7 +579,9 @@ describe('Multi-tenant org enforcement', () => {
   });
 
   it('reverse() throws when orgField is configured but orgId is missing', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {} as any;
 
@@ -689,9 +751,12 @@ describe('Improvement 2: Internal Session Management', () => {
 
     const mockModel = {
       db: {
-        startSession: vi.fn()
+        startSession: vi
+          .fn()
           .mockReturnValueOnce({
-            startTransaction: () => { throw new Error('not a replica set'); },
+            startTransaction: () => {
+              throw new Error('not a replica set');
+            },
             endSession: vi.fn(),
           })
           .mockReturnValueOnce(fallbackSession),
@@ -793,14 +858,14 @@ describe('Improvement 3: Account Schema Identity Split', () => {
 
     // Check indexes: should have accountNumber unique, accountTypeCode non-unique
     const indexes = schema.indexes();
-    const uniqueIdx = indexes.find(([fields, opts]) =>
-      fields.accountNumber === 1 && (opts as any)?.unique === true
+    const uniqueIdx = indexes.find(
+      ([fields, opts]) => fields.accountNumber === 1 && (opts as any)?.unique === true,
     );
     expect(uniqueIdx).toBeDefined();
 
     // accountTypeCode index should NOT be unique
-    const typeCodeIdx = indexes.find(([fields, opts]) =>
-      fields.accountTypeCode === 1 && (opts as any)?.unique === true
+    const typeCodeIdx = indexes.find(
+      ([fields, opts]) => fields.accountTypeCode === 1 && (opts as any)?.unique === true,
     );
     expect(typeCodeIdx).toBeUndefined();
   });
@@ -823,18 +888,20 @@ describe('Improvement 3: Account Schema Identity Split', () => {
     const indexes = schema.indexes();
 
     // Should have compound unique on (business, accountNumber)
-    const uniqueIdx = indexes.find(([fields, opts]) =>
-      (fields as any).business === 1 &&
-      (fields as any).accountNumber === 1 &&
-      (opts as any)?.unique === true
+    const uniqueIdx = indexes.find(
+      ([fields, opts]) =>
+        (fields as any).business === 1 &&
+        (fields as any).accountNumber === 1 &&
+        (opts as any)?.unique === true,
     );
     expect(uniqueIdx).toBeDefined();
 
     // Should NOT have unique on (business, accountTypeCode)
-    const typeCodeUniqueIdx = indexes.find(([fields, opts]) =>
-      (fields as any).business === 1 &&
-      (fields as any).accountTypeCode === 1 &&
-      (opts as any)?.unique === true
+    const typeCodeUniqueIdx = indexes.find(
+      ([fields, opts]) =>
+        (fields as any).business === 1 &&
+        (fields as any).accountTypeCode === 1 &&
+        (opts as any)?.unique === true,
     );
     expect(typeCodeUniqueIdx).toBeUndefined();
   });
@@ -855,9 +922,11 @@ describe('Improvement 3: Account Repository', () => {
           };
         },
       }),
-      insertMany: vi.fn().mockImplementation((docs: any[]) =>
-        Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
-      ),
+      insertMany: vi
+        .fn()
+        .mockImplementation((docs: any[]) =>
+          Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
+        ),
     } as any;
 
     const mockCountry = {
@@ -893,9 +962,11 @@ describe('Improvement 3: Account Repository', () => {
           lean: () => Promise.resolve([{ accountNumber: 'CUSTOM-BANK' }]),
         }),
       }),
-      insertMany: vi.fn().mockImplementation((docs: any[]) =>
-        Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
-      ),
+      insertMany: vi
+        .fn()
+        .mockImplementation((docs: any[]) =>
+          Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
+        ),
     } as any;
 
     const mockCountry = {
@@ -950,16 +1021,20 @@ describe('Improvement 3: Account Repository', () => {
     await repo.seedAccounts('org-1');
 
     expect(insertedDocs.length).toBe(2);
-    expect(insertedDocs[0]).toEqual(expect.objectContaining({
-      accountTypeCode: '1000',
-      accountNumber: '1000',
-      name: 'Cash',
-    }));
-    expect(insertedDocs[1]).toEqual(expect.objectContaining({
-      accountTypeCode: '2000',
-      accountNumber: '2000',
-      name: 'Accounts Payable',
-    }));
+    expect(insertedDocs[0]).toEqual(
+      expect.objectContaining({
+        accountTypeCode: '1000',
+        accountNumber: '1000',
+        name: 'Cash',
+      }),
+    );
+    expect(insertedDocs[1]).toEqual(
+      expect.objectContaining({
+        accountTypeCode: '2000',
+        accountNumber: '2000',
+        name: 'Accounts Payable',
+      }),
+    );
   });
 
   it('bulkCreate deduplicates by accountNumber', async () => {
@@ -976,9 +1051,11 @@ describe('Improvement 3: Account Repository', () => {
           }),
         };
       }),
-      insertMany: vi.fn().mockResolvedValue([
-        { _id: 'new-id-1', accountTypeCode: '2000', accountNumber: '2000', name: 'Account 2000' },
-      ]),
+      insertMany: vi
+        .fn()
+        .mockResolvedValue([
+          { _id: 'new-id-1', accountTypeCode: '2000', accountNumber: '2000', name: 'Account 2000' },
+        ]),
     } as any;
 
     const mockCountry = {
@@ -996,10 +1073,12 @@ describe('Improvement 3: Account Repository', () => {
     );
 
     // Find query should use accountNumber, not accountTypeCode
-    expect(findFilter).toEqual(expect.objectContaining({
-      accountNumber: { $in: ['1000', '2000'] },
-      business: 'org-1',
-    }));
+    expect(findFilter).toEqual(
+      expect.objectContaining({
+        accountNumber: { $in: ['1000', '2000'] },
+        business: 'org-1',
+      }),
+    );
 
     // 1000 should be skipped (exists), 2000 should be created
     expect(result.summary.skipped).toBe(1);
@@ -1031,15 +1110,18 @@ describe('Improvement 3: Account Repository', () => {
     const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry);
 
-    await repo.bulkCreate([
-      { accountTypeCode: '1000', accountNumber: 'BANK-001', name: 'Main Bank' },
-    ], undefined);
+    await repo.bulkCreate(
+      [{ accountTypeCode: '1000', accountNumber: 'BANK-001', name: 'Main Bank' }],
+      undefined,
+    );
 
-    expect(insertedDocs[0]).toEqual(expect.objectContaining({
-      accountTypeCode: '1000',
-      accountNumber: 'BANK-001',
-      name: 'Main Bank',
-    }));
+    expect(insertedDocs[0]).toEqual(
+      expect.objectContaining({
+        accountTypeCode: '1000',
+        accountNumber: 'BANK-001',
+        name: 'Main Bank',
+      }),
+    );
   });
 
   it('bulkCreate auto-defaults accountNumber and name when not provided', async () => {
@@ -1068,16 +1150,21 @@ describe('Improvement 3: Account Repository', () => {
     const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry);
 
-    await repo.bulkCreate([
-      { accountTypeCode: '1000' }, // no accountNumber or name
-    ], undefined);
+    await repo.bulkCreate(
+      [
+        { accountTypeCode: '1000' }, // no accountNumber or name
+      ],
+      undefined,
+    );
 
     // Should default to accountTypeCode and country pack name
-    expect(insertedDocs[0]).toEqual(expect.objectContaining({
-      accountTypeCode: '1000',
-      accountNumber: '1000',
-      name: 'Type 1000',
-    }));
+    expect(insertedDocs[0]).toEqual(
+      expect.objectContaining({
+        accountTypeCode: '1000',
+        accountNumber: '1000',
+        name: 'Type 1000',
+      }),
+    );
   });
 });
 
@@ -1093,11 +1180,9 @@ describe('Improvement 1: Journal Entry Schema - reversalOf field', () => {
       name: 'Test',
     } as any;
 
-    const schema = createJournalEntrySchema(
-      { country: mockCountry, currency: 'CAD' },
-      'Account',
-      { autoReference: false },
-    );
+    const schema = createJournalEntrySchema({ country: mockCountry, currency: 'CAD' }, 'Account', {
+      autoReference: false,
+    });
 
     expect(schema.path('reversalOf')).toBeDefined();
     expect(schema.path('reversed')).toBeDefined();
@@ -1123,11 +1208,13 @@ describe('Engine: createReports() pipes retainedEarningsAccountCode/currentYearE
     } as any;
 
     const engine = createAccountingEngine({
+      mongoose: mongoose.connection,
       country: mockCountry,
       currency: 'TST',
       retainedEarningsAccountCode: '9990',
       retainedEarningsDisplayCode: '9990-D',
       currentYearEarningsCode: '9991',
+      modelNames: __archModelNames(),
     });
 
     expect(engine.config.retainedEarningsAccountCode).toBe('9990');
@@ -1150,8 +1237,10 @@ describe('Engine: createReports() pipes retainedEarningsAccountCode/currentYearE
     } as any;
 
     const engine = createAccountingEngine({
+      mongoose: mongoose.connection,
       country: mockCountry,
       currency: 'TST',
+      modelNames: __archModelNames(),
     });
 
     expect(engine.config.retainedEarningsAccountCode).toBeUndefined();
@@ -1176,7 +1265,9 @@ describe('Extra item field preservation', () => {
   }
 
   it('duplicate() preserves extra dimension fields on items', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1184,8 +1275,23 @@ describe('Extra item field preservation', () => {
       journalType: 'GENERAL',
       label: 'Test',
       journalItems: [
-        { account: 'acc1', debit: 10000, credit: 0, label: 'Line 1', departmentId: 'dept-A', projectId: 'proj-1', locationId: 'loc-X' },
-        { account: 'acc2', debit: 0, credit: 10000, label: 'Line 2', departmentId: 'dept-B', customField: 42 },
+        {
+          account: 'acc1',
+          debit: 10000,
+          credit: 0,
+          label: 'Line 1',
+          departmentId: 'dept-A',
+          projectId: 'proj-1',
+          locationId: 'loc-X',
+        },
+        {
+          account: 'acc2',
+          debit: 0,
+          credit: 10000,
+          label: 'Line 2',
+          departmentId: 'dept-B',
+          customField: 42,
+        },
       ],
     };
 
@@ -1204,7 +1310,7 @@ describe('Extra item field preservation', () => {
     await repo.duplicate('entry-1');
 
     expect(capturedData).toBeDefined();
-    const items = capturedData!.journalItems as Array<Record<string, unknown>>;
+    const items = capturedData?.journalItems as Array<Record<string, unknown>>;
 
     // First item should carry departmentId, projectId, locationId
     expect(items[0].departmentId).toBe('dept-A');
@@ -1219,11 +1325,13 @@ describe('Extra item field preservation', () => {
     expect(items[0].account).toBe('acc1');
     expect(items[0].debit).toBe(10000);
     expect(items[0].credit).toBe(0);
-    expect(capturedData!.state).toBe('draft');
+    expect(capturedData?.state).toBe('draft');
   });
 
   it('reverse() preserves extra dimension fields on items', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1233,8 +1341,21 @@ describe('Extra item field preservation', () => {
       referenceNumber: 'GEN/2025/01/0001',
       label: 'Test',
       journalItems: [
-        { account: { _id: 'acc1' }, debit: 10000, credit: 0, label: 'Line 1', departmentId: 'dept-A', projectId: 'proj-1' },
-        { account: { _id: 'acc2' }, debit: 0, credit: 10000, label: 'Line 2', departmentId: 'dept-B' },
+        {
+          account: { _id: 'acc1' },
+          debit: 10000,
+          credit: 0,
+          label: 'Line 1',
+          departmentId: 'dept-A',
+          projectId: 'proj-1',
+        },
+        {
+          account: { _id: 'acc2' },
+          debit: 0,
+          credit: 10000,
+          label: 'Line 2',
+          departmentId: 'dept-B',
+        },
       ],
       save: vi.fn().mockResolvedValue(undefined),
     };
@@ -1254,7 +1375,7 @@ describe('Extra item field preservation', () => {
     await repo.reverse('entry-1');
 
     expect(capturedData).toBeDefined();
-    const items = capturedData!.journalItems as Array<Record<string, unknown>>;
+    const items = capturedData?.journalItems as Array<Record<string, unknown>>;
 
     // First item: debits/credits swapped, extra fields preserved
     expect(items[0].debit).toBe(0);
@@ -1269,7 +1390,9 @@ describe('Extra item field preservation', () => {
   });
 
   it('duplicate() does not copy _id or id from items', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1277,7 +1400,14 @@ describe('Extra item field preservation', () => {
       journalType: 'GENERAL',
       label: 'Test',
       journalItems: [
-        { _id: 'item-1', id: 'item-1', account: 'acc1', debit: 10000, credit: 0, departmentId: 'dept-A' },
+        {
+          _id: 'item-1',
+          id: 'item-1',
+          account: 'acc1',
+          debit: 10000,
+          credit: 0,
+          departmentId: 'dept-A',
+        },
         { _id: 'item-2', id: 'item-2', account: 'acc2', debit: 0, credit: 10000 },
       ],
     };
@@ -1296,7 +1426,7 @@ describe('Extra item field preservation', () => {
 
     await repo.duplicate('entry-1');
 
-    const items = capturedData!.journalItems as Array<Record<string, unknown>>;
+    const items = capturedData?.journalItems as Array<Record<string, unknown>>;
     // _id and id must NOT be copied to the duplicate
     expect(items[0]._id).toBeUndefined();
     expect(items[0].id).toBeUndefined();
@@ -1309,7 +1439,9 @@ describe('Extra item field preservation', () => {
 
 describe('requireApproval enforcement', () => {
   it('rejects post when approvedBy is set but approvedAt is missing', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1336,7 +1468,9 @@ describe('requireApproval enforcement', () => {
   });
 
   it('allows post when both approvedBy and approvedAt are set', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1366,7 +1500,9 @@ describe('requireApproval enforcement', () => {
 
 describe('archive() method', () => {
   it('archives a draft entry', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1389,7 +1525,9 @@ describe('archive() method', () => {
   });
 
   it('rejects archiving a posted entry', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1404,14 +1542,14 @@ describe('archive() method', () => {
     });
     wireJournalEntryMethods(repo, mockModel);
 
-    await expect(repo.archive('entry-1')).rejects.toThrow(
-      'Only draft entries can be archived',
-    );
+    await expect(repo.archive('entry-1')).rejects.toThrow('Only draft entries can be archived');
     expect(mockEntry.save).not.toHaveBeenCalled();
   });
 
   it('rejects archiving an already-archived entry', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockEntry = {
       _id: 'entry-1',
@@ -1426,13 +1564,13 @@ describe('archive() method', () => {
     });
     wireJournalEntryMethods(repo, mockModel);
 
-    await expect(repo.archive('entry-1')).rejects.toThrow(
-      'Only draft entries can be archived',
-    );
+    await expect(repo.archive('entry-1')).rejects.toThrow('Only draft entries can be archived');
   });
 
   it('throws not-found when entry does not exist', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {} as any;
 
@@ -1443,7 +1581,9 @@ describe('archive() method', () => {
   });
 
   it('requires actorId when strictness.requireActor is enabled', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {
       findOne: () => ({
@@ -1460,7 +1600,9 @@ describe('archive() method', () => {
   });
 
   it('enforces org scope in multi-tenant mode', async () => {
-    const { wireJournalEntryMethods } = await import('../src/repositories/journal-entry.repository.js');
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
 
     const mockModel = {
       findOne: () => ({
@@ -1471,8 +1613,6 @@ describe('archive() method', () => {
     const repo: any = mockRepository();
     wireJournalEntryMethods(repo, mockModel, 'business');
 
-    await expect(repo.archive('entry-1')).rejects.toThrow(
-      'organizationId is required',
-    );
+    await expect(repo.archive('entry-1')).rejects.toThrow('organizationId is required');
   });
 });

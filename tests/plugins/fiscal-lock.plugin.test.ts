@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { fiscalLockPlugin } from '../../src/plugins/fiscal-lock.plugin.js';
 import { createMockRepository } from '../helpers/mock-repository.js';
 
@@ -52,9 +52,9 @@ describe('fiscalLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted', date: new Date('2025-03-15') };
-      await expect(
-        repo._emitHook('before:create', { data }),
-      ).rejects.toThrow('fiscal period "Q1 2025" is closed');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'fiscal period "Q1 2025" is closed',
+      );
     });
 
     it('skips check for draft entries', async () => {
@@ -88,8 +88,8 @@ describe('fiscalLockPlugin', () => {
 
       // Should have queried with a date (current date), not skipped
       expect(capturedQuery).toBeDefined();
-      expect(capturedQuery!.startDate).toBeDefined();
-      expect(capturedQuery!.endDate).toBeDefined();
+      expect(capturedQuery?.startDate).toBeDefined();
+      expect(capturedQuery?.endDate).toBeDefined();
     });
   });
 
@@ -115,9 +115,9 @@ describe('fiscalLockPlugin', () => {
 
       const data = { state: 'posted' }; // no date
 
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('JournalEntryModel is required');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'JournalEntryModel is required',
+      );
     });
 
     it('fetches persisted date when JournalEntryModel is provided', async () => {
@@ -142,9 +142,9 @@ describe('fiscalLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted' }; // no date
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('fiscal period "Q1 2025" is closed');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'fiscal period "Q1 2025" is closed',
+      );
     });
 
     it('throws when context.id is missing on partial post update', async () => {
@@ -196,7 +196,7 @@ describe('fiscalLockPlugin', () => {
       await repo._emitHook('before:create', { data });
 
       expect(capturedQuery).toBeDefined();
-      expect(capturedQuery!.business).toBe('org123');
+      expect(capturedQuery?.business).toBe('org123');
     });
 
     it('fetches org field from persisted doc on partial update when not in payload or context', async () => {
@@ -235,7 +235,7 @@ describe('fiscalLockPlugin', () => {
       await repo._emitHook('before:update', { id: 'abc', data });
 
       expect(capturedQuery).toBeDefined();
-      expect(capturedQuery!.business).toBe('org456');
+      expect(capturedQuery?.business).toBe('org456');
     });
 
     it('fetches org field separately when date is in payload but org is not', async () => {
@@ -269,7 +269,7 @@ describe('fiscalLockPlugin', () => {
       await repo._emitHook('before:update', { id: 'abc', data });
 
       expect(capturedQuery).toBeDefined();
-      expect(capturedQuery!.business).toBe('org789');
+      expect(capturedQuery?.business).toBe('org789');
     });
 
     it('throws when orgField is configured but cannot be resolved from any source', async () => {
@@ -286,9 +286,9 @@ describe('fiscalLockPlugin', () => {
 
       // Create with org field configured but not in data
       const data = { state: 'posted', date: new Date('2025-03-15') };
-      await expect(
-        repo._emitHook('before:create', { data }),
-      ).rejects.toThrow('could not be resolved');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'could not be resolved',
+      );
     });
 
     it('throws on update when orgField cannot be resolved even from persisted doc', async () => {
@@ -315,9 +315,9 @@ describe('fiscalLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted' };
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('could not be resolved');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'could not be resolved',
+      );
     });
   });
 });

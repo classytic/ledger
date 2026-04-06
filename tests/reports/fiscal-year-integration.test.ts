@@ -12,37 +12,101 @@
  *   8. Close with multiple income + expense accounts
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
-import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
-import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import { generateBalanceSheet } from '../../src/reports/balance-sheet.js';
+import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import { generateTrialBalance } from '../../src/reports/trial-balance.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema.js';
+import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
+import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // ── Test country pack with multiple IS accounts ────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'FY', name: 'Fiscal Year Test', defaultCurrency: 'TST',
+  code: 'FY',
+  name: 'Fiscal Year Test',
+  defaultCurrency: 'TST',
   retainedEarningsAccountCode: '3660',
   currentYearEarningsCode: '3680',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null },
-    { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null },
-    { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null },
-    { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Equity', parentCode: null },
-    { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Sales', parentCode: null },
-    { code: '4100', name: 'Service Revenue', category: 'Income Statement-Income', description: 'Services', parentCode: null },
-    { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'COGS', parentCode: null },
-    { code: '6000', name: 'Rent Expense', category: 'Income Statement-Expense', description: 'Rent', parentCode: null },
-    { code: '6100', name: 'Salary Expense', category: 'Income Statement-Expense', description: 'Salaries', parentCode: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+    },
+    {
+      code: '1200',
+      name: 'Accounts Receivable',
+      category: 'Balance Sheet-Asset',
+      description: 'AR',
+      parentCode: null,
+    },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+    },
+    {
+      code: '3000',
+      name: 'Share Capital',
+      category: 'Balance Sheet-Equity',
+      description: 'Equity',
+      parentCode: null,
+    },
+    {
+      code: '3660',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: 'RE',
+      parentCode: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Sales',
+      parentCode: null,
+    },
+    {
+      code: '4100',
+      name: 'Service Revenue',
+      category: 'Income Statement-Income',
+      description: 'Services',
+      parentCode: null,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+    },
+    {
+      code: '6000',
+      name: 'Rent Expense',
+      category: 'Income Statement-Expense',
+      description: 'Rent',
+      parentCode: null,
+    },
+    {
+      code: '6100',
+      name: 'Salary Expense',
+      category: 'Income Statement-Expense',
+      description: 'Salaries',
+      parentCode: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const config: AccountingEngineConfig = { country: testPack, currency: 'TST' };
@@ -69,9 +133,9 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
-  if (mongoose.models['FYAccount']) delete mongoose.models['FYAccount'];
-  if (mongoose.models['FYJE']) delete mongoose.models['FYJE'];
-  if (mongoose.models['FYFP']) delete mongoose.models['FYFP'];
+  if (mongoose.models.FYAccount) delete mongoose.models.FYAccount;
+  if (mongoose.models.FYJE) delete mongoose.models.FYJE;
+  if (mongoose.models.FYFP) delete mongoose.models.FYFP;
 
   AccountModel = mongoose.model('FYAccount', createAccountSchema(config));
   JEModel = mongoose.model('FYJE', createJournalEntrySchema(config, 'FYAccount'));
@@ -160,16 +224,16 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
     expect(report.summary.isBalanced).toBe(true);
 
     // Find retained earnings group
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings');
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
-    const priorRE = reGroup!.accounts.find(a => a.id === 'prior-retained');
-    const currentYearNI = reGroup!.accounts.find(a => a.id === 'current-year');
+    const priorRE = reGroup?.accounts.find((a) => a.id === 'prior-retained');
+    const currentYearNI = reGroup?.accounts.find((a) => a.id === 'current-year');
 
     // Prior retained = revenue earned before Apr 1 2025 = 200000
-    expect(priorRE!.balance).toBe(200000);
+    expect(priorRE?.balance).toBe(200000);
     // Current year income = revenue from Apr 2025 onward = 300000
-    expect(currentYearNI!.balance).toBe(300000);
+    expect(currentYearNI?.balance).toBe(300000);
   });
 
   it('July-June fiscal year (Australia): correctly boundaries at July 1', async () => {
@@ -197,9 +261,9 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
 
     expect(report.summary.isBalanced).toBe(true);
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
-    const priorRE = reGroup.accounts.find(a => a.id === 'prior-retained')!;
-    const currentYearNI = reGroup.accounts.find(a => a.id === 'current-year')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const priorRE = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
+    const currentYearNI = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
     // Prior = all IS before Jul 1 2025 = 150000
     expect(priorRE.balance).toBe(150000);
@@ -232,9 +296,9 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
 
     expect(report.summary.isBalanced).toBe(true);
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
-    const priorRE = reGroup.accounts.find(a => a.id === 'prior-retained')!;
-    const currentYearNI = reGroup.accounts.find(a => a.id === 'current-year')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const priorRE = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
+    const currentYearNI = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
     expect(priorRE.balance).toBe(400000);
     expect(currentYearNI.balance).toBe(100000);
@@ -270,16 +334,16 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const janRE = janBS.equity.groups.find(g => g.name === 'Retained Earnings')!;
-    const aprRE = aprBS.equity.groups.find(g => g.name === 'Retained Earnings')!;
+    const janRE = janBS.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const aprRE = aprBS.equity.groups.find((g) => g.name === 'Retained Earnings')!;
 
     // Jan start: prior=0, current=800000
-    expect(janRE.accounts.find(a => a.id === 'prior-retained')!.balance).toBe(0);
-    expect(janRE.accounts.find(a => a.id === 'current-year')!.balance).toBe(800000);
+    expect(janRE.accounts.find((a) => a.id === 'prior-retained')?.balance).toBe(0);
+    expect(janRE.accounts.find((a) => a.id === 'current-year')?.balance).toBe(800000);
 
     // Apr start: prior=500000 (Feb), current=300000 (May)
-    expect(aprRE.accounts.find(a => a.id === 'prior-retained')!.balance).toBe(500000);
-    expect(aprRE.accounts.find(a => a.id === 'current-year')!.balance).toBe(300000);
+    expect(aprRE.accounts.find((a) => a.id === 'prior-retained')?.balance).toBe(500000);
+    expect(aprRE.accounts.find((a) => a.id === 'current-year')?.balance).toBe(300000);
 
     // Both should still balance
     expect(janBS.summary.isBalanced).toBe(true);
@@ -310,16 +374,18 @@ describe('retainedEarningsAccountCode and currentYearEarningsCode on Balance She
 
     const report = await generateBalanceSheet(
       {
-        AccountModel, JournalEntryModel: JEModel, country: testPack,
+        AccountModel,
+        JournalEntryModel: JEModel,
+        country: testPack,
         retainedEarningsDisplayCode: '3660',
         currentYearEarningsCode: '3680',
       },
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
-    const priorLine = reGroup.accounts.find(a => a.id === 'prior-retained')!;
-    const currentLine = reGroup.accounts.find(a => a.id === 'current-year')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const priorLine = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
+    const currentLine = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
     expect(priorLine.code).toBe('3660');
     expect(priorLine.balance).toBe(200000);
@@ -406,7 +472,9 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
 
     // FY2023: net income 100k
     const fy2023 = await FPModel.create({
-      name: 'FY2023', startDate: new Date('2023-01-01'), endDate: new Date('2023-12-31'),
+      name: 'FY2023',
+      startDate: new Date('2023-01-01'),
+      endDate: new Date('2023-12-31'),
     });
     await postEntry('2023-06-01', [
       { account: cashId, debit: 100000, credit: 0 },
@@ -419,7 +487,9 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
 
     // FY2024: net income 200k
     const fy2024 = await FPModel.create({
-      name: 'FY2024', startDate: new Date('2024-01-01'), endDate: new Date('2024-12-31'),
+      name: 'FY2024',
+      startDate: new Date('2024-01-01'),
+      endDate: new Date('2024-12-31'),
     });
     await postEntry('2024-06-01', [
       { account: cashId, debit: 200000, credit: 0 },
@@ -444,9 +514,9 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
 
     expect(report.summary.isBalanced).toBe(true);
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
-    const priorRE = reGroup.accounts.find(a => a.id === 'prior-retained')!;
-    const currentNI = reGroup.accounts.find(a => a.id === 'current-year')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const priorRE = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
+    const currentNI = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
     // Current year = FY2025 IS activity = 50k
     expect(currentNI.balance).toBe(50000);
@@ -457,13 +527,13 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
     expect(priorRE.balance).toBe(300000);
 
     // The RE account should NOT appear separately in any equity group
-    const retainedInEquity = report.equity.groups.find(g =>
-      g.accounts.some(a => String(a.id) === String(retainedId)),
+    const retainedInEquity = report.equity.groups.find((g) =>
+      g.accounts.some((a) => String(a.id) === String(retainedId)),
     );
     // It should only appear in the computed "Retained Earnings" group (id = 'prior-retained')
     // not as a standalone account with its actual DB id
     const standaloneRetained = retainedInEquity?.accounts.find(
-      a => String(a.id) === String(retainedId),
+      (a) => String(a.id) === String(retainedId),
     );
     expect(standaloneRetained).toBeUndefined();
   });
@@ -513,7 +583,7 @@ describe('Fiscal Period Spanning Calendar Year Boundary', () => {
     expect(result.accountsClosed).toBe(2); // salesRev + rent
 
     // Closing entry should exist and balance
-    const closingEntry = await JEModel.findById(result.closingEntryId).lean() as any;
+    const closingEntry = (await JEModel.findById(result.closingEntryId).lean()) as any;
     expect(closingEntry.totalDebit).toBe(closingEntry.totalCredit);
 
     // Verify entries outside the period are NOT included
@@ -560,16 +630,25 @@ describe('Fiscal Period Spanning Calendar Year Boundary', () => {
 describe('Three-Period Cascade Reopening', () => {
   it('blocks reopening Q1 when Q2 and Q3 are closed', async () => {
     const q1 = await FPModel.create({
-      name: 'Q1', startDate: new Date('2025-01-01'), endDate: new Date('2025-03-31'),
-      closed: true, closedAt: new Date(),
+      name: 'Q1',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
+      closed: true,
+      closedAt: new Date(),
     });
     await FPModel.create({
-      name: 'Q2', startDate: new Date('2025-04-01'), endDate: new Date('2025-06-30'),
-      closed: true, closedAt: new Date(),
+      name: 'Q2',
+      startDate: new Date('2025-04-01'),
+      endDate: new Date('2025-06-30'),
+      closed: true,
+      closedAt: new Date(),
     });
     await FPModel.create({
-      name: 'Q3', startDate: new Date('2025-07-01'), endDate: new Date('2025-09-30'),
-      closed: true, closedAt: new Date(),
+      name: 'Q3',
+      startDate: new Date('2025-07-01'),
+      endDate: new Date('2025-09-30'),
+      closed: true,
+      closedAt: new Date(),
     });
 
     await expect(
@@ -582,16 +661,24 @@ describe('Three-Period Cascade Reopening', () => {
 
   it('blocks reopening Q2 when Q3 is closed (even if Q1 is open)', async () => {
     await FPModel.create({
-      name: 'Q1', startDate: new Date('2025-01-01'), endDate: new Date('2025-03-31'),
+      name: 'Q1',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
       closed: false,
     });
     const q2 = await FPModel.create({
-      name: 'Q2', startDate: new Date('2025-04-01'), endDate: new Date('2025-06-30'),
-      closed: true, closedAt: new Date(),
+      name: 'Q2',
+      startDate: new Date('2025-04-01'),
+      endDate: new Date('2025-06-30'),
+      closed: true,
+      closedAt: new Date(),
     });
     await FPModel.create({
-      name: 'Q3', startDate: new Date('2025-07-01'), endDate: new Date('2025-09-30'),
-      closed: true, closedAt: new Date(),
+      name: 'Q3',
+      startDate: new Date('2025-07-01'),
+      endDate: new Date('2025-09-30'),
+      closed: true,
+      closedAt: new Date(),
     });
 
     await expect(
@@ -604,16 +691,25 @@ describe('Three-Period Cascade Reopening', () => {
 
   it('allows reopening Q3 (the latest), then Q2, then Q1 in sequence', async () => {
     const q1 = await FPModel.create({
-      name: 'Q1', startDate: new Date('2025-01-01'), endDate: new Date('2025-03-31'),
-      closed: true, closedAt: new Date(),
+      name: 'Q1',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
+      closed: true,
+      closedAt: new Date(),
     });
     const q2 = await FPModel.create({
-      name: 'Q2', startDate: new Date('2025-04-01'), endDate: new Date('2025-06-30'),
-      closed: true, closedAt: new Date(),
+      name: 'Q2',
+      startDate: new Date('2025-04-01'),
+      endDate: new Date('2025-06-30'),
+      closed: true,
+      closedAt: new Date(),
     });
     const q3 = await FPModel.create({
-      name: 'Q3', startDate: new Date('2025-07-01'), endDate: new Date('2025-09-30'),
-      closed: true, closedAt: new Date(),
+      name: 'Q3',
+      startDate: new Date('2025-07-01'),
+      endDate: new Date('2025-09-30'),
+      closed: true,
+      closedAt: new Date(),
     });
 
     // Step 1: reopen Q3 (latest) — should succeed
@@ -621,7 +717,7 @@ describe('Three-Period Cascade Reopening', () => {
       { JournalEntryModel: JEModel, FiscalPeriodModel: FPModel },
       { periodId: q3._id },
     );
-    const updatedQ3 = await FPModel.findById(q3._id).lean() as any;
+    const updatedQ3 = (await FPModel.findById(q3._id).lean()) as any;
     expect(updatedQ3.closed).toBe(false);
 
     // Step 2: reopen Q2 (now the latest closed) — should succeed
@@ -629,7 +725,7 @@ describe('Three-Period Cascade Reopening', () => {
       { JournalEntryModel: JEModel, FiscalPeriodModel: FPModel },
       { periodId: q2._id },
     );
-    const updatedQ2 = await FPModel.findById(q2._id).lean() as any;
+    const updatedQ2 = (await FPModel.findById(q2._id).lean()) as any;
     expect(updatedQ2.closed).toBe(false);
 
     // Step 3: reopen Q1 (now the latest closed) — should succeed
@@ -637,7 +733,7 @@ describe('Three-Period Cascade Reopening', () => {
       { JournalEntryModel: JEModel, FiscalPeriodModel: FPModel },
       { periodId: q1._id },
     );
-    const updatedQ1 = await FPModel.findById(q1._id).lean() as any;
+    const updatedQ1 = (await FPModel.findById(q1._id).lean()) as any;
     expect(updatedQ1.closed).toBe(false);
   });
 });
@@ -653,7 +749,9 @@ describe('Posting to Open Period While Adjacent Period Is Closed', () => {
 
     // Close Q1 with some revenue
     const q1 = await FPModel.create({
-      name: 'Q1', startDate: new Date('2025-01-01'), endDate: new Date('2025-03-31'),
+      name: 'Q1',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-03-31'),
     });
     await postEntry('2025-02-01', [
       { account: cashId, debit: 100000, credit: 0 },
@@ -667,7 +765,9 @@ describe('Posting to Open Period While Adjacent Period Is Closed', () => {
 
     // Q2 is open — post new entries
     const q2 = await FPModel.create({
-      name: 'Q2', startDate: new Date('2025-04-01'), endDate: new Date('2025-06-30'),
+      name: 'Q2',
+      startDate: new Date('2025-04-01'),
+      endDate: new Date('2025-06-30'),
     });
     await postEntry('2025-04-15', [
       { account: cashId, debit: 250000, credit: 0 },
@@ -728,7 +828,7 @@ describe('Net Loss Scenario (Expenses > Revenue)', () => {
     expect(result.netIncome).toBe(-300000);
 
     // Closing entry should DEBIT retained earnings (reducing equity)
-    const closingEntry = await JEModel.findById(result.closingEntryId).lean() as any;
+    const closingEntry = (await JEModel.findById(result.closingEntryId).lean()) as any;
     const reLine = closingEntry.journalItems.find(
       (i: any) => String(i.account) === String(retainedId),
     );
@@ -790,7 +890,7 @@ describe('Close with Multiple Income and Expense Accounts', () => {
     expect(result.accountsClosed).toBe(5); // 2 revenue + 3 expense
 
     // Closing entry: 5 IS accounts + 1 retained earnings = 6 items
-    const closingEntry = await JEModel.findById(result.closingEntryId).lean() as any;
+    const closingEntry = (await JEModel.findById(result.closingEntryId).lean()) as any;
     expect(closingEntry.journalItems).toHaveLength(6);
     expect(closingEntry.totalDebit).toBe(closingEntry.totalCredit);
 
@@ -830,7 +930,7 @@ describe('Trial Balance with Non-January Fiscal Year Start', () => {
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const cashRow = report.rows.find(r => String((r.account as any)._id) === String(cashId));
+    const cashRow = report.rows.find((r) => String((r.account as any)._id) === String(cashId));
     expect(cashRow).toBeDefined();
 
     // Initial = everything before June 2025 reporting period but >= fiscal year start (Apr 1)
@@ -840,8 +940,6 @@ describe('Trial Balance with Non-January Fiscal Year Start', () => {
     // Actually, initial = all entries before the reporting period start (Jun 1)
     // but the exact interpretation depends on the implementation.
     // Let's just verify the report is internally consistent.
-    expect(cashRow!.ending.debit).toBe(
-      cashRow!.initial.debit + cashRow!.current.debit,
-    );
+    expect(cashRow?.ending.debit).toBe(cashRow?.initial.debit + cashRow?.current.debit);
   });
 });

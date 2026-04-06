@@ -1,10 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import { applyTaxHook } from '../../src/utils/tax-hooks.js';
-import type { TaxLineGenerator, TaxLineInput, GeneratedTaxLine } from '../../src/utils/tax-hooks.js';
+import { describe, expect, it } from 'vitest';
 import type { JournalItem } from '../../src/types/core.js';
+import type {
+  GeneratedTaxLine,
+  TaxLineGenerator,
+  TaxLineInput,
+} from '../../src/utils/tax-hooks.js';
+import { applyTaxHook } from '../../src/utils/tax-hooks.js';
 
 /** Helper to build a journal item */
-function makeItem(overrides: Partial<JournalItem> & { account: string; debit: number; credit: number }): JournalItem {
+function makeItem(
+  overrides: Partial<JournalItem> & { account: string; debit: number; credit: number },
+): JournalItem {
   return overrides as JournalItem;
 }
 
@@ -12,7 +18,7 @@ function makeItem(overrides: Partial<JournalItem> & { account: string; debit: nu
 const tenPercentGenerator: TaxLineGenerator = {
   generateTaxLines(input: TaxLineInput): GeneratedTaxLine[] {
     if (input.taxCode === 'GST10') {
-      const taxAmount = Math.round(input.amount * 0.10);
+      const taxAmount = Math.round(input.amount * 0.1);
       return [
         {
           account: 'tax-collected',
@@ -57,7 +63,7 @@ describe('applyTaxHook', () => {
     expect(result).toHaveLength(3);
     // Third item is the generated tax line
     expect(result[2].account).toBe('tax-collected');
-    expect(result[2].debit).toBe(1000);  // 10% of 10000
+    expect(result[2].debit).toBe(1000); // 10% of 10000
     expect(result[2].credit).toBe(0);
     expect(result[2].label).toBe('GST 10%');
     expect(result[2].taxDetails).toEqual([{ taxCode: 'GST10', taxName: 'GST 10%' }]);
@@ -95,22 +101,26 @@ describe('applyTaxHook', () => {
     const multiGenerator: TaxLineGenerator = {
       generateTaxLines(input: TaxLineInput): GeneratedTaxLine[] {
         if (input.taxCode === 'GST5') {
-          return [{
-            account: 'gst-account',
-            debit: input.side === 'debit' ? Math.round(input.amount * 0.05) : 0,
-            credit: input.side === 'credit' ? Math.round(input.amount * 0.05) : 0,
-            label: 'GST 5%',
-            taxDetails: [{ taxCode: 'GST5' }],
-          }];
+          return [
+            {
+              account: 'gst-account',
+              debit: input.side === 'debit' ? Math.round(input.amount * 0.05) : 0,
+              credit: input.side === 'credit' ? Math.round(input.amount * 0.05) : 0,
+              label: 'GST 5%',
+              taxDetails: [{ taxCode: 'GST5' }],
+            },
+          ];
         }
         if (input.taxCode === 'PST8') {
-          return [{
-            account: 'pst-account',
-            debit: input.side === 'debit' ? Math.round(input.amount * 0.08) : 0,
-            credit: input.side === 'credit' ? Math.round(input.amount * 0.08) : 0,
-            label: 'PST 8%',
-            taxDetails: [{ taxCode: 'PST8' }],
-          }];
+          return [
+            {
+              account: 'pst-account',
+              debit: input.side === 'debit' ? Math.round(input.amount * 0.08) : 0,
+              credit: input.side === 'credit' ? Math.round(input.amount * 0.08) : 0,
+              label: 'PST 8%',
+              taxDetails: [{ taxCode: 'PST8' }],
+            },
+          ];
         }
         return [];
       },
@@ -126,7 +136,7 @@ describe('applyTaxHook', () => {
 
     expect(result).toHaveLength(5); // 3 original + 2 tax lines
     expect(result[3].account).toBe('gst-account');
-    expect(result[3].debit).toBe(500);  // 5% of 10000
+    expect(result[3].debit).toBe(500); // 5% of 10000
     expect(result[4].account).toBe('pst-account');
     expect(result[4].debit).toBe(1600); // 8% of 20000
   });

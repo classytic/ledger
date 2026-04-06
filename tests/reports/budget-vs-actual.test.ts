@@ -1,25 +1,69 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
-import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { createBudgetSchema } from '../../src/schemas/budget.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
-import type { AccountingEngineConfig } from '../../src/types/engine.js';
 import { generateBudgetVsActual } from '../../src/reports/budget-vs-actual.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import { createBudgetSchema } from '../../src/schemas/budget.schema.js';
+import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
+import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'BVA', name: 'Budget Test', defaultCurrency: 'TST',
+  code: 'BVA',
+  name: 'Budget Test',
+  defaultCurrency: 'TST',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'COGS', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6000', name: 'Rent Expense', category: 'Income Statement-Expense', description: 'Rent', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '7000', name: 'Utilities', category: 'Income Statement-Expense', description: 'Utilities', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6000',
+      name: 'Rent Expense',
+      category: 'Income Statement-Expense',
+      description: 'Rent',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '7000',
+      name: 'Utilities',
+      category: 'Income Statement-Expense',
+      description: 'Utilities',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const config: AccountingEngineConfig = {
@@ -45,15 +89,15 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
 
   const acctSchema = createAccountSchema(config);
-  if (mongoose.models['BVAAccount']) delete mongoose.models['BVAAccount'];
+  if (mongoose.models.BVAAccount) delete mongoose.models.BVAAccount;
   AccountModel = mongoose.model('BVAAccount', acctSchema);
 
   const jeSchema = createJournalEntrySchema(config, 'BVAAccount');
-  if (mongoose.models['BVAJE']) delete mongoose.models['BVAJE'];
+  if (mongoose.models.BVAJE) delete mongoose.models.BVAJE;
   JEModel = mongoose.model('BVAJE', jeSchema);
 
   const budgetSchema = createBudgetSchema(config);
-  if (mongoose.models['BVABudget']) delete mongoose.models['BVABudget'];
+  if (mongoose.models.BVABudget) delete mongoose.models.BVABudget;
   BudgetModel = mongoose.model('BVABudget', budgetSchema);
 
   await AccountModel.createIndexes();
@@ -86,7 +130,10 @@ beforeEach(async () => {
 });
 
 /** Helper: create a posted journal entry */
-async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+async function postEntry(
+  date: string,
+  items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
+) {
   return JEModel.create({
     journalType: 'GENERAL',
     state: 'posted',
@@ -98,7 +145,12 @@ async function postEntry(date: string, items: Array<{ account: mongoose.Types.Ob
 }
 
 /** Helper: create a budget record */
-async function createBudget(account: mongoose.Types.ObjectId, periodStart: string, periodEnd: string, amount: number) {
+async function createBudget(
+  account: mongoose.Types.ObjectId,
+  periodStart: string,
+  periodEnd: string,
+  amount: number,
+) {
   return BudgetModel.create({
     account,
     periodStart: new Date(periodStart),
@@ -298,9 +350,9 @@ describe('Budget vs Actual Report', () => {
   });
 
   it('sorts results by account code', async () => {
-    await createBudget(rentId, '2025-01-01', '2025-01-31', 100000);     // 6000
-    await createBudget(cogsId, '2025-01-01', '2025-01-31', 200000);     // 5000
-    await createBudget(revenueId, '2025-01-01', '2025-01-31', 500000);  // 4000
+    await createBudget(rentId, '2025-01-01', '2025-01-31', 100000); // 6000
+    await createBudget(cogsId, '2025-01-01', '2025-01-31', 200000); // 5000
+    await createBudget(revenueId, '2025-01-01', '2025-01-31', 500000); // 4000
     await createBudget(utilitiesId, '2025-01-01', '2025-01-31', 50000); // 7000
 
     const report = await generateBudgetVsActual(reportOpts(), {

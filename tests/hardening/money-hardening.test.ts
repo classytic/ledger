@@ -6,12 +6,24 @@
  * checks by testing every edge the float-to-int conversion can hit.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  fromDecimal, toDecimal, add, subtract, multiply,
-  percentage, splitTaxInclusive, splitTaxExclusive,
-  allocate, round, equals, isZero, abs, negate,
-  format, formatPlain, parseCents,
+  abs,
+  add,
+  allocate,
+  equals,
+  format,
+  formatPlain,
+  fromDecimal,
+  isZero,
+  multiply,
+  negate,
+  parseCents,
+  percentage,
+  splitTaxExclusive,
+  splitTaxInclusive,
+  subtract,
+  toDecimal,
 } from '../../src/money.js';
 
 // ── Overflow & Safe Integer Limits ────────────────────────────────────────
@@ -45,19 +57,22 @@ describe('Money — overflow protection', () => {
 describe('Money — penny-leak prevention', () => {
   it('splitTaxInclusive: base + tax === inclusive (no penny leak)', () => {
     // Test across many amounts and rates
-    const rates = [0.05, 0.07, 0.10, 0.13, 0.15, 0.20, 0.25];
+    const rates = [0.05, 0.07, 0.1, 0.13, 0.15, 0.2, 0.25];
     const amounts = [1, 99, 100, 999, 1001, 9999, 10000, 99999, 123456789];
 
     for (const rate of rates) {
       for (const amount of amounts) {
         const { base, tax } = splitTaxInclusive(amount, rate);
-        expect(base + tax, `splitTaxInclusive(${amount}, ${rate}): ${base} + ${tax} ≠ ${amount}`).toBe(amount);
+        expect(
+          base + tax,
+          `splitTaxInclusive(${amount}, ${rate}): ${base} + ${tax} ≠ ${amount}`,
+        ).toBe(amount);
       }
     }
   });
 
   it('splitTaxExclusive: base + tax === total (no penny leak)', () => {
-    const rates = [0.05, 0.07, 0.10, 0.13, 0.15, 0.20, 0.25];
+    const rates = [0.05, 0.07, 0.1, 0.13, 0.15, 0.2, 0.25];
     const amounts = [1, 99, 100, 999, 1001, 9999, 10000, 99999, 123456789];
 
     for (const rate of rates) {
@@ -72,13 +87,13 @@ describe('Money — penny-leak prevention', () => {
   it('allocate: sum always equals input (zero remainder error)', () => {
     const cases = [
       { total: 1000, ratios: [1, 1, 1] },
-      { total: 1, ratios: [1, 1, 1] },         // 1 cent among 3
-      { total: 7, ratios: [1, 1, 1] },          // 7 among 3
+      { total: 1, ratios: [1, 1, 1] }, // 1 cent among 3
+      { total: 7, ratios: [1, 1, 1] }, // 7 among 3
       { total: 100, ratios: [33, 33, 34] },
       { total: 99999, ratios: [1, 2, 3, 4, 5] },
       { total: 1, ratios: [1, 1, 1, 1, 1, 1, 1] }, // 1 cent among 7
-      { total: 10000, ratios: [1] },             // single ratio
-      { total: 0, ratios: [1, 1] },              // zero total
+      { total: 10000, ratios: [1] }, // single ratio
+      { total: 0, ratios: [1, 1] }, // zero total
     ];
 
     for (const { total, ratios } of cases) {
@@ -98,7 +113,7 @@ describe('Money — penny-leak prevention', () => {
   });
 
   it('round-trip: toDecimal(fromDecimal(x)) preserves value for clean decimals', () => {
-    const values = [0, 0.01, 0.10, 1.00, 10.50, 100.99, 999.99, 1234.56];
+    const values = [0, 0.01, 0.1, 1.0, 10.5, 100.99, 999.99, 1234.56];
     for (const v of values) {
       expect(toDecimal(fromDecimal(v)), `round-trip failed for ${v}`).toBeCloseTo(v, 10);
     }
@@ -156,8 +171,8 @@ describe('Money — pathological allocation', () => {
     const sum = parts.reduce((s, p) => s + p, 0);
     expect(sum).toBe(1);
     // Exactly 1 recipient gets the cent, others get 0
-    expect(parts.filter(p => p === 1).length).toBe(1);
-    expect(parts.filter(p => p === 0).length).toBe(99);
+    expect(parts.filter((p) => p === 1).length).toBe(1);
+    expect(parts.filter((p) => p === 0).length).toBe(99);
   });
 
   it('allocate 0 cents among any ratios', () => {

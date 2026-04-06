@@ -6,23 +6,59 @@
  * tests by covering every transition path and boundary value.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 const testPack = defineCountryPack({
-  code: 'HT', name: 'Hardening Test', defaultCurrency: 'USD',
+  code: 'HT',
+  name: 'Hardening Test',
+  defaultCurrency: 'USD',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2000', name: 'AP', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Rev', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'COGS', category: 'Income Statement-Expense', description: 'COGS', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2000',
+      name: 'AP',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Revenue',
+      category: 'Income Statement-Income',
+      description: 'Rev',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'COGS',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const config: AccountingEngineConfig = { country: testPack, currency: 'USD' };
@@ -92,9 +128,7 @@ describe('Journal Entry — state machine', () => {
     const { cash } = await createAccounts();
     const entry = await JE.create({
       state: 'draft',
-      journalItems: [
-        { account: cash._id, debit: 1000, credit: 0 },
-      ],
+      journalItems: [{ account: cash._id, debit: 1000, credit: 0 }],
     });
     expect(entry.state).toBe('draft');
   });
@@ -117,9 +151,7 @@ describe('Journal Entry — state machine', () => {
   it('posting with fewer than 2 items throws', async () => {
     const { cash } = await createAccounts();
     const entry = await JE.create({
-      journalItems: [
-        { account: cash._id, debit: 1000, credit: 0 },
-      ],
+      journalItems: [{ account: cash._id, debit: 1000, credit: 0 }],
     });
     entry.state = 'posted';
     const err = await entry.validate().catch((e: Error) => e);
@@ -155,7 +187,7 @@ describe('Journal Entry — item validation', () => {
     });
     const err = doc.validateSync();
     expect(err).toBeDefined();
-    expect(err!.message).toContain('non-negative integer');
+    expect(err?.message).toContain('non-negative integer');
   });
 
   it('rejects negative amounts', async () => {
@@ -170,7 +202,7 @@ describe('Journal Entry — item validation', () => {
     const err = doc.validateSync();
     expect(err).toBeDefined();
     // Mongoose min:0 fires before custom validator
-    expect(err!.message).toMatch(/less than minimum|non-negative integer/);
+    expect(err?.message).toMatch(/less than minimum|non-negative integer/);
   });
 
   it('accepts zero debit and zero credit (valid line)', async () => {
@@ -261,9 +293,21 @@ describe('Journal Entry — reference numbers', () => {
       { account: ap._id, debit: 0, credit: 1000 },
     ];
 
-    const e1 = await JE.create({ date: new Date('2025-03-01'), journalType: 'SALES', journalItems: items });
-    const e2 = await JE.create({ date: new Date('2025-03-15'), journalType: 'SALES', journalItems: items });
-    const e3 = await JE.create({ date: new Date('2025-03-28'), journalType: 'SALES', journalItems: items });
+    const e1 = await JE.create({
+      date: new Date('2025-03-01'),
+      journalType: 'SALES',
+      journalItems: items,
+    });
+    const e2 = await JE.create({
+      date: new Date('2025-03-15'),
+      journalType: 'SALES',
+      journalItems: items,
+    });
+    const e3 = await JE.create({
+      date: new Date('2025-03-28'),
+      journalType: 'SALES',
+      journalItems: items,
+    });
 
     expect(e1.referenceNumber).toBe('SALES/2025/03/0001');
     expect(e2.referenceNumber).toBe('SALES/2025/03/0002');
@@ -278,7 +322,11 @@ describe('Journal Entry — reference numbers', () => {
     ];
 
     await JE.create({ date: new Date('2025-03-15'), journalType: 'SALES', journalItems: items });
-    const april = await JE.create({ date: new Date('2025-04-01'), journalType: 'SALES', journalItems: items });
+    const april = await JE.create({
+      date: new Date('2025-04-01'),
+      journalType: 'SALES',
+      journalItems: items,
+    });
 
     expect(april.referenceNumber).toBe('SALES/2025/04/0001');
   });
@@ -290,8 +338,16 @@ describe('Journal Entry — reference numbers', () => {
       { account: ap._id, debit: 0, credit: 1000 },
     ];
 
-    const sales = await JE.create({ date: new Date('2025-03-15'), journalType: 'SALES', journalItems: items });
-    const purchases = await JE.create({ date: new Date('2025-03-15'), journalType: 'PURCHASES', journalItems: items });
+    const sales = await JE.create({
+      date: new Date('2025-03-15'),
+      journalType: 'SALES',
+      journalItems: items,
+    });
+    const purchases = await JE.create({
+      date: new Date('2025-03-15'),
+      journalType: 'PURCHASES',
+      journalItems: items,
+    });
 
     expect(sales.referenceNumber).toBe('SALES/2025/03/0001');
     expect(purchases.referenceNumber).toBe('PURCHASES/2025/03/0001');
@@ -325,7 +381,7 @@ describe('Journal Entry — journalType enum', () => {
     });
     const err = doc.validateSync();
     expect(err).toBeDefined();
-    expect(err!.errors?.journalType).toBeDefined();
+    expect(err?.errors?.journalType).toBeDefined();
   });
 
   it('defaults to MISC', async () => {

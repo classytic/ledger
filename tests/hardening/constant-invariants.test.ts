@@ -6,20 +6,31 @@
  * constraint validation. Ensures no silent data corruption.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  CATEGORIES, CATEGORY_KEYS,
-  isValidCategory, getNormalBalance,
-  isBalanceSheet, isIncomeStatement,
-  categoryKey, extractMainType, extractStatementType,
+  CATEGORIES,
+  CATEGORY_KEYS,
+  categoryKey,
+  extractMainType,
+  extractStatementType,
+  getNormalBalance,
+  isBalanceSheet,
+  isIncomeStatement,
+  isValidCategory,
 } from '../../src/constants/categories.js';
 import {
-  JOURNAL_TYPES, JOURNAL_CODES,
-  getJournalTypeCodes, isValidJournalType, getJournalType,
-} from '../../src/constants/journals.js';
-import {
-  CURRENCIES, getCurrency, isValidCurrency, getMinorUnit,
+  CURRENCIES,
+  getCurrency,
+  getMinorUnit,
+  isValidCurrency,
 } from '../../src/constants/currencies.js';
+import {
+  getJournalType,
+  getJournalTypeCodes,
+  isValidJournalType,
+  JOURNAL_CODES,
+  JOURNAL_TYPES,
+} from '../../src/constants/journals.js';
 
 // ── Categories: Structural Invariants ─────────────────────────────────────
 
@@ -33,7 +44,7 @@ describe('Categories — invariants', () => {
   });
 
   it('every main type appears exactly once', () => {
-    const mainTypes = CATEGORY_KEYS.map(k => CATEGORIES[k].mainType);
+    const mainTypes = CATEGORY_KEYS.map((k) => CATEGORIES[k].mainType);
     const unique = new Set(mainTypes);
     expect(unique.size).toBe(5);
     expect(unique).toContain('Asset');
@@ -44,8 +55,8 @@ describe('Categories — invariants', () => {
   });
 
   it('balance sheet and income statement are disjoint sets', () => {
-    const bs = CATEGORY_KEYS.filter(k => isBalanceSheet(k));
-    const is = CATEGORY_KEYS.filter(k => isIncomeStatement(k));
+    const bs = CATEGORY_KEYS.filter((k) => isBalanceSheet(k));
+    const is = CATEGORY_KEYS.filter((k) => isIncomeStatement(k));
 
     // Disjoint
     for (const k of bs) expect(is).not.toContain(k);
@@ -56,14 +67,14 @@ describe('Categories — invariants', () => {
   });
 
   it('balance sheet has exactly 3 types: Asset, Liability, Equity', () => {
-    const bs = CATEGORY_KEYS.filter(k => isBalanceSheet(k));
-    const mainTypes = bs.map(k => CATEGORIES[k].mainType).sort();
+    const bs = CATEGORY_KEYS.filter((k) => isBalanceSheet(k));
+    const mainTypes = bs.map((k) => CATEGORIES[k].mainType).sort();
     expect(mainTypes).toEqual(['Asset', 'Equity', 'Liability']);
   });
 
   it('income statement has exactly 2 types: Income, Expense', () => {
-    const is = CATEGORY_KEYS.filter(k => isIncomeStatement(k));
-    const mainTypes = is.map(k => CATEGORIES[k].mainType).sort();
+    const is = CATEGORY_KEYS.filter((k) => isIncomeStatement(k));
+    const mainTypes = is.map((k) => CATEGORIES[k].mainType).sort();
     expect(mainTypes).toEqual(['Expense', 'Income']);
   });
 
@@ -122,12 +133,12 @@ describe('Journal Types — invariants', () => {
   });
 
   it('no duplicate codes', () => {
-    const codes = Object.values(JOURNAL_TYPES).map(jt => jt.code);
+    const codes = Object.values(JOURNAL_TYPES).map((jt) => jt.code);
     expect(new Set(codes).size).toBe(codes.length);
   });
 
   it('all names are non-empty and unique', () => {
-    const names = Object.values(JOURNAL_TYPES).map(jt => jt.name);
+    const names = Object.values(JOURNAL_TYPES).map((jt) => jt.name);
     for (const n of names) expect(n.length).toBeGreaterThan(0);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -161,15 +172,22 @@ describe('Journal Types — invariants', () => {
   it('getJournalType returns readonly objects', () => {
     const jt = getJournalType('SALES');
     expect(jt).not.toBeNull();
-    expect(jt!.code).toBe('SALES');
+    expect(jt?.code).toBe('SALES');
     // Verify it's from the frozen source
-    expect(jt).toBe(JOURNAL_TYPES['SALES']);
+    expect(jt).toBe(JOURNAL_TYPES.SALES);
   });
 
   it('essential journal types for double-entry accounting exist', () => {
     const essential = [
-      'SALES', 'PURCHASES', 'GENERAL', 'CASH_RECEIPTS', 'CASH_PAYMENTS',
-      'ACCOUNTS_RECEIVABLE', 'ACCOUNTS_PAYABLE', 'TAX', 'MISC',
+      'SALES',
+      'PURCHASES',
+      'GENERAL',
+      'CASH_RECEIPTS',
+      'CASH_PAYMENTS',
+      'ACCOUNTS_RECEIVABLE',
+      'ACCOUNTS_PAYABLE',
+      'TAX',
+      'MISC',
     ];
     for (const code of essential) {
       expect(isValidJournalType(code), `Missing essential type: ${code}`).toBe(true);
@@ -179,7 +197,7 @@ describe('Journal Types — invariants', () => {
   it('mutation attempts on frozen JOURNAL_TYPES throw TypeError', () => {
     expect(() => {
       // @ts-expect-error — intentional mutation attempt
-      JOURNAL_TYPES['HACKED'] = { code: 'HACKED', name: 'x', description: 'x' };
+      JOURNAL_TYPES.HACKED = { code: 'HACKED', name: 'x', description: 'x' };
     }).toThrow(TypeError);
     expect(Object.keys(JOURNAL_TYPES).length).toBe(15);
   });
@@ -213,16 +231,17 @@ describe('Currencies — invariants', () => {
 
   it('minorUnit is 0, 2, or 3 for all currencies', () => {
     for (const [code, currency] of Object.entries(CURRENCIES)) {
-      expect([0, 2, 3], `${code} has unexpected minorUnit ${currency.minorUnit}`)
-        .toContain(currency.minorUnit);
+      expect([0, 2, 3], `${code} has unexpected minorUnit ${currency.minorUnit}`).toContain(
+        currency.minorUnit,
+      );
     }
   });
 
   it('JPY has minorUnit=0, most others have 2', () => {
-    expect(getCurrency('JPY')!.minorUnit).toBe(0);
-    expect(getCurrency('USD')!.minorUnit).toBe(2);
-    expect(getCurrency('CAD')!.minorUnit).toBe(2);
-    expect(getCurrency('EUR')!.minorUnit).toBe(2);
+    expect(getCurrency('JPY')?.minorUnit).toBe(0);
+    expect(getCurrency('USD')?.minorUnit).toBe(2);
+    expect(getCurrency('CAD')?.minorUnit).toBe(2);
+    expect(getCurrency('EUR')?.minorUnit).toBe(2);
   });
 
   it('getMinorUnit defaults to 2 for unknown currencies', () => {

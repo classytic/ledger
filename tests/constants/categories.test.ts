@@ -1,8 +1,16 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  CATEGORIES, CATEGORY_KEYS, isValidCategory, getCategoryMainType,
-  getCategoryStatementType, isBalanceSheet, isIncomeStatement,
-  getNormalBalance, categoryKey, extractMainType, extractStatementType,
+  CATEGORIES,
+  CATEGORY_KEYS,
+  categoryKey,
+  extractMainType,
+  extractStatementType,
+  getCategoryMainType,
+  getCategoryStatementType,
+  getNormalBalance,
+  isBalanceSheet,
+  isIncomeStatement,
+  isValidCategory,
 } from '../../src/constants/categories.js';
 
 describe('Categories', () => {

@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
 import { Schema } from 'mongoose';
-import { buildDimensionFields, buildDimensionIndexes } from '../../src/utils/dimensions.js';
+import { describe, expect, it } from 'vitest';
 import type { DimensionDefinition } from '../../src/utils/dimensions.js';
+import { buildDimensionFields, buildDimensionIndexes } from '../../src/utils/dimensions.js';
 
 describe('buildDimensionFields', () => {
   it('generates correct schema for dimensions with refs', () => {
@@ -43,9 +43,7 @@ describe('buildDimensionFields', () => {
   });
 
   it('omits ref when not provided', () => {
-    const dims: DimensionDefinition[] = [
-      { field: 'tagId', label: 'Tag' },
-    ];
+    const dims: DimensionDefinition[] = [{ field: 'tagId', label: 'Tag' }];
 
     const fields = buildDimensionFields(dims);
     const tag = fields.tagId as Record<string, unknown>;

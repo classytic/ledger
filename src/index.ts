@@ -37,6 +37,29 @@ export type {
 } from './repositories/factory.js';
 export { createRepositories } from './repositories/factory.js';
 
+// ── Semantic Primitives (for AI agents, MCP tools, apps) ──────────────────
+
+export type {
+  AccountSummary,
+  FiscalPeriodSummary,
+  IntrospectAPI,
+  ReportDescriptor,
+} from './semantic/introspect.js';
+export type {
+  AccountCode,
+  ActorContext,
+  Cents as SemanticCents,
+  RecordAdjustmentInput,
+  RecordAdjustmentLine,
+  RecordAPI,
+  RecordExpenseInput,
+  RecordOptions,
+  RecordPaymentInput,
+  RecordSaleInput,
+  RecordTransferInput,
+  TaxInput,
+} from './semantic/record.js';
+
 // ── Money ──────────────────────────────────────────────────────────────────
 
 export {
@@ -54,12 +77,6 @@ export {
   subtract,
   toDecimal,
 } from './money.js';
-
-// ── Schemas ────────────────────────────────────────────────────────────────
-
-export { createAccountSchema } from './schemas/account.schema.js';
-export { createFiscalPeriodSchema } from './schemas/fiscal-period.schema.js';
-export { createJournalEntrySchema } from './schemas/journal-entry.schema.js';
 
 // ── Plugins ────────────────────────────────────────────────────────────────
 
@@ -143,11 +160,8 @@ export type {
 } from './country/index.js';
 export { defineCountryPack } from './country/index.js';
 
-// ── Repositories ──────────────────────────────────────────────────────────
+// ── Repository Types ──────────────────────────────────────────────────────
 
-export { wireAccountMethods } from './repositories/account.repository.js';
-export { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
-export { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
 export type {
   AccountRepository,
   BulkCreateInput,
@@ -176,6 +190,7 @@ export {
 } from './utils/date-range.js';
 export type { DimensionDefinition } from './utils/dimensions.js';
 export { buildDimensionFields, buildDimensionIndexes } from './utils/dimensions.js';
+export type { FieldError } from './utils/errors.js';
 export { AccountingError, Errors } from './utils/errors.js';
 export { buildItemFilters } from './utils/filter-builder.js';
 export type { Logger } from './utils/logger.js';

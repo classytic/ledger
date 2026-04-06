@@ -9,7 +9,7 @@
  * automatic retry on transient failures.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { wireJournalEntryMethods } from '../../src/repositories/journal-entry.repository.js';
 import { mockRepository } from '../helpers/mock-repository.js';
 
@@ -202,16 +202,14 @@ describe('post() account existence validation', () => {
     const entry = createEntryDoc({
       state: 'draft',
       journalItems: [
-        { account: null, debit: 1000, credit: 0 },       // populate returned null
+        { account: null, debit: 1000, credit: 0 }, // populate returned null
         { account: { _id: 'a2' }, debit: 0, credit: 1000 },
       ],
     });
     const repo = createMockRepo(entry);
     wireJournalEntryMethods(repo, {} as any);
 
-    await expect((repo as any).post('entry-1')).rejects.toThrow(
-      'missing an account',
-    );
+    await expect((repo as any).post('entry-1')).rejects.toThrow('missing an account');
   });
 
   it('rejects when populated account is a string (populate failed)', async () => {
@@ -225,9 +223,7 @@ describe('post() account existence validation', () => {
     const repo = createMockRepo(entry);
     wireJournalEntryMethods(repo, {} as any);
 
-    await expect((repo as any).post('entry-1')).rejects.toThrow(
-      'do not exist',
-    );
+    await expect((repo as any).post('entry-1')).rejects.toThrow('do not exist');
   });
 
   it('passes when all accounts are populated objects with _id', async () => {
@@ -254,9 +250,7 @@ describe('unpost() reversed entry protection', () => {
     const repo = createMockRepo(entry);
     wireJournalEntryMethods(repo, {} as any);
 
-    await expect((repo as any).unpost('entry-1')).rejects.toThrow(
-      'Cannot unpost a reversed entry',
-    );
+    await expect((repo as any).unpost('entry-1')).rejects.toThrow('Cannot unpost a reversed entry');
   });
 
   it('allows unpost on non-reversed posted entry', async () => {

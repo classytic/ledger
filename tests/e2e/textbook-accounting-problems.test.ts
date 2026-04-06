@@ -13,13 +13,13 @@
  * Run with: npx vitest run tests/e2e/textbook-accounting-problems.test.ts
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountingEngine } from '../../src/engine.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
-import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
+import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // =============================================================================
 // Generic Textbook Country Pack (no country-specific rules)
@@ -27,40 +27,303 @@ import type { AccountType } from '../../src/types/core.js';
 
 const TEXTBOOK_ACCOUNT_TYPES: readonly AccountType[] = [
   // Groups
-  { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-  { code: 'Non-Current Assets', name: 'Non-Current Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-  { code: 'Current Liabilities', name: 'Current Liabilities', category: 'Balance Sheet-Liability', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-  { code: 'Equity', name: 'Equity', category: 'Balance Sheet-Equity', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-  { code: 'Revenue', name: 'Revenue', category: 'Income Statement-Income', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-  { code: 'Cost of Goods Sold', name: 'Cost of Goods Sold', category: 'Income Statement-Expense', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-  { code: 'Operating Expenses', name: 'Operating Expenses', category: 'Income Statement-Expense', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
+  {
+    code: 'Current Assets',
+    name: 'Current Assets',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: 'Non-Current Assets',
+    name: 'Non-Current Assets',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: 'Current Liabilities',
+    name: 'Current Liabilities',
+    category: 'Balance Sheet-Liability',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: 'Equity',
+    name: 'Equity',
+    category: 'Balance Sheet-Equity',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: 'Revenue',
+    name: 'Revenue',
+    category: 'Income Statement-Income',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: 'Cost of Goods Sold',
+    name: 'Cost of Goods Sold',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: 'Operating Expenses',
+    name: 'Operating Expenses',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: null,
+    isGroup: true,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 
   // Posting accounts
-  { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '1100', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '1200', name: 'Inventory', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '1300', name: 'Prepaid Insurance', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '1400', name: 'Supplies', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '1500', name: 'Equipment', category: 'Balance Sheet-Asset', description: '', parentCode: 'Non-Current Assets', isTotal: false, cashFlowCategory: 'Investing' },
-  { code: '1510', name: 'Accumulated Depreciation', category: 'Balance Sheet-Asset', description: '', parentCode: 'Non-Current Assets', isTotal: false, cashFlowCategory: null },
-  { code: '1600', name: 'Land', category: 'Balance Sheet-Asset', description: '', parentCode: 'Non-Current Assets', isTotal: false, cashFlowCategory: 'Investing' },
-  { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: '', parentCode: 'Current Liabilities', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '2100', name: 'Wages Payable', category: 'Balance Sheet-Liability', description: '', parentCode: 'Current Liabilities', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '2200', name: 'Unearned Revenue', category: 'Balance Sheet-Liability', description: '', parentCode: 'Current Liabilities', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '2300', name: 'Notes Payable', category: 'Balance Sheet-Liability', description: '', parentCode: 'Current Liabilities', isTotal: false, cashFlowCategory: 'Financing' },
-  { code: '3000', name: 'Owner Capital', category: 'Balance Sheet-Equity', description: '', parentCode: 'Equity', isTotal: false, cashFlowCategory: 'Financing' },
-  { code: '3100', name: 'Owner Drawings', category: 'Balance Sheet-Equity', description: '', parentCode: 'Equity', isTotal: false, cashFlowCategory: 'Financing' },
-  { code: '3200', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: '', parentCode: 'Equity', isTotal: false, cashFlowCategory: null },
-  { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-  { code: '4100', name: 'Service Revenue', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-  { code: '5000', name: 'Cost of Goods Sold', category: 'Income Statement-Expense', description: '', parentCode: 'Cost of Goods Sold', isTotal: false, cashFlowCategory: null },
-  { code: '6000', name: 'Wages Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-  { code: '6100', name: 'Rent Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-  { code: '6200', name: 'Utilities Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-  { code: '6300', name: 'Insurance Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-  { code: '6400', name: 'Supplies Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-  { code: '6500', name: 'Depreciation Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-  { code: '6600', name: 'Interest Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
+  {
+    code: '1000',
+    name: 'Cash',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '1100',
+    name: 'Accounts Receivable',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '1200',
+    name: 'Inventory',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '1300',
+    name: 'Prepaid Insurance',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '1400',
+    name: 'Supplies',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '1500',
+    name: 'Equipment',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Non-Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Investing',
+  },
+  {
+    code: '1510',
+    name: 'Accumulated Depreciation',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Non-Current Assets',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '1600',
+    name: 'Land',
+    category: 'Balance Sheet-Asset',
+    description: '',
+    parentCode: 'Non-Current Assets',
+    isTotal: false,
+    cashFlowCategory: 'Investing',
+  },
+  {
+    code: '2000',
+    name: 'Accounts Payable',
+    category: 'Balance Sheet-Liability',
+    description: '',
+    parentCode: 'Current Liabilities',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '2100',
+    name: 'Wages Payable',
+    category: 'Balance Sheet-Liability',
+    description: '',
+    parentCode: 'Current Liabilities',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '2200',
+    name: 'Unearned Revenue',
+    category: 'Balance Sheet-Liability',
+    description: '',
+    parentCode: 'Current Liabilities',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '2300',
+    name: 'Notes Payable',
+    category: 'Balance Sheet-Liability',
+    description: '',
+    parentCode: 'Current Liabilities',
+    isTotal: false,
+    cashFlowCategory: 'Financing',
+  },
+  {
+    code: '3000',
+    name: 'Owner Capital',
+    category: 'Balance Sheet-Equity',
+    description: '',
+    parentCode: 'Equity',
+    isTotal: false,
+    cashFlowCategory: 'Financing',
+  },
+  {
+    code: '3100',
+    name: 'Owner Drawings',
+    category: 'Balance Sheet-Equity',
+    description: '',
+    parentCode: 'Equity',
+    isTotal: false,
+    cashFlowCategory: 'Financing',
+  },
+  {
+    code: '3200',
+    name: 'Retained Earnings',
+    category: 'Balance Sheet-Equity',
+    description: '',
+    parentCode: 'Equity',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '4000',
+    name: 'Sales Revenue',
+    category: 'Income Statement-Income',
+    description: '',
+    parentCode: 'Revenue',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '4100',
+    name: 'Service Revenue',
+    category: 'Income Statement-Income',
+    description: '',
+    parentCode: 'Revenue',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '5000',
+    name: 'Cost of Goods Sold',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Cost of Goods Sold',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6000',
+    name: 'Wages Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6100',
+    name: 'Rent Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6200',
+    name: 'Utilities Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6300',
+    name: 'Insurance Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6400',
+    name: 'Supplies Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6500',
+    name: 'Depreciation Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6600',
+    name: 'Interest Expense',
+    category: 'Income Statement-Expense',
+    description: '',
+    parentCode: 'Operating Expenses',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 ];
 
 const textbookPack = defineCountryPack({
@@ -75,7 +338,7 @@ const textbookPack = defineCountryPack({
   regions: [],
 });
 
-const config: AccountingEngineConfig = {
+const baseConfig: Omit<AccountingEngineConfig, 'mongoose' | 'modelNames'> = {
   country: textbookPack,
   currency: 'USD',
   retainedEarningsAccountCode: '3200',
@@ -86,7 +349,6 @@ const config: AccountingEngineConfig = {
 // =============================================================================
 
 let mongod: MongoMemoryServer;
-let engine: ReturnType<typeof createAccountingEngine>;
 
 /** Unique model name counter to avoid mongoose collision across describe blocks */
 let modelCounter = 0;
@@ -95,16 +357,26 @@ let modelCounter = 0;
 function createFreshModels() {
   modelCounter++;
   const suffix = `TB${modelCounter}`;
+  const names = {
+    account: `TxtBk_Acct_${suffix}`,
+    journalEntry: `TxtBk_JE_${suffix}`,
+    fiscalPeriod: `TxtBk_FP_${suffix}`,
+    budget: `TxtBk_B_${suffix}`,
+    reconciliation: `TxtBk_R_${suffix}`,
+  };
+  for (const n of Object.values(names)) {
+    if (mongoose.connection.models[n]) delete mongoose.connection.models[n];
+  }
 
-  const acctSchema = engine.createAccountSchema();
-  if (mongoose.models[`Acct${suffix}`]) delete mongoose.models[`Acct${suffix}`];
-  const AccountModel = mongoose.model<any>(`Acct${suffix}`, acctSchema);
+  const engine = createAccountingEngine({
+    ...baseConfig,
+    mongoose: mongoose.connection,
+    modelNames: names,
+  });
 
-  const jeSchema = engine.createJournalEntrySchema(`Acct${suffix}`);
-  if (mongoose.models[`JE${suffix}`]) delete mongoose.models[`JE${suffix}`];
-  const JEModel = mongoose.model<any>(`JE${suffix}`, jeSchema);
-
-  const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+  const AccountModel = engine.models.Account as mongoose.Model<any>;
+  const JEModel = engine.models.JournalEntry as mongoose.Model<any>;
+  const reports = engine.reports;
 
   const acctIds: Record<string, mongoose.Types.ObjectId> = {};
 
@@ -147,7 +419,6 @@ function createFreshModels() {
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
-  engine = createAccountingEngine(config);
 });
 
 afterAll(async () => {
@@ -441,11 +712,11 @@ describe('A-Level: Adjusting Entries', () => {
     });
 
     // Find Non-Current Assets group
-    const ncaGroup = bs.assets.groups.find(g => g.name === 'Non-Current Assets');
+    const ncaGroup = bs.assets.groups.find((g) => g.name === 'Non-Current Assets');
     expect(ncaGroup).toBeDefined();
 
     // Equipment $12,000 + Accum Depr -$200 = $11,800
-    expect(ncaGroup!.total).toBe(1_180_000);
+    expect(ncaGroup?.total).toBe(1_180_000);
   });
 
   it('wages payable after accrual is $500', async () => {
@@ -631,7 +902,7 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
 
     // Rent $3,000 + Utilities $500 + Wages $4,000 = $7,500
     const opEx = is.expenses.groups
-      .filter(g => g.name !== 'Cost of Goods Sold')
+      .filter((g) => g.name !== 'Cost of Goods Sold')
       .reduce((s, g) => s + g.total, 0);
     expect(opEx).toBe(750_000);
   });
@@ -716,13 +987,13 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
     });
 
     // COGS should appear as a separate group from Operating Expenses
-    const cogsGroup = is.expenses.groups.find(g => g.name === 'Cost of Goods Sold');
-    const opExGroup = is.expenses.groups.find(g => g.name === 'Operating Expenses');
+    const cogsGroup = is.expenses.groups.find((g) => g.name === 'Cost of Goods Sold');
+    const opExGroup = is.expenses.groups.find((g) => g.name === 'Operating Expenses');
 
     expect(cogsGroup).toBeDefined();
     expect(opExGroup).toBeDefined();
-    expect(cogsGroup!.total).toBe(2_100_000);
-    expect(opExGroup!.total).toBe(750_000);
+    expect(cogsGroup?.total).toBe(2_100_000);
+    expect(opExGroup?.total).toBe(750_000);
   });
 });
 
@@ -842,18 +1113,18 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
     expect(bs.summary.difference).toBe(0);
 
     // Find the Retained Earnings group in equity
-    const reGroup = bs.equity.groups.find(g => g.name === 'Retained Earnings');
+    const reGroup = bs.equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     // Previous Years Retained Earnings = $20,000 (Year 1 net income, carried forward)
-    const priorRE = reGroup!.accounts.find(a => a.name.includes('Previous'));
+    const priorRE = reGroup?.accounts.find((a) => a.name.includes('Previous'));
     expect(priorRE).toBeDefined();
-    expect(priorRE!.balance).toBe(2_000_000); // $20,000 from Year 1
+    expect(priorRE?.balance).toBe(2_000_000); // $20,000 from Year 1
 
     // Current Year Net Income = $30,000
-    const currentYearNI = reGroup!.accounts.find(a => a.name.includes('Current Year'));
+    const currentYearNI = reGroup?.accounts.find((a) => a.name.includes('Current Year'));
     expect(currentYearNI).toBeDefined();
-    expect(currentYearNI!.balance).toBe(3_000_000); // $30,000 from Year 2
+    expect(currentYearNI?.balance).toBe(3_000_000); // $30,000 from Year 2
 
     // Total Equity = Capital $50,000 + RE $20,000 + NI $30,000 = $100,000
     expect(bs.summary.totalEquity).toBe(10_000_000);
@@ -1110,17 +1381,17 @@ describe('Accounting Concepts Validation', () => {
       });
 
       // Non-Current Assets group: Equipment $10,000 - Accum Depr $2,000 = $8,000
-      const ncaGroup = bs.assets.groups.find(g => g.name === 'Non-Current Assets');
+      const ncaGroup = bs.assets.groups.find((g) => g.name === 'Non-Current Assets');
       expect(ncaGroup).toBeDefined();
-      expect(ncaGroup!.total).toBe(800_000); // $8,000 net book value
+      expect(ncaGroup?.total).toBe(800_000); // $8,000 net book value
 
       // Verify Equipment and Accum Depr are shown separately
-      const equipAcct = ncaGroup!.accounts.find(a => a.code === '1500');
-      const accumDepr = ncaGroup!.accounts.find(a => a.code === '1510');
+      const equipAcct = ncaGroup?.accounts.find((a) => a.code === '1500');
+      const accumDepr = ncaGroup?.accounts.find((a) => a.code === '1510');
       expect(equipAcct).toBeDefined();
       expect(accumDepr).toBeDefined();
-      expect(equipAcct!.balance).toBe(1_000_000); // $10,000 cost
-      expect(accumDepr!.balance).toBe(-200_000); // -$2,000 contra
+      expect(equipAcct?.balance).toBe(1_000_000); // $10,000 cost
+      expect(accumDepr?.balance).toBe(-200_000); // -$2,000 contra
     });
   });
 

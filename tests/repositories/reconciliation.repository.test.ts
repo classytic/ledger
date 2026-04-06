@@ -4,23 +4,43 @@
  * Tests reconcile, unreconcile, and getUnreconciled from wireReconciliationMethods().
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createReconciliationSchema } from '../../src/schemas/reconciliation.schema.js';
-import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
-import { wireReconciliationMethods } from '../../src/repositories/reconciliation.repository.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
+import { wireReconciliationMethods } from '../../src/repositories/reconciliation.repository.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
+import { createReconciliationSchema } from '../../src/schemas/reconciliation.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 const testPack = defineCountryPack({
-  code: 'TS', name: 'Test', defaultCurrency: 'TST',
+  code: 'TS',
+  name: 'Test',
+  defaultCurrency: 'TST',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '2000', name: 'AP', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '2000',
+      name: 'AP',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const mtConfig: AccountingEngineConfig = {
@@ -47,24 +67,36 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
 
   // Single-tenant models
-  if (mongoose.models['ReconRepoAccount']) delete mongoose.models['ReconRepoAccount'];
+  if (mongoose.models.ReconRepoAccount) delete mongoose.models.ReconRepoAccount;
   AccountModel = mongoose.model('ReconRepoAccount', createAccountSchema(stConfig));
 
-  if (mongoose.models['ReconRepoJE']) delete mongoose.models['ReconRepoJE'];
-  JournalEntryModel = mongoose.model('ReconRepoJE', createJournalEntrySchema(stConfig, 'ReconRepoAccount'));
+  if (mongoose.models.ReconRepoJE) delete mongoose.models.ReconRepoJE;
+  JournalEntryModel = mongoose.model(
+    'ReconRepoJE',
+    createJournalEntrySchema(stConfig, 'ReconRepoAccount'),
+  );
 
-  if (mongoose.models['ReconRepoRecon']) delete mongoose.models['ReconRepoRecon'];
-  ReconciliationModel = mongoose.model('ReconRepoRecon', createReconciliationSchema(stConfig, 'ReconRepoAccount', 'ReconRepoJE'));
+  if (mongoose.models.ReconRepoRecon) delete mongoose.models.ReconRepoRecon;
+  ReconciliationModel = mongoose.model(
+    'ReconRepoRecon',
+    createReconciliationSchema(stConfig, 'ReconRepoAccount', 'ReconRepoJE'),
+  );
 
   // Multi-tenant models
-  if (mongoose.models['ReconRepoAccountMT']) delete mongoose.models['ReconRepoAccountMT'];
+  if (mongoose.models.ReconRepoAccountMT) delete mongoose.models.ReconRepoAccountMT;
   AccountModelMT = mongoose.model('ReconRepoAccountMT', createAccountSchema(mtConfig));
 
-  if (mongoose.models['ReconRepoJEMT']) delete mongoose.models['ReconRepoJEMT'];
-  JournalEntryModelMT = mongoose.model('ReconRepoJEMT', createJournalEntrySchema(mtConfig, 'ReconRepoAccountMT'));
+  if (mongoose.models.ReconRepoJEMT) delete mongoose.models.ReconRepoJEMT;
+  JournalEntryModelMT = mongoose.model(
+    'ReconRepoJEMT',
+    createJournalEntrySchema(mtConfig, 'ReconRepoAccountMT'),
+  );
 
-  if (mongoose.models['ReconRepoReconMT']) delete mongoose.models['ReconRepoReconMT'];
-  ReconciliationModelMT = mongoose.model('ReconRepoReconMT', createReconciliationSchema(mtConfig, 'ReconRepoAccountMT', 'ReconRepoJEMT'));
+  if (mongoose.models.ReconRepoReconMT) delete mongoose.models.ReconRepoReconMT;
+  ReconciliationModelMT = mongoose.model(
+    'ReconRepoReconMT',
+    createReconciliationSchema(mtConfig, 'ReconRepoAccountMT', 'ReconRepoJEMT'),
+  );
 });
 
 afterAll(async () => {
@@ -102,7 +134,7 @@ function createRepo(orgField?: string) {
  * so we always create a balancing counterpart item using a second account.
  */
 async function createPostedEntry(
-  accountId: mongoose.Types.ObjectId,
+  _accountId: mongoose.Types.ObjectId,
   items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
   orgId?: mongoose.Types.ObjectId,
 ) {
@@ -112,7 +144,7 @@ async function createPostedEntry(
   // Create a counterpart account for balancing
   const counterData: Record<string, unknown> = {
     accountTypeCode: '2000',
-    accountNumber: '2000-ctr-' + Math.random().toString(36).slice(2, 8),
+    accountNumber: `2000-ctr-${Math.random().toString(36).slice(2, 8)}`,
     name: 'Counter Account',
   };
   if (orgId) counterData.business = orgId;
@@ -145,7 +177,7 @@ async function createAccount(code: string, orgId?: mongoose.Types.ObjectId) {
   const model = orgId ? AccountModelMT : AccountModel;
   const data: Record<string, unknown> = {
     accountTypeCode: code,
-    accountNumber: code + '-' + Math.random().toString(36).slice(2, 8),
+    accountNumber: `${code}-${Math.random().toString(36).slice(2, 8)}`,
     name: `Test ${code}`,
   };
   if (orgId) data.business = orgId;
@@ -221,9 +253,9 @@ describe('wireReconciliationMethods (single-tenant)', () => {
     const repo = createRepo();
     const fakeId = new mongoose.Types.ObjectId();
 
-    await expect(
-      repo.reconcile({ account: fakeId, journalEntryIds: [fakeId] }),
-    ).rejects.toThrow('do not exist');
+    await expect(repo.reconcile({ account: fakeId, journalEntryIds: [fakeId] })).rejects.toThrow(
+      'do not exist',
+    );
   });
 
   it('unreconcile removes the record', async () => {
@@ -253,9 +285,7 @@ describe('wireReconciliationMethods (single-tenant)', () => {
     const repo = createRepo();
     const fakeId = new mongoose.Types.ObjectId();
 
-    await expect(
-      repo.unreconcile({ reconciliationId: fakeId }),
-    ).rejects.toThrow('not found');
+    await expect(repo.unreconcile({ reconciliationId: fakeId })).rejects.toThrow('not found');
   });
 
   it('getUnreconciled excludes reconciled entries', async () => {
@@ -290,12 +320,8 @@ describe('wireReconciliationMethods (single-tenant)', () => {
     const account = await createAccount('1000');
     const accountId = account._id;
 
-    await createPostedEntry(accountId, [
-      { account: accountId, debit: 5000, credit: 0 },
-    ]);
-    await createPostedEntry(accountId, [
-      { account: accountId, debit: 0, credit: 5000 },
-    ]);
+    await createPostedEntry(accountId, [{ account: accountId, debit: 5000, credit: 0 }]);
+    await createPostedEntry(accountId, [{ account: accountId, debit: 0, credit: 5000 }]);
 
     const unreconciled = await repo.getUnreconciled({ accountId });
     expect(unreconciled).toHaveLength(2);
@@ -311,12 +337,16 @@ describe('wireReconciliationMethods (multi-tenant)', () => {
     const account = await createAccount('1000', orgId);
     const accountId = account._id;
 
-    const entry1 = await createPostedEntry(accountId, [
-      { account: accountId, debit: 5000, credit: 0 },
-    ], orgId);
-    const entry2 = await createPostedEntry(accountId, [
-      { account: accountId, debit: 0, credit: 5000 },
-    ], orgId);
+    const entry1 = await createPostedEntry(
+      accountId,
+      [{ account: accountId, debit: 5000, credit: 0 }],
+      orgId,
+    );
+    const entry2 = await createPostedEntry(
+      accountId,
+      [{ account: accountId, debit: 0, credit: 5000 }],
+      orgId,
+    );
 
     const result = await repo.reconcile({
       account: accountId,
@@ -332,9 +362,9 @@ describe('wireReconciliationMethods (multi-tenant)', () => {
     const repo = createRepo('business');
     const fakeId = new mongoose.Types.ObjectId();
 
-    await expect(
-      repo.reconcile({ account: fakeId, journalEntryIds: [fakeId] }),
-    ).rejects.toThrow('organizationId is required');
+    await expect(repo.reconcile({ account: fakeId, journalEntryIds: [fakeId] })).rejects.toThrow(
+      'organizationId is required',
+    );
   });
 
   it('getUnreconciled is scoped to organization', async () => {
@@ -345,17 +375,27 @@ describe('wireReconciliationMethods (multi-tenant)', () => {
     const account1 = await createAccount('1000', org1);
     const account2 = await createAccount('1000', org2);
 
-    await createPostedEntry(account1._id, [
-      { account: account1._id, debit: 1000, credit: 0 },
-    ], org1);
-    await createPostedEntry(account2._id, [
-      { account: account2._id, debit: 2000, credit: 0 },
-    ], org2);
+    await createPostedEntry(
+      account1._id,
+      [{ account: account1._id, debit: 1000, credit: 0 }],
+      org1,
+    );
+    await createPostedEntry(
+      account2._id,
+      [{ account: account2._id, debit: 2000, credit: 0 }],
+      org2,
+    );
 
-    const unreconciled1 = await repo.getUnreconciled({ accountId: account1._id, organizationId: org1 });
+    const unreconciled1 = await repo.getUnreconciled({
+      accountId: account1._id,
+      organizationId: org1,
+    });
     expect(unreconciled1).toHaveLength(1);
 
-    const unreconciled2 = await repo.getUnreconciled({ accountId: account2._id, organizationId: org2 });
+    const unreconciled2 = await repo.getUnreconciled({
+      accountId: account2._id,
+      organizationId: org2,
+    });
     expect(unreconciled2).toHaveLength(1);
   });
 
@@ -367,9 +407,11 @@ describe('wireReconciliationMethods (multi-tenant)', () => {
     const account = await createAccount('1000', org1);
 
     // Create entry in org2
-    const entry = await createPostedEntry(account._id, [
-      { account: account._id, debit: 5000, credit: 0 },
-    ], org2);
+    const entry = await createPostedEntry(
+      account._id,
+      [{ account: account._id, debit: 5000, credit: 0 }],
+      org2,
+    );
 
     // Try to reconcile in org1 — entry should not be found
     await expect(

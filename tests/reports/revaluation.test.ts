@@ -6,29 +6,89 @@
  * computing gains/losses, and creating journal entries.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { defineCountryPack } from '../../src/country/index.js';
+import { generateRevaluation } from '../../src/reports/revaluation.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { defineCountryPack } from '../../src/country/index.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { generateRevaluation } from '../../src/reports/revaluation.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'RV', name: 'Revaluation Test', defaultCurrency: 'CAD',
+  code: 'RV',
+  name: 'Revaluation Test',
+  defaultCurrency: 'CAD',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Equity', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'COGS', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '7000', name: 'Unrealized FX Gain/Loss', category: 'Income Statement-Expense', description: 'FX', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1200',
+      name: 'Accounts Receivable',
+      category: 'Balance Sheet-Asset',
+      description: 'AR',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '3000',
+      name: 'Share Capital',
+      category: 'Balance Sheet-Equity',
+      description: 'Equity',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '7000',
+      name: 'Unrealized FX Gain/Loss',
+      category: 'Income Statement-Expense',
+      description: 'FX',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 // ── Config with multi-currency enabled ───────────────────────────────────────
@@ -67,20 +127,20 @@ beforeAll(async () => {
 
   // Single-tenant models
   const acctSchema = createAccountSchema(config);
-  if (mongoose.models['RvAccount']) delete mongoose.models['RvAccount'];
+  if (mongoose.models.RvAccount) delete mongoose.models.RvAccount;
   AccountModel = mongoose.model('RvAccount', acctSchema);
 
   const jeSchema = createJournalEntrySchema(config, 'RvAccount');
-  if (mongoose.models['RvJE']) delete mongoose.models['RvJE'];
+  if (mongoose.models.RvJE) delete mongoose.models.RvJE;
   JEModel = mongoose.model('RvJE', jeSchema);
 
   // Multi-tenant models
   const mtAcctSchema = createAccountSchema(multiTenantConfig);
-  if (mongoose.models['RvMTAccount']) delete mongoose.models['RvMTAccount'];
+  if (mongoose.models.RvMTAccount) delete mongoose.models.RvMTAccount;
   MTAccountModel = mongoose.model('RvMTAccount', mtAcctSchema);
 
   const mtJeSchema = createJournalEntrySchema(multiTenantConfig, 'RvMTAccount');
-  if (mongoose.models['RvMTJE']) delete mongoose.models['RvMTJE'];
+  if (mongoose.models.RvMTJE) delete mongoose.models.RvMTJE;
   MTJEModel = mongoose.model('RvMTJE', mtJeSchema);
 
   await AccountModel.createIndexes();
@@ -105,13 +165,44 @@ beforeEach(async () => {
 
 /** Seed accounts: some with currency (foreign), some without */
 async function seedAccounts() {
-  const cash = await AccountModel.create({ accountTypeCode: '1000', accountNumber: '1001', name: 'USD Cash', currency: 'USD' });
-  const ar = await AccountModel.create({ accountTypeCode: '1200', accountNumber: '1201', name: 'EUR Receivable', currency: 'EUR' });
-  const ap = await AccountModel.create({ accountTypeCode: '2000', accountNumber: '2001', name: 'CAD Payable' }); // no currency = base
-  const equity = await AccountModel.create({ accountTypeCode: '3000', accountNumber: '3001', name: 'Share Capital' });
-  const revenue = await AccountModel.create({ accountTypeCode: '4000', accountNumber: '4001', name: 'Revenue', currency: 'USD' }); // P&L — should NOT be revalued
-  const cogs = await AccountModel.create({ accountTypeCode: '5000', accountNumber: '5001', name: 'COGS' });
-  const fxGL = await AccountModel.create({ accountTypeCode: '7000', accountNumber: '7001', name: 'Unrealized FX Gain/Loss' });
+  const cash = await AccountModel.create({
+    accountTypeCode: '1000',
+    accountNumber: '1001',
+    name: 'USD Cash',
+    currency: 'USD',
+  });
+  const ar = await AccountModel.create({
+    accountTypeCode: '1200',
+    accountNumber: '1201',
+    name: 'EUR Receivable',
+    currency: 'EUR',
+  });
+  const ap = await AccountModel.create({
+    accountTypeCode: '2000',
+    accountNumber: '2001',
+    name: 'CAD Payable',
+  }); // no currency = base
+  const equity = await AccountModel.create({
+    accountTypeCode: '3000',
+    accountNumber: '3001',
+    name: 'Share Capital',
+  });
+  const revenue = await AccountModel.create({
+    accountTypeCode: '4000',
+    accountNumber: '4001',
+    name: 'Revenue',
+    currency: 'USD',
+  }); // P&L — should NOT be revalued
+  const cogs = await AccountModel.create({
+    accountTypeCode: '5000',
+    accountNumber: '5001',
+    name: 'COGS',
+  });
+  const fxGL = await AccountModel.create({
+    accountTypeCode: '7000',
+    accountNumber: '7001',
+    name: 'Unrealized FX Gain/Loss',
+  });
 
   cashId = cash._id;
   arId = ar._id;
@@ -158,15 +249,31 @@ describe('generateRevaluation', () => {
 
     // Record: received 100 USD → 137 CAD at rate 1.37
     await postEntry('2026-03-15', [
-      { account: cashId, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: equityId, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 13700, currency: 'CAD', exchangeRate: 1.0 },
+      {
+        account: cashId,
+        debit: 13700,
+        credit: 0,
+        originalDebit: 10000,
+        originalCredit: 0,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
+      {
+        account: equityId,
+        debit: 0,
+        credit: 13700,
+        originalDebit: 0,
+        originalCredit: 13700,
+        currency: 'CAD',
+        exchangeRate: 1.0,
+      },
     ]);
 
     const report = await generateRevaluation(
       { AccountModel, JournalEntryModel: JEModel, country: testPack, baseCurrency: 'CAD' },
       {
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.40 }],
+        rates: [{ currency: 'USD', rate: 1.4 }],
         unrealizedGainLossAccountId: fxGainLossId,
       },
     );
@@ -181,15 +288,31 @@ describe('generateRevaluation', () => {
     await seedAccounts();
 
     await postEntry('2026-03-15', [
-      { account: cashId, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: equityId, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 13700, currency: 'CAD', exchangeRate: 1.0 },
+      {
+        account: cashId,
+        debit: 13700,
+        credit: 0,
+        originalDebit: 10000,
+        originalCredit: 0,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
+      {
+        account: equityId,
+        debit: 0,
+        credit: 13700,
+        originalDebit: 0,
+        originalCredit: 13700,
+        currency: 'CAD',
+        exchangeRate: 1.0,
+      },
     ]);
 
     const report = await generateRevaluation(
       { AccountModel, JournalEntryModel: JEModel, country: testPack, baseCurrency: 'CAD' },
       {
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.30 }],
+        rates: [{ currency: 'USD', rate: 1.3 }],
         unrealizedGainLossAccountId: fxGainLossId,
       },
     );
@@ -204,15 +327,31 @@ describe('generateRevaluation', () => {
 
     // Post to USD Cash (balance sheet) and USD Revenue (income statement)
     await postEntry('2026-03-15', [
-      { account: cashId, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: revenueId, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 10000, currency: 'USD', exchangeRate: 1.37 },
+      {
+        account: cashId,
+        debit: 13700,
+        credit: 0,
+        originalDebit: 10000,
+        originalCredit: 0,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
+      {
+        account: revenueId,
+        debit: 0,
+        credit: 13700,
+        originalDebit: 0,
+        originalCredit: 10000,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
     ]);
 
     const report = await generateRevaluation(
       { AccountModel, JournalEntryModel: JEModel, country: testPack, baseCurrency: 'CAD' },
       {
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.50 }],
+        rates: [{ currency: 'USD', rate: 1.5 }],
         unrealizedGainLossAccountId: fxGainLossId,
       },
     );
@@ -226,15 +365,31 @@ describe('generateRevaluation', () => {
     await seedAccounts();
 
     await postEntry('2026-03-15', [
-      { account: cashId, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: equityId, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 13700, currency: 'CAD', exchangeRate: 1.0 },
+      {
+        account: cashId,
+        debit: 13700,
+        credit: 0,
+        originalDebit: 10000,
+        originalCredit: 0,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
+      {
+        account: equityId,
+        debit: 0,
+        credit: 13700,
+        originalDebit: 0,
+        originalCredit: 13700,
+        currency: 'CAD',
+        exchangeRate: 1.0,
+      },
     ]);
 
     const report = await generateRevaluation(
       { AccountModel, JournalEntryModel: JEModel, country: testPack, baseCurrency: 'CAD' },
       {
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.40 }],
+        rates: [{ currency: 'USD', rate: 1.4 }],
         unrealizedGainLossAccountId: fxGainLossId,
         generateEntry: true,
       },
@@ -243,7 +398,7 @@ describe('generateRevaluation', () => {
     expect(report.entryId).toBeDefined();
 
     // Verify the entry was saved
-    const entry = await JEModel.findById(report.entryId).lean() as Record<string, unknown>;
+    const entry = (await JEModel.findById(report.entryId).lean()) as Record<string, unknown>;
     expect(entry).not.toBeNull();
     expect(entry.state).toBe('posted');
     expect(entry.label).toContain('revaluation');
@@ -254,12 +409,44 @@ describe('generateRevaluation', () => {
 
     // Two foreign-currency accounts
     await postEntry('2026-03-15', [
-      { account: cashId, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: equityId, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 13700, currency: 'CAD', exchangeRate: 1.0 },
+      {
+        account: cashId,
+        debit: 13700,
+        credit: 0,
+        originalDebit: 10000,
+        originalCredit: 0,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
+      {
+        account: equityId,
+        debit: 0,
+        credit: 13700,
+        originalDebit: 0,
+        originalCredit: 13700,
+        currency: 'CAD',
+        exchangeRate: 1.0,
+      },
     ]);
     await postEntry('2026-03-20', [
-      { account: arId, debit: 7500, credit: 0, originalDebit: 5000, originalCredit: 0, currency: 'EUR', exchangeRate: 1.50 },
-      { account: equityId, debit: 0, credit: 7500, originalDebit: 0, originalCredit: 7500, currency: 'CAD', exchangeRate: 1.0 },
+      {
+        account: arId,
+        debit: 7500,
+        credit: 0,
+        originalDebit: 5000,
+        originalCredit: 0,
+        currency: 'EUR',
+        exchangeRate: 1.5,
+      },
+      {
+        account: equityId,
+        debit: 0,
+        credit: 7500,
+        originalDebit: 0,
+        originalCredit: 7500,
+        currency: 'CAD',
+        exchangeRate: 1.0,
+      },
     ]);
 
     const report = await generateRevaluation(
@@ -267,7 +454,7 @@ describe('generateRevaluation', () => {
       {
         asOfDate: new Date('2026-03-31'),
         rates: [
-          { currency: 'USD', rate: 1.40 },
+          { currency: 'USD', rate: 1.4 },
           { currency: 'EUR', rate: 1.55 },
         ],
         unrealizedGainLossAccountId: fxGainLossId,
@@ -275,10 +462,10 @@ describe('generateRevaluation', () => {
       },
     );
 
-    const entry = await JEModel.findById(report.entryId).lean() as Record<string, unknown>;
+    const entry = (await JEModel.findById(report.entryId).lean()) as Record<string, unknown>;
     expect(entry).not.toBeNull();
     expect(entry.totalDebit).toBe(entry.totalCredit);
-    expect((entry.totalDebit as number)).toBeGreaterThan(0);
+    expect(entry.totalDebit as number).toBeGreaterThan(0);
   });
 
   it('returns empty results when no foreign-currency accounts exist', async () => {
@@ -289,7 +476,7 @@ describe('generateRevaluation', () => {
       { AccountModel, JournalEntryModel: JEModel, country: testPack, baseCurrency: 'CAD' },
       {
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.40 }],
+        rates: [{ currency: 'USD', rate: 1.4 }],
         unrealizedGainLossAccountId: new mongoose.Types.ObjectId(),
       },
     );
@@ -303,8 +490,24 @@ describe('generateRevaluation', () => {
     await seedAccounts();
 
     await postEntry('2026-03-15', [
-      { account: cashId, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: equityId, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 13700, currency: 'CAD', exchangeRate: 1.0 },
+      {
+        account: cashId,
+        debit: 13700,
+        credit: 0,
+        originalDebit: 10000,
+        originalCredit: 0,
+        currency: 'USD',
+        exchangeRate: 1.37,
+      },
+      {
+        account: equityId,
+        debit: 0,
+        credit: 13700,
+        originalDebit: 0,
+        originalCredit: 13700,
+        currency: 'CAD',
+        exchangeRate: 1.0,
+      },
     ]);
 
     const countBefore = await JEModel.countDocuments({});
@@ -313,7 +516,7 @@ describe('generateRevaluation', () => {
       { AccountModel, JournalEntryModel: JEModel, country: testPack, baseCurrency: 'CAD' },
       {
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.40 }],
+        rates: [{ currency: 'USD', rate: 1.4 }],
         unrealizedGainLossAccountId: fxGainLossId,
         generateEntry: false,
       },
@@ -342,7 +545,7 @@ describe('multi-tenant scoping', () => {
         },
         {
           asOfDate: new Date('2026-03-31'),
-          rates: [{ currency: 'USD', rate: 1.40 }],
+          rates: [{ currency: 'USD', rate: 1.4 }],
           unrealizedGainLossAccountId: new mongoose.Types.ObjectId(),
           // organizationId intentionally omitted
         },
@@ -356,35 +559,87 @@ describe('multi-tenant scoping', () => {
 
     // Create accounts for org A
     const cashA = await MTAccountModel.create({
-      accountTypeCode: '1000', accountNumber: '1001', name: 'USD Cash A',
-      currency: 'USD', business: orgA,
+      accountTypeCode: '1000',
+      accountNumber: '1001',
+      name: 'USD Cash A',
+      currency: 'USD',
+      business: orgA,
     });
     const equityA = await MTAccountModel.create({
-      accountTypeCode: '3000', accountNumber: '3001', name: 'Equity A',
+      accountTypeCode: '3000',
+      accountNumber: '3001',
+      name: 'Equity A',
       business: orgA,
     });
     const fxA = await MTAccountModel.create({
-      accountTypeCode: '7000', accountNumber: '7001', name: 'FX GL A',
+      accountTypeCode: '7000',
+      accountNumber: '7001',
+      name: 'FX GL A',
       business: orgA,
     });
 
     // Create accounts for org B
     const cashB = await MTAccountModel.create({
-      accountTypeCode: '1000', accountNumber: '1001', name: 'USD Cash B',
-      currency: 'USD', business: orgB,
+      accountTypeCode: '1000',
+      accountNumber: '1001',
+      name: 'USD Cash B',
+      currency: 'USD',
+      business: orgB,
     });
 
     // Post entry for org A
-    await postEntry('2026-03-15', [
-      { account: cashA._id, debit: 13700, credit: 0, originalDebit: 10000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: equityA._id, debit: 0, credit: 13700, originalDebit: 0, originalCredit: 13700, currency: 'CAD', exchangeRate: 1.0 },
-    ], MTJEModel, { business: orgA });
+    await postEntry(
+      '2026-03-15',
+      [
+        {
+          account: cashA._id,
+          debit: 13700,
+          credit: 0,
+          originalDebit: 10000,
+          originalCredit: 0,
+          currency: 'USD',
+          exchangeRate: 1.37,
+        },
+        {
+          account: equityA._id,
+          debit: 0,
+          credit: 13700,
+          originalDebit: 0,
+          originalCredit: 13700,
+          currency: 'CAD',
+          exchangeRate: 1.0,
+        },
+      ],
+      MTJEModel,
+      { business: orgA },
+    );
 
     // Post entry for org B
-    await postEntry('2026-03-15', [
-      { account: cashB._id, debit: 27400, credit: 0, originalDebit: 20000, originalCredit: 0, currency: 'USD', exchangeRate: 1.37 },
-      { account: cashB._id, debit: 0, credit: 27400, originalDebit: 0, originalCredit: 20000, currency: 'USD', exchangeRate: 1.37 }, // dummy offset
-    ], MTJEModel, { business: orgB });
+    await postEntry(
+      '2026-03-15',
+      [
+        {
+          account: cashB._id,
+          debit: 27400,
+          credit: 0,
+          originalDebit: 20000,
+          originalCredit: 0,
+          currency: 'USD',
+          exchangeRate: 1.37,
+        },
+        {
+          account: cashB._id,
+          debit: 0,
+          credit: 27400,
+          originalDebit: 0,
+          originalCredit: 20000,
+          currency: 'USD',
+          exchangeRate: 1.37,
+        }, // dummy offset
+      ],
+      MTJEModel,
+      { business: orgB },
+    );
 
     // Revalue for org A only
     const report = await generateRevaluation(
@@ -398,7 +653,7 @@ describe('multi-tenant scoping', () => {
       {
         organizationId: orgA,
         asOfDate: new Date('2026-03-31'),
-        rates: [{ currency: 'USD', rate: 1.40 }],
+        rates: [{ currency: 'USD', rate: 1.4 }],
         unrealizedGainLossAccountId: fxA._id,
       },
     );

@@ -10,44 +10,121 @@
  * 6. Bulk account creation race condition
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountSchema } from '../src/schemas/account.schema.js';
-import { createJournalEntrySchema } from '../src/schemas/journal-entry.schema.js';
-import { createFiscalPeriodSchema } from '../src/schemas/fiscal-period.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../src/country/index.js';
-import type { AccountingEngineConfig } from '../src/types/engine.js';
-import { generateTrialBalance } from '../src/reports/trial-balance.js';
+import { fiscalLockPlugin } from '../src/plugins/fiscal-lock.plugin.js';
 import { generateBalanceSheet } from '../src/reports/balance-sheet.js';
-import { generateIncomeStatement } from '../src/reports/income-statement.js';
-import { generateGeneralLedger } from '../src/reports/general-ledger.js';
 import { generateCashFlow } from '../src/reports/cash-flow.js';
 import { closeFiscalPeriod, reopenFiscalPeriod } from '../src/reports/fiscal-close.js';
-import { fiscalLockPlugin } from '../src/plugins/fiscal-lock.plugin.js';
+import { generateGeneralLedger } from '../src/reports/general-ledger.js';
+import { generateIncomeStatement } from '../src/reports/income-statement.js';
+import { generateTrialBalance } from '../src/reports/trial-balance.js';
 import { wireAccountMethods } from '../src/repositories/account.repository.js';
 import { wireJournalEntryMethods } from '../src/repositories/journal-entry.repository.js';
-import { mockRepository } from './helpers/mock-repository.js';
+import { createAccountSchema } from '../src/schemas/account.schema.js';
+import { createFiscalPeriodSchema } from '../src/schemas/fiscal-period.schema.js';
+import { createJournalEntrySchema } from '../src/schemas/journal-entry.schema.js';
+import type { AccountingEngineConfig } from '../src/types/engine.js';
 import { AccountingError } from '../src/utils/errors.js';
+import { mockRepository } from './helpers/mock-repository.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'SEC', name: 'Security Test', defaultCurrency: 'TST',
+  code: 'SEC',
+  name: 'Security Test',
+  defaultCurrency: 'TST',
   retainedEarningsAccountCode: '3660',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Equity', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'COGS', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6000', name: 'Rent Expense', category: 'Income Statement-Expense', description: 'Rent', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1200',
+      name: 'Accounts Receivable',
+      category: 'Balance Sheet-Asset',
+      description: 'AR',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '3000',
+      name: 'Share Capital',
+      category: 'Balance Sheet-Equity',
+      description: 'Equity',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3660',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: 'RE',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6000',
+      name: 'Rent Expense',
+      category: 'Income Statement-Expense',
+      description: 'Rent',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
     // Group account (for bulkCreate validation)
-    { code: '1', name: 'Assets Group', category: 'Balance Sheet-Asset', description: 'Group', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
+    {
+      code: '1',
+      name: 'Assets Group',
+      category: 'Balance Sheet-Asset',
+      description: 'Group',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 // ── Shared setup ─────────────────────────────────────────────────────────────
@@ -79,8 +156,8 @@ describe('Fix 1: requireOrgScope prevents unscoped multi-tenant queries', () => 
   let MtJE: mongoose.Model<any>;
 
   beforeAll(async () => {
-    if (mongoose.models['SecMtAcct']) delete mongoose.models['SecMtAcct'];
-    if (mongoose.models['SecMtJE']) delete mongoose.models['SecMtJE'];
+    if (mongoose.models.SecMtAcct) delete mongoose.models.SecMtAcct;
+    if (mongoose.models.SecMtJE) delete mongoose.models.SecMtJE;
     MtAcct = mongoose.model('SecMtAcct', createAccountSchema(mtConfig));
     MtJE = mongoose.model('SecMtJE', createJournalEntrySchema(mtConfig, 'SecMtAcct'));
     await MtAcct.createIndexes();
@@ -97,33 +174,33 @@ describe('Fix 1: requireOrgScope prevents unscoped multi-tenant queries', () => 
   const noOrgParams = { dateOption: 'month' as const, dateValue: '2025-03' };
 
   it('trial balance throws when orgField set but organizationId missing', async () => {
-    await expect(
-      generateTrialBalance(reportOpts(), noOrgParams),
-    ).rejects.toThrow('organizationId is required');
+    await expect(generateTrialBalance(reportOpts(), noOrgParams)).rejects.toThrow(
+      'organizationId is required',
+    );
   });
 
   it('balance sheet throws when orgField set but organizationId missing', async () => {
-    await expect(
-      generateBalanceSheet(reportOpts(), noOrgParams),
-    ).rejects.toThrow('organizationId is required');
+    await expect(generateBalanceSheet(reportOpts(), noOrgParams)).rejects.toThrow(
+      'organizationId is required',
+    );
   });
 
   it('income statement throws when orgField set but organizationId missing', async () => {
-    await expect(
-      generateIncomeStatement(reportOpts(), noOrgParams),
-    ).rejects.toThrow('organizationId is required');
+    await expect(generateIncomeStatement(reportOpts(), noOrgParams)).rejects.toThrow(
+      'organizationId is required',
+    );
   });
 
   it('general ledger throws when orgField set but organizationId missing', async () => {
-    await expect(
-      generateGeneralLedger(reportOpts(), noOrgParams),
-    ).rejects.toThrow('organizationId is required');
+    await expect(generateGeneralLedger(reportOpts(), noOrgParams)).rejects.toThrow(
+      'organizationId is required',
+    );
   });
 
   it('cash flow throws when orgField set but organizationId missing', async () => {
-    await expect(
-      generateCashFlow(reportOpts(), noOrgParams),
-    ).rejects.toThrow('organizationId is required');
+    await expect(generateCashFlow(reportOpts(), noOrgParams)).rejects.toThrow(
+      'organizationId is required',
+    );
   });
 
   it('fiscal close throws when orgField set but organizationId missing', async () => {
@@ -175,9 +252,9 @@ describe('Fix 2: Cross-tenant fiscal close/reopen prevention', () => {
   let org2: mongoose.Types.ObjectId;
 
   beforeAll(async () => {
-    if (mongoose.models['SecMtAcct2']) delete mongoose.models['SecMtAcct2'];
-    if (mongoose.models['SecMtJE2']) delete mongoose.models['SecMtJE2'];
-    if (mongoose.models['SecMtFP']) delete mongoose.models['SecMtFP'];
+    if (mongoose.models.SecMtAcct2) delete mongoose.models.SecMtAcct2;
+    if (mongoose.models.SecMtJE2) delete mongoose.models.SecMtJE2;
+    if (mongoose.models.SecMtFP) delete mongoose.models.SecMtFP;
 
     MtAcct2 = mongoose.model('SecMtAcct2', createAccountSchema(mtConfig));
     MtJE2 = mongoose.model('SecMtJE2', createJournalEntrySchema(mtConfig, 'SecMtAcct2'));
@@ -213,7 +290,13 @@ describe('Fix 2: Cross-tenant fiscal close/reopen prevention', () => {
     // Try to close with org2 credentials → should fail (period not found)
     await expect(
       closeFiscalPeriod(
-        { AccountModel: MtAcct2, JournalEntryModel: MtJE2, FiscalPeriodModel: MtFP, country: testPack, orgField: 'business' },
+        {
+          AccountModel: MtAcct2,
+          JournalEntryModel: MtJE2,
+          FiscalPeriodModel: MtFP,
+          country: testPack,
+          orgField: 'business',
+        },
         { periodId: period._id, organizationId: org2 },
       ),
     ).rejects.toThrow('Fiscal period not found');
@@ -248,7 +331,13 @@ describe('Fix 2: Cross-tenant fiscal close/reopen prevention', () => {
     });
 
     const result = await closeFiscalPeriod(
-      { AccountModel: MtAcct2, JournalEntryModel: MtJE2, FiscalPeriodModel: MtFP, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAcct2,
+        JournalEntryModel: MtJE2,
+        FiscalPeriodModel: MtFP,
+        country: testPack,
+        orgField: 'business',
+      },
       { periodId: period._id, organizationId: org1 },
     );
 
@@ -269,12 +358,15 @@ describe('Fix 3: autoReference: false allows multiple null reference numbers', (
   let eqId: mongoose.Types.ObjectId;
 
   beforeAll(async () => {
-    if (mongoose.models['SecNoRefAcct']) delete mongoose.models['SecNoRefAcct'];
-    if (mongoose.models['SecNoRefJE']) delete mongoose.models['SecNoRefJE'];
+    if (mongoose.models.SecNoRefAcct) delete mongoose.models.SecNoRefAcct;
+    if (mongoose.models.SecNoRefJE) delete mongoose.models.SecNoRefJE;
 
     NoRefAcct = mongoose.model('SecNoRefAcct', createAccountSchema(config));
     // autoReference: false — schema won't auto-generate reference numbers
-    NoRefJE = mongoose.model('SecNoRefJE', createJournalEntrySchema(config, 'SecNoRefAcct', { autoReference: false }));
+    NoRefJE = mongoose.model(
+      'SecNoRefJE',
+      createJournalEntrySchema(config, 'SecNoRefAcct', { autoReference: false }),
+    );
     await NoRefAcct.createIndexes();
     await NoRefJE.createIndexes();
   });
@@ -296,8 +388,8 @@ describe('Fix 3: autoReference: false allows multiple null reference numbers', (
       state: 'posted',
       date: new Date('2025-03-01'),
       journalItems: [
-        { account: cashId, debit: 10000, credit: 0},
-        { account: eqId, debit: 0, credit: 10000},
+        { account: cashId, debit: 10000, credit: 0 },
+        { account: eqId, debit: 0, credit: 10000 },
       ],
       totalDebit: 10000,
       totalCredit: 10000,
@@ -308,8 +400,8 @@ describe('Fix 3: autoReference: false allows multiple null reference numbers', (
       state: 'posted',
       date: new Date('2025-03-02'),
       journalItems: [
-        { account: cashId, debit: 20000, credit: 0},
-        { account: eqId, debit: 0, credit: 20000},
+        { account: cashId, debit: 20000, credit: 0 },
+        { account: eqId, debit: 0, credit: 20000 },
       ],
       totalDebit: 20000,
       totalCredit: 20000,
@@ -330,8 +422,8 @@ describe('Fix 3: autoReference: false allows multiple null reference numbers', (
       date: new Date('2025-03-01'),
       referenceNumber: 'MANUAL-001',
       journalItems: [
-        { account: cashId, debit: 10000, credit: 0},
-        { account: eqId, debit: 0, credit: 10000},
+        { account: cashId, debit: 10000, credit: 0 },
+        { account: eqId, debit: 0, credit: 10000 },
       ],
       totalDebit: 10000,
       totalCredit: 10000,
@@ -344,8 +436,8 @@ describe('Fix 3: autoReference: false allows multiple null reference numbers', (
         date: new Date('2025-03-02'),
         referenceNumber: 'MANUAL-001', // duplicate
         journalItems: [
-          { account: cashId, debit: 20000, credit: 0},
-          { account: eqId, debit: 0, credit: 20000},
+          { account: cashId, debit: 20000, credit: 0 },
+          { account: eqId, debit: 0, credit: 20000 },
         ],
         totalDebit: 20000,
         totalCredit: 20000,
@@ -364,7 +456,7 @@ describe('Fix 4: Fiscal-lock plugin passes session to FiscalPeriodModel.findOne'
     return {
       on(event: string, handler: (ctx: unknown) => void | Promise<void>) {
         if (!hooks.has(event)) hooks.set(event, []);
-        hooks.get(event)!.push(handler);
+        hooks.get(event)?.push(handler);
       },
       async emit(event: string, ctx: unknown) {
         for (const fn of hooks.get(event) ?? []) {
@@ -459,8 +551,8 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
   let eqId: mongoose.Types.ObjectId;
 
   beforeAll(async () => {
-    if (mongoose.models['SecSeqAcct']) delete mongoose.models['SecSeqAcct'];
-    if (mongoose.models['SecSeqJE']) delete mongoose.models['SecSeqJE'];
+    if (mongoose.models.SecSeqAcct) delete mongoose.models.SecSeqAcct;
+    if (mongoose.models.SecSeqJE) delete mongoose.models.SecSeqJE;
 
     SeqAcct = mongoose.model('SecSeqAcct', createAccountSchema(config));
     SeqJE = mongoose.model('SecSeqJE', createJournalEntrySchema(config, 'SecSeqAcct'));
@@ -486,8 +578,8 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       state: 'posted',
       date: new Date('2025-03-15'),
       journalItems: [
-        { account: cashId, debit: 10000, credit: 0},
-        { account: eqId, debit: 0, credit: 10000},
+        { account: cashId, debit: 10000, credit: 0 },
+        { account: eqId, debit: 0, credit: 10000 },
       ],
       totalDebit: 10000,
       totalCredit: 10000,
@@ -499,8 +591,8 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       state: 'posted',
       date: new Date('2025-03-20'),
       journalItems: [
-        { account: cashId, debit: 20000, credit: 0},
-        { account: eqId, debit: 0, credit: 20000},
+        { account: cashId, debit: 20000, credit: 0 },
+        { account: eqId, debit: 0, credit: 20000 },
       ],
       totalDebit: 20000,
       totalCredit: 20000,
@@ -518,10 +610,11 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
         state: 'posted',
         date: new Date('2025-06-10'),
         journalItems: [
-          { account: cashId, debit: 10000, credit: 0},
-          { account: eqId, debit: 0, credit: 10000},
+          { account: cashId, debit: 10000, credit: 0 },
+          { account: eqId, debit: 0, credit: 10000 },
         ],
-        totalDebit: 10000, totalCredit: 10000,
+        totalDebit: 10000,
+        totalCredit: 10000,
       },
       {
         journalType: 'MISC',
@@ -529,10 +622,11 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
         state: 'posted',
         date: new Date('2025-06-11'),
         journalItems: [
-          { account: cashId, debit: 10000, credit: 0},
-          { account: eqId, debit: 0, credit: 10000},
+          { account: cashId, debit: 10000, credit: 0 },
+          { account: eqId, debit: 0, credit: 10000 },
         ],
-        totalDebit: 10000, totalCredit: 10000,
+        totalDebit: 10000,
+        totalCredit: 10000,
       },
     ]);
 
@@ -541,8 +635,8 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       state: 'posted',
       date: new Date('2025-06-15'),
       journalItems: [
-        { account: cashId, debit: 30000, credit: 0},
-        { account: eqId, debit: 0, credit: 30000},
+        { account: cashId, debit: 30000, credit: 0 },
+        { account: eqId, debit: 0, credit: 30000 },
       ],
       totalDebit: 30000,
       totalCredit: 30000,
@@ -557,8 +651,8 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       state: 'posted',
       date: new Date('2025-07-01'),
       journalItems: [
-        { account: cashId, debit: 10000, credit: 0},
-        { account: eqId, debit: 0, credit: 10000},
+        { account: cashId, debit: 10000, credit: 0 },
+        { account: eqId, debit: 0, credit: 10000 },
       ],
       totalDebit: 10000,
       totalCredit: 10000,
@@ -580,7 +674,7 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
   let repo: any;
 
   beforeAll(async () => {
-    if (mongoose.models['SecBulkAcct']) delete mongoose.models['SecBulkAcct'];
+    if (mongoose.models.SecBulkAcct) delete mongoose.models.SecBulkAcct;
     BulkAcct = mongoose.model('SecBulkAcct', createAccountSchema(config));
     await BulkAcct.createIndexes();
 
@@ -593,11 +687,10 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
   });
 
   it('creates multiple accounts in a single batch', async () => {
-    const result = await repo.bulkCreate([
-      { accountTypeCode: '1000' },
-      { accountTypeCode: '2000' },
-      { accountTypeCode: '3000' },
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [{ accountTypeCode: '1000' }, { accountTypeCode: '2000' }, { accountTypeCode: '3000' }],
+      undefined,
+    );
 
     expect(result.summary.created).toBe(3);
     expect(result.summary.skipped).toBe(0);
@@ -612,11 +705,14 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
     // Pre-create one account
     await BulkAcct.create({ accountTypeCode: '1000' });
 
-    const result = await repo.bulkCreate([
-      { accountTypeCode: '1000' }, // exists
-      { accountTypeCode: '2000' }, // new
-      { accountTypeCode: '3000' }, // new
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [
+        { accountTypeCode: '1000' }, // exists
+        { accountTypeCode: '2000' }, // new
+        { accountTypeCode: '3000' }, // new
+      ],
+      undefined,
+    );
 
     expect(result.summary.created).toBe(2);
     expect(result.summary.skipped).toBe(1);
@@ -625,10 +721,13 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
   });
 
   it('rejects invalid account type codes', async () => {
-    const result = await repo.bulkCreate([
-      { accountTypeCode: '9999' }, // invalid
-      { accountTypeCode: '1000' }, // valid
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [
+        { accountTypeCode: '9999' }, // invalid
+        { accountTypeCode: '1000' }, // valid
+      ],
+      undefined,
+    );
 
     expect(result.summary.errors).toBe(1);
     expect(result.summary.created).toBe(1);
@@ -636,19 +735,22 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
   });
 
   it('rejects group/total account types', async () => {
-    const result = await repo.bulkCreate([
-      { accountTypeCode: '1' }, // group account
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [
+        { accountTypeCode: '1' }, // group account
+      ],
+      undefined,
+    );
 
     expect(result.summary.errors).toBe(1);
     expect(result.errors[0].reason).toContain('Not a posting account');
   });
 
   it('rejects entries without accountTypeCode', async () => {
-    const result = await repo.bulkCreate([
-      { accountTypeCode: undefined },
-      { accountTypeCode: '1000' },
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [{ accountTypeCode: undefined }, { accountTypeCode: '1000' }],
+      undefined,
+    );
 
     expect(result.summary.errors).toBe(1);
     expect(result.summary.created).toBe(1);
@@ -660,10 +762,10 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
     await BulkAcct.create({ accountTypeCode: '1000' });
     await BulkAcct.create({ accountTypeCode: '2000' });
 
-    const result = await repo.bulkCreate([
-      { accountTypeCode: '1000' },
-      { accountTypeCode: '2000' },
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [{ accountTypeCode: '1000' }, { accountTypeCode: '2000' }],
+      undefined,
+    );
 
     expect(result.summary.total).toBe(2);
     expect(result.summary.created).toBe(0);
@@ -671,10 +773,10 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
   });
 
   it('returns correct summary when all inputs are invalid', async () => {
-    const result = await repo.bulkCreate([
-      { accountTypeCode: undefined },
-      { accountTypeCode: '9999' },
-    ], undefined);
+    const result = await repo.bulkCreate(
+      [{ accountTypeCode: undefined }, { accountTypeCode: '9999' }],
+      undefined,
+    );
 
     expect(result.summary.total).toBe(2);
     expect(result.summary.created).toBe(0);
@@ -793,8 +895,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       state: 'draft',
       business: org1,
       journalItems: [
-        { account: { _id: 'acct-1', business: org1 }, debit: 10000, credit: 0},
-        { account: { _id: 'acct-2', business: org2 }, debit: 0, credit: 10000}, // cross-tenant!
+        { account: { _id: 'acct-1', business: org1 }, debit: 10000, credit: 0 },
+        { account: { _id: 'acct-2', business: org2 }, debit: 0, credit: 10000 }, // cross-tenant!
       ],
       save: vi.fn(),
     };
@@ -816,8 +918,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       state: 'draft',
       business: org1,
       journalItems: [
-        { account: { _id: acctId1, business: org1 }, debit: 10000, credit: 0},
-        { account: { _id: acctId2, business: org1 }, debit: 0, credit: 10000},
+        { account: { _id: acctId1, business: org1 }, debit: 10000, credit: 0 },
+        { account: { _id: acctId2, business: org1 }, debit: 0, credit: 10000 },
       ],
       save: vi.fn().mockResolvedValue(undefined),
     };
@@ -836,8 +938,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       state: 'draft',
       business: org1,
       journalItems: [
-        { account: { _id: 'acct-1', business: org1 }, debit: 5000, credit: 0},
-        { account: { _id: 'acct-2', business: org2 }, debit: 0, credit: 5000},
+        { account: { _id: 'acct-1', business: org1 }, debit: 5000, credit: 0 },
+        { account: { _id: 'acct-2', business: org2 }, debit: 0, credit: 5000 },
       ],
       save: vi.fn(),
     };
@@ -861,9 +963,9 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       state: 'draft',
       business: org1,
       journalItems: [
-        { account: { _id: 'a1', business: org2 }, debit: 10000, credit: 0},
-        { account: { _id: 'a2', business: org2 }, debit: 0, credit: 5000},
-        { account: { _id: 'a3', business: org1 }, debit: 0, credit: 5000},
+        { account: { _id: 'a1', business: org2 }, debit: 10000, credit: 0 },
+        { account: { _id: 'a2', business: org2 }, debit: 0, credit: 5000 },
+        { account: { _id: 'a3', business: org1 }, debit: 0, credit: 5000 },
       ],
       save: vi.fn(),
     };
@@ -881,8 +983,8 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
       _id: 'entry-1',
       state: 'draft',
       journalItems: [
-        { account: { _id: 'a1' }, debit: 10000, credit: 0},
-        { account: { _id: 'a2' }, debit: 0, credit: 10000},
+        { account: { _id: 'a1' }, debit: 10000, credit: 0 },
+        { account: { _id: 'a2' }, debit: 0, credit: 10000 },
       ],
       save: vi.fn().mockResolvedValue(undefined),
     };
@@ -936,13 +1038,13 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
     const repo: any = mockRepository();
     wireAccountMethods(repo, mockModel, mockCountry, 'business');
 
-    await expect(
-      repo.bulkCreate([{ accountTypeCode: '1000' }], undefined),
-    ).rejects.toThrow('organizationId is required');
+    await expect(repo.bulkCreate([{ accountTypeCode: '1000' }], undefined)).rejects.toThrow(
+      'organizationId is required',
+    );
 
-    await expect(
-      repo.bulkCreate([{ accountTypeCode: '1000' }], null),
-    ).rejects.toThrow('organizationId is required');
+    await expect(repo.bulkCreate([{ accountTypeCode: '1000' }], null)).rejects.toThrow(
+      'organizationId is required',
+    );
 
     // DB should not have been queried
     expect(mockModel.find).not.toHaveBeenCalled();

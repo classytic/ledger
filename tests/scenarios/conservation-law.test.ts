@@ -13,16 +13,24 @@
  * - Rebuild from individual entries
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  setupScenario, teardownScenario, postEntry, draftEntry, assertConservation,
+  assertConservation,
+  draftEntry,
+  postEntry,
   type ScenarioEngine,
+  setupScenario,
+  teardownScenario,
 } from '../helpers/scenario-setup.js';
 
 let s: ScenarioEngine;
 
-beforeAll(async () => { s = await setupScenario({}, 'Conservation'); });
-afterAll(async () => { await teardownScenario(s); });
+beforeAll(async () => {
+  s = await setupScenario({}, 'Conservation');
+});
+afterAll(async () => {
+  await teardownScenario(s);
+});
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. Bulk posting — 20 entries with varying amounts
@@ -31,9 +39,8 @@ afterAll(async () => { await teardownScenario(s); });
 describe('1. Bulk Posting Conservation', () => {
   it('posts 20 entries of varying sizes', async () => {
     const amounts = [
-      100, 999, 1_000, 5_000, 10_000, 25_000, 50_000, 99_999,
-      100_000, 250_000, 500_000, 1_000_000, 1_500_000, 2_000_000,
-      3_000_000, 5_000_000, 7_500_000, 10_000_000, 15_000_000, 1,
+      100, 999, 1_000, 5_000, 10_000, 25_000, 50_000, 99_999, 100_000, 250_000, 500_000, 1_000_000,
+      1_500_000, 2_000_000, 3_000_000, 5_000_000, 7_500_000, 10_000_000, 15_000_000, 1,
     ];
 
     for (let i = 0; i < amounts.length; i++) {
@@ -64,20 +71,20 @@ describe('1. Bulk Posting Conservation', () => {
 describe('2. Multi-Line Entry Conservation', () => {
   it('posts 3-line entry: revenue splits cash + AR', async () => {
     await postEntry(s, '2025-02-01', 'SALES', [
-      { account: '1001', debit: 700_000, credit: 0 },      // Cash 70%
-      { account: '1200', debit: 300_000, credit: 0 },      // AR 30%
-      { account: '4010', debit: 0, credit: 1_000_000 },    // Revenue 100%
+      { account: '1001', debit: 700_000, credit: 0 }, // Cash 70%
+      { account: '1200', debit: 300_000, credit: 0 }, // AR 30%
+      { account: '4010', debit: 0, credit: 1_000_000 }, // Revenue 100%
     ]);
     await assertConservation(s);
   });
 
   it('posts 5-line compound entry', async () => {
     await postEntry(s, '2025-02-05', 'GENERAL', [
-      { account: '6010', debit: 200_000, credit: 0 },      // Rent
-      { account: '6020', debit: 300_000, credit: 0 },      // Salaries
-      { account: '6030', debit: 50_000, credit: 0 },       // Utilities
-      { account: '2300', debit: 0, credit: 50_000 },       // Tax payable
-      { account: '1001', debit: 0, credit: 500_000 },      // Cash
+      { account: '6010', debit: 200_000, credit: 0 }, // Rent
+      { account: '6020', debit: 300_000, credit: 0 }, // Salaries
+      { account: '6030', debit: 50_000, credit: 0 }, // Utilities
+      { account: '2300', debit: 0, credit: 50_000 }, // Tax payable
+      { account: '1001', debit: 0, credit: 500_000 }, // Cash
     ]);
     await assertConservation(s);
   });
@@ -121,10 +128,16 @@ describe('3. Mixed Journal Types', () => {
 describe('4. Drafts and Conservation', () => {
   it('unbalanced drafts do not affect posted conservation', async () => {
     // Create unbalanced draft
-    await draftEntry(s, '2025-04-01', 'GENERAL', [
-      { account: '1001', debit: 999_999, credit: 0 },
-      { account: '4010', debit: 0, credit: 1 },
-    ], 'Unbalanced draft — does not affect conservation');
+    await draftEntry(
+      s,
+      '2025-04-01',
+      'GENERAL',
+      [
+        { account: '1001', debit: 999_999, credit: 0 },
+        { account: '4010', debit: 0, credit: 1 },
+      ],
+      'Unbalanced draft — does not affect conservation',
+    );
 
     // Conservation only checks posted entries
     await assertConservation(s);

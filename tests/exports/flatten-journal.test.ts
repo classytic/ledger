@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { flattenJournalEntry, flattenJournalEntries } from '../../src/exports/flatten-journal.js';
-import type { PopulatedJournalEntry, PopulatedAccount } from '../../src/exports/types.js';
+import { describe, expect, it } from 'vitest';
+import { flattenJournalEntries, flattenJournalEntry } from '../../src/exports/flatten-journal.js';
+import type { PopulatedAccount, PopulatedJournalEntry } from '../../src/exports/types.js';
 
 const makeEntry = (overrides: Partial<PopulatedJournalEntry> = {}): PopulatedJournalEntry => ({
   _id: 'entry-1',
@@ -122,7 +122,11 @@ describe('flattenJournalEntry', () => {
   it('handles missing taxDetails', () => {
     const entry = makeEntry({
       journalItems: [
-        { account: { _id: 'a1', accountTypeCode: '1010' } as PopulatedAccount, debit: 5000, credit: 0 },
+        {
+          account: { _id: 'a1', accountTypeCode: '1010' } as PopulatedAccount,
+          debit: 5000,
+          credit: 0,
+        },
       ],
     });
     const rows = flattenJournalEntry(entry);
@@ -142,7 +146,9 @@ describe('flattenJournalEntry', () => {
       journalItems: [
         {
           account: { _id: 'a1', accountTypeCode: '1010' } as PopulatedAccount,
-          debit: 5000, credit: 0, date: itemDate,
+          debit: 5000,
+          credit: 0,
+          date: itemDate,
         },
       ],
     });
@@ -155,7 +161,11 @@ describe('flattenJournalEntry', () => {
     const entry = makeEntry({
       date: entryDate,
       journalItems: [
-        { account: { _id: 'a1', accountTypeCode: '1010' } as PopulatedAccount, debit: 5000, credit: 0 },
+        {
+          account: { _id: 'a1', accountTypeCode: '1010' } as PopulatedAccount,
+          debit: 5000,
+          credit: 0,
+        },
       ],
     });
     const rows = flattenJournalEntry(entry);
@@ -176,10 +186,7 @@ describe('flattenJournalEntries', () => {
   });
 
   it('preserves order', () => {
-    const entries = [
-      makeEntry({ _id: 'first' }),
-      makeEntry({ _id: 'second' }),
-    ];
+    const entries = [makeEntry({ _id: 'first' }), makeEntry({ _id: 'second' })];
     const rows = flattenJournalEntries(entries);
     expect(rows[0].entryId).toBe('first');
     expect(rows[2].entryId).toBe('second');

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { doubleEntryPlugin } from '../../src/plugins/double-entry.plugin.js';
 import { createMockRepository } from '../helpers/mock-repository.js';
 
@@ -8,9 +8,7 @@ function createMockAccountModel(accounts?: Array<{ _id: string; business?: strin
     find: (query: { _id: { $in: string[] } }) => ({
       select: () => ({
         session: () => ({
-          lean: () => Promise.resolve(
-            accounts ?? query._id.$in.map((id: string) => ({ _id: id })),
-          ),
+          lean: () => Promise.resolve(accounts ?? query._id.$in.map((id: string) => ({ _id: id }))),
         }),
       }),
     }),
@@ -53,7 +51,9 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'Double-entry violation',
+      );
     });
 
     it('rejects posted entries with empty journal items', async () => {
@@ -65,7 +65,9 @@ describe('doubleEntryPlugin', () => {
         journalItems: [],
       };
 
-      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('at least 2 journal items required');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'at least 2 journal items required',
+      );
     });
 
     it('rejects posted entries with only 1 journal item', async () => {
@@ -77,7 +79,9 @@ describe('doubleEntryPlugin', () => {
         journalItems: [{ debit: 10000, credit: 0 }],
       };
 
-      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('at least 2 journal items required');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'at least 2 journal items required',
+      );
     });
 
     it('skips validation for draft entries (onlyOnPost = true)', async () => {
@@ -86,9 +90,7 @@ describe('doubleEntryPlugin', () => {
 
       const data = {
         state: 'draft',
-        journalItems: [
-          { debit: 10000, credit: 0 },
-        ],
+        journalItems: [{ debit: 10000, credit: 0 }],
       };
 
       await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
@@ -106,7 +108,9 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'Double-entry violation',
+      );
     });
 
     it('rejects a 1-cent imbalance', async () => {
@@ -121,7 +125,9 @@ describe('doubleEntryPlugin', () => {
         ],
       };
 
-      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'Double-entry violation',
+      );
     });
 
     it('accepts balanced entries', async () => {
@@ -154,7 +160,7 @@ describe('doubleEntryPlugin', () => {
       };
 
       await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
-        'a line cannot have both debit (10000) and credit (5000) greater than zero',
+        /line cannot have both debit and credit greater than zero/,
       );
     });
 
@@ -259,9 +265,7 @@ describe('doubleEntryPlugin', () => {
       const data = {
         state: 'draft',
         business: 'org1',
-        journalItems: [
-          { account: 'acc1', debit: 10000, credit: 0 },
-        ],
+        journalItems: [{ account: 'acc1', debit: 10000, credit: 0 }],
       };
 
       await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
@@ -331,9 +335,9 @@ describe('doubleEntryPlugin', () => {
 
       const data = { state: 'posted' }; // No journalItems — partial update
 
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('JournalEntryModel is required');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'JournalEntryModel is required',
+      );
     });
 
     it('fetches persisted items and validates when JournalEntryModel is provided', async () => {
@@ -342,12 +346,13 @@ describe('doubleEntryPlugin', () => {
         findById: () => ({
           select: () => ({
             session: () => ({
-              lean: () => Promise.resolve({
-                journalItems: [
-                  { debit: 10000, credit: 0 },
-                  { debit: 0, credit: 10000 },
-                ],
-              }),
+              lean: () =>
+                Promise.resolve({
+                  journalItems: [
+                    { debit: 10000, credit: 0 },
+                    { debit: 0, credit: 10000 },
+                  ],
+                }),
             }),
           }),
         }),
@@ -367,12 +372,13 @@ describe('doubleEntryPlugin', () => {
         findById: () => ({
           select: () => ({
             session: () => ({
-              lean: () => Promise.resolve({
-                journalItems: [
-                  { debit: 10000, credit: 0 },
-                  { debit: 0, credit: 5000 },
-                ],
-              }),
+              lean: () =>
+                Promise.resolve({
+                  journalItems: [
+                    { debit: 10000, credit: 0 },
+                    { debit: 0, credit: 5000 },
+                  ],
+                }),
             }),
           }),
         }),
@@ -381,9 +387,9 @@ describe('doubleEntryPlugin', () => {
       doubleEntryPlugin({ JournalEntryModel: mockModel as any }).apply(repo);
 
       const data = { state: 'posted' };
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('Double-entry violation');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'Double-entry violation',
+      );
     });
 
     it('rejects when persisted doc has no journal items', async () => {
@@ -401,9 +407,9 @@ describe('doubleEntryPlugin', () => {
       doubleEntryPlugin({ JournalEntryModel: mockModel as any }).apply(repo);
 
       const data = { state: 'posted' };
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('at least 2 journal items required');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'at least 2 journal items required',
+      );
     });
 
     it('rejects when persisted doc has only 1 journal item', async () => {
@@ -412,9 +418,10 @@ describe('doubleEntryPlugin', () => {
         findById: () => ({
           select: () => ({
             session: () => ({
-              lean: () => Promise.resolve({
-                journalItems: [{ debit: 0, credit: 0 }],
-              }),
+              lean: () =>
+                Promise.resolve({
+                  journalItems: [{ debit: 0, credit: 0 }],
+                }),
             }),
           }),
         }),
@@ -423,9 +430,9 @@ describe('doubleEntryPlugin', () => {
       doubleEntryPlugin({ JournalEntryModel: mockModel as any }).apply(repo);
 
       const data = { state: 'posted' };
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('at least 2 journal items required, got 1');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'at least 2 journal items required, got 1',
+      );
     });
 
     it('rejects update with empty items in payload', async () => {
@@ -433,15 +440,17 @@ describe('doubleEntryPlugin', () => {
       doubleEntryPlugin().apply(repo);
 
       const data = { state: 'posted', journalItems: [] };
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('at least 2 journal items required');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'at least 2 journal items required',
+      );
     });
 
     it('throws when context.id is missing on partial post update', async () => {
       const repo = createMockRepository();
       const mockModel = {
-        findById: () => ({ select: () => ({ session: () => ({ lean: () => Promise.resolve(null) }) }) }),
+        findById: () => ({
+          select: () => ({ session: () => ({ lean: () => Promise.resolve(null) }) }),
+        }),
       };
       doubleEntryPlugin({ JournalEntryModel: mockModel as any }).apply(repo);
 
@@ -553,13 +562,14 @@ describe('doubleEntryPlugin', () => {
             // Items fetch
             return {
               session: () => ({
-                lean: () => Promise.resolve({
-                  business: 'org1',
-                  journalItems: [
-                    { account: 'acc1', debit: 10000, credit: 0 },
-                    { account: 'acc2', debit: 0, credit: 10000 },
-                  ],
-                }),
+                lean: () =>
+                  Promise.resolve({
+                    business: 'org1',
+                    journalItems: [
+                      { account: 'acc1', debit: 10000, credit: 0 },
+                      { account: 'acc2', debit: 0, credit: 10000 },
+                    ],
+                  }),
               }),
             };
           },

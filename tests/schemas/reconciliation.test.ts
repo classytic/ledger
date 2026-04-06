@@ -1,16 +1,28 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createReconciliationSchema } from '../../src/schemas/reconciliation.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
+import { createReconciliationSchema } from '../../src/schemas/reconciliation.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 const testPack = defineCountryPack({
-  code: 'TS', name: 'Test', defaultCurrency: 'TST',
+  code: 'TS',
+  name: 'Test',
+  defaultCurrency: 'TST',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const mtConfig: AccountingEngineConfig = {
@@ -46,7 +58,7 @@ beforeEach(async () => {
 describe('Reconciliation Schema', () => {
   it('creates schema with valid data', async () => {
     const schema = createReconciliationSchema(stConfig, 'Account', 'JournalEntry');
-    if (mongoose.models['ReconTest1']) delete mongoose.models['ReconTest1'];
+    if (mongoose.models.ReconTest1) delete mongoose.models.ReconTest1;
     const Model = mongoose.model('ReconTest1', schema);
 
     const accountId = new mongoose.Types.ObjectId();
@@ -73,23 +85,40 @@ describe('Reconciliation Schema', () => {
 
   it('validates required fields', async () => {
     const schema = createReconciliationSchema(stConfig, 'Account', 'JournalEntry');
-    if (mongoose.models['ReconTest2']) delete mongoose.models['ReconTest2'];
+    if (mongoose.models.ReconTest2) delete mongoose.models.ReconTest2;
     const Model = mongoose.model('ReconTest2', schema);
 
     // Missing account
-    const doc1 = new Model({ journalEntryIds: [new mongoose.Types.ObjectId()], debitTotal: 100, creditTotal: 100 });
+    const doc1 = new Model({
+      journalEntryIds: [new mongoose.Types.ObjectId()],
+      debitTotal: 100,
+      creditTotal: 100,
+    });
     await expect(doc1.validate()).rejects.toThrow();
 
     // Missing debitTotal
-    const doc2 = new Model({ account: new mongoose.Types.ObjectId(), journalEntryIds: [new mongoose.Types.ObjectId()], creditTotal: 100 });
+    const doc2 = new Model({
+      account: new mongoose.Types.ObjectId(),
+      journalEntryIds: [new mongoose.Types.ObjectId()],
+      creditTotal: 100,
+    });
     await expect(doc2.validate()).rejects.toThrow();
 
     // Missing creditTotal
-    const doc3 = new Model({ account: new mongoose.Types.ObjectId(), journalEntryIds: [new mongoose.Types.ObjectId()], debitTotal: 100 });
+    const doc3 = new Model({
+      account: new mongoose.Types.ObjectId(),
+      journalEntryIds: [new mongoose.Types.ObjectId()],
+      debitTotal: 100,
+    });
     await expect(doc3.validate()).rejects.toThrow();
 
     // Empty journalEntryIds
-    const doc4 = new Model({ account: new mongoose.Types.ObjectId(), journalEntryIds: [], debitTotal: 100, creditTotal: 100 });
+    const doc4 = new Model({
+      account: new mongoose.Types.ObjectId(),
+      journalEntryIds: [],
+      debitTotal: 100,
+      creditTotal: 100,
+    });
     await expect(doc4.validate()).rejects.toThrow();
   });
 
@@ -105,7 +134,7 @@ describe('Reconciliation Schema', () => {
 
   it('defaults difference to 0', async () => {
     const schema = createReconciliationSchema(stConfig, 'Account', 'JournalEntry');
-    if (mongoose.models['ReconTest3']) delete mongoose.models['ReconTest3'];
+    if (mongoose.models.ReconTest3) delete mongoose.models.ReconTest3;
     const Model = mongoose.model('ReconTest3', schema);
 
     const doc = new Model({
@@ -121,7 +150,7 @@ describe('Reconciliation Schema', () => {
 
   it('defaults reconciledAt to now', async () => {
     const schema = createReconciliationSchema(stConfig, 'Account', 'JournalEntry');
-    if (mongoose.models['ReconTest4']) delete mongoose.models['ReconTest4'];
+    if (mongoose.models.ReconTest4) delete mongoose.models.ReconTest4;
     const Model = mongoose.model('ReconTest4', schema);
 
     const before = new Date();

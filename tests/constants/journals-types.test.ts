@@ -8,22 +8,21 @@
  * - Registry functions accept/reject the right parameter shapes
  */
 
-import { describe, it, expectTypeOf } from 'vitest';
-import type { JournalType } from '../../src/types/core.js';
+import { describe, expectTypeOf, it } from 'vitest';
 import {
-  JOURNAL_TYPES,
-  JOURNAL_CODES,
-  getJournalTypeCodes,
-  isValidJournalType,
-  getJournalType,
-  registerJournalType,
-  getCustomJournalTypes,
   _freezeJournalTypes,
   _resetCustomJournalTypes,
+  getCustomJournalTypes,
+  getJournalType,
+  getJournalTypeCodes,
+  isValidJournalType,
+  JOURNAL_CODES,
+  JOURNAL_TYPES,
+  registerJournalType,
 } from '../../src/constants/journals.js';
+import type { JournalType } from '../../src/types/core.js';
 
 describe('Journal Registry — type-level tests', () => {
-
   // ── Constants ────────────────────────────────────────────────────────────
 
   it('JOURNAL_TYPES is a Readonly record of JournalType', () => {
@@ -31,7 +30,7 @@ describe('Journal Registry — type-level tests', () => {
   });
 
   it('JOURNAL_TYPES values satisfy JournalType interface', () => {
-    expectTypeOf(JOURNAL_TYPES['SALES']).toMatchTypeOf<JournalType>();
+    expectTypeOf(JOURNAL_TYPES.SALES).toMatchTypeOf<JournalType>();
   });
 
   it('JOURNAL_CODES is a Readonly record of string', () => {
@@ -98,7 +97,10 @@ describe('Journal Registry — type-level tests', () => {
 
   it('JournalType does not accept extra properties at the type level', () => {
     // A plain object with only the 3 fields satisfies JournalType
-    expectTypeOf<{ readonly code: string; readonly name: string; readonly description: string }>()
-      .toMatchTypeOf<JournalType>();
+    expectTypeOf<{
+      readonly code: string;
+      readonly name: string;
+      readonly description: string;
+    }>().toMatchTypeOf<JournalType>();
   });
 });

@@ -5,38 +5,143 @@
  * from wireAccountMethods().
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
-import type { AccountingEngineConfig } from '../../src/types/engine.js';
 import { wireAccountMethods } from '../../src/repositories/account.repository.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 const testPack = defineCountryPack({
-  code: 'TS', name: 'Test', defaultCurrency: 'TST',
+  code: 'TS',
+  name: 'Test',
+  defaultCurrency: 'TST',
   retainedEarningsAccountCode: '3000',
   cogsGroupCode: 'COGS',
   accountTypes: [
     // Groups (not postable)
-    { code: 'Assets', name: 'Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-    { code: 'Revenue', name: 'Revenue', category: 'Income Statement-Income', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
+    {
+      code: 'Assets',
+      name: 'Assets',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: null,
+      isGroup: true,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Revenue',
+      name: 'Revenue',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: null,
+      isGroup: true,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
     // Totals (not postable)
-    { code: '1999', name: 'Total Assets', category: 'Balance Sheet-Asset', description: '', parentCode: 'Assets', isTotal: true, cashFlowCategory: null, totalAccountTypes: [{ account: '1000', operation: '+' }] },
+    {
+      code: '1999',
+      name: 'Total Assets',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Assets',
+      isTotal: true,
+      cashFlowCategory: null,
+      totalAccountTypes: [{ account: '1000', operation: '+' }],
+    },
     // Posting accounts
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: '', parentCode: 'Assets', isTotal: false, cashFlowCategory: null },
-    { code: '1100', name: 'AR', category: 'Balance Sheet-Asset', description: '', parentCode: 'Assets', isTotal: false, cashFlowCategory: null },
-    { code: '2000', name: 'AP', category: 'Balance Sheet-Liability', description: '', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '3000', name: 'Equity', category: 'Balance Sheet-Equity', description: '', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Sales', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Rent', category: 'Income Statement-Expense', description: '', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Assets',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '1100',
+      name: 'AR',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Assets',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '2000',
+      name: 'AP',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3000',
+      name: 'Equity',
+      category: 'Balance Sheet-Equity',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: 'Revenue',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Rent',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
     // Tax virtual total + sub-account
-    { code: '2500', name: 'Tax Payable', category: 'Balance Sheet-Liability', description: '', parentCode: null, isTotal: true, isVirtualTotal: true, cashFlowCategory: null, totalAccountTypes: [{ account: '2501', operation: '+' }] },
-    { code: '2501', name: 'Sales Tax', category: 'Balance Sheet-Liability', description: '', parentCode: '2500', isTotal: false, cashFlowCategory: null },
+    {
+      code: '2500',
+      name: 'Tax Payable',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: null,
+      isTotal: true,
+      isVirtualTotal: true,
+      cashFlowCategory: null,
+      totalAccountTypes: [{ account: '2501', operation: '+' }],
+    },
+    {
+      code: '2501',
+      name: 'Sales Tax',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: '2500',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
     // Uncategorized
-    { code: 'Uncategorized Assets', name: 'Uncategorized Assets', category: 'Balance Sheet-Asset', description: '', parentCode: 'Assets', isTotal: false, cashFlowCategory: null },
+    {
+      code: 'Uncategorized Assets',
+      name: 'Uncategorized Assets',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Assets',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const mtConfig: AccountingEngineConfig = {
@@ -53,7 +158,7 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
-  if (mongoose.models['AcctRepoAccount']) delete mongoose.models['AcctRepoAccount'];
+  if (mongoose.models.AcctRepoAccount) delete mongoose.models.AcctRepoAccount;
   AccountModel = mongoose.model('AcctRepoAccount', createAccountSchema(mtConfig));
   await AccountModel.createIndexes();
 });
@@ -100,7 +205,7 @@ describe('seedAccounts', () => {
     const repo = createRepo();
     await repo.seedAccounts(orgId);
 
-    const docs = await AccountModel.find({ business: orgId }).lean() as any[];
+    const docs = (await AccountModel.find({ business: orgId }).lean()) as any[];
     const codes = docs.map((d: any) => d.accountTypeCode);
 
     // Groups
@@ -115,7 +220,7 @@ describe('seedAccounts', () => {
     const repo = createRepo();
     await repo.seedAccounts(orgId);
 
-    const docs = await AccountModel.find({ business: orgId }).lean() as any[];
+    const docs = (await AccountModel.find({ business: orgId }).lean()) as any[];
     const codes = docs.map((d: any) => d.accountTypeCode);
 
     expect(codes).toContain('2501'); // tax sub-account
@@ -138,7 +243,12 @@ describe('seedAccounts', () => {
 
   it('seeds partial — only missing accounts', async () => {
     // Pre-create one account
-    await AccountModel.create({ accountTypeCode: '1000', accountNumber: '1000', name: 'Cash', business: orgId });
+    await AccountModel.create({
+      accountTypeCode: '1000',
+      accountNumber: '1000',
+      name: 'Cash',
+      business: orgId,
+    });
 
     const repo = createRepo();
     const result = await repo.seedAccounts(orgId);
@@ -166,11 +276,7 @@ describe('bulkCreate', () => {
   it('creates multiple accounts', async () => {
     const repo = createRepo();
     const result = await repo.bulkCreate(
-      [
-        { accountTypeCode: '1000' },
-        { accountTypeCode: '2000' },
-        { accountTypeCode: '4000' },
-      ],
+      [{ accountTypeCode: '1000' }, { accountTypeCode: '2000' }, { accountTypeCode: '4000' }],
       orgId,
     );
 
@@ -180,14 +286,16 @@ describe('bulkCreate', () => {
   });
 
   it('skips already existing accounts', async () => {
-    await AccountModel.create({ accountTypeCode: '1000', accountNumber: '1000', name: 'Cash', business: orgId });
+    await AccountModel.create({
+      accountTypeCode: '1000',
+      accountNumber: '1000',
+      name: 'Cash',
+      business: orgId,
+    });
 
     const repo = createRepo();
     const result = await repo.bulkCreate(
-      [
-        { accountTypeCode: '1000' },
-        { accountTypeCode: '2000' },
-      ],
+      [{ accountTypeCode: '1000' }, { accountTypeCode: '2000' }],
       orgId,
     );
 
@@ -210,10 +318,7 @@ describe('bulkCreate', () => {
 
   it('rejects invalid account type code', async () => {
     const repo = createRepo();
-    const result = await repo.bulkCreate(
-      [{ accountTypeCode: 'FAKE_CODE' }],
-      orgId,
-    );
+    const result = await repo.bulkCreate([{ accountTypeCode: 'FAKE_CODE' }], orgId);
 
     expect(result.summary.errors).toBe(1);
     expect(result.errors[0].reason).toContain('Invalid');
@@ -221,10 +326,7 @@ describe('bulkCreate', () => {
 
   it('rejects group account types', async () => {
     const repo = createRepo();
-    const result = await repo.bulkCreate(
-      [{ accountTypeCode: 'Assets' }],
-      orgId,
-    );
+    const result = await repo.bulkCreate([{ accountTypeCode: 'Assets' }], orgId);
 
     expect(result.summary.errors).toBe(1);
     expect(result.errors[0].reason).toContain('group');
@@ -232,10 +334,7 @@ describe('bulkCreate', () => {
 
   it('rejects total account types', async () => {
     const repo = createRepo();
-    const result = await repo.bulkCreate(
-      [{ accountTypeCode: '1999' }],
-      orgId,
-    );
+    const result = await repo.bulkCreate([{ accountTypeCode: '1999' }], orgId);
 
     expect(result.summary.errors).toBe(1);
     expect(result.errors[0].reason).toContain('total');
@@ -245,7 +344,10 @@ describe('bulkCreate', () => {
     const repo = createRepo();
     await repo.bulkCreate([{ accountTypeCode: '1000' }], orgId);
 
-    const doc = await AccountModel.findOne({ business: orgId, accountTypeCode: '1000' }).lean() as any;
+    const doc = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1000',
+    }).lean()) as any;
     expect(doc.accountNumber).toBe('1000');
     expect(doc.name).toBe('Cash'); // from country pack
   });
@@ -257,7 +359,10 @@ describe('bulkCreate', () => {
       orgId,
     );
 
-    const doc = await AccountModel.findOne({ business: orgId, accountTypeCode: '1000' }).lean() as any;
+    const doc = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1000',
+    }).lean()) as any;
     expect(doc.accountNumber).toBe('CASH-01');
     expect(doc.name).toBe('Main Cash Account');
   });
@@ -271,16 +376,21 @@ describe('bulkCreate', () => {
   });
 
   it('handles mix of valid, invalid, and existing', async () => {
-    await AccountModel.create({ accountTypeCode: '1000', accountNumber: '1000', name: 'Cash', business: orgId });
+    await AccountModel.create({
+      accountTypeCode: '1000',
+      accountNumber: '1000',
+      name: 'Cash',
+      business: orgId,
+    });
 
     const repo = createRepo();
     const result = await repo.bulkCreate(
       [
-        { accountTypeCode: '1000' },      // skip: exists
-        { accountTypeCode: '2000' },      // create
-        { accountTypeCode: 'FAKE' },      // error: invalid
-        { accountTypeCode: 'Assets' },    // error: group
-        { accountTypeCode: '4000' },      // create
+        { accountTypeCode: '1000' }, // skip: exists
+        { accountTypeCode: '2000' }, // create
+        { accountTypeCode: 'FAKE' }, // error: invalid
+        { accountTypeCode: 'Assets' }, // error: group
+        { accountTypeCode: '4000' }, // create
       ],
       orgId,
     );
@@ -318,8 +428,6 @@ describe('before:create validation', () => {
 
   it('allows creation when accountTypeCode is not provided', async () => {
     const repo = createRepo();
-    await expect(
-      repo._trigger('before:create', { data: {} }),
-    ).resolves.not.toThrow();
+    await expect(repo._trigger('before:create', { data: {} })).resolves.not.toThrow();
   });
 });

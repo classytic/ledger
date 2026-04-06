@@ -1,19 +1,38 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createBudgetSchema } from '../../src/schemas/budget.schema.js';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
+import { createBudgetSchema } from '../../src/schemas/budget.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // Minimal country pack for testing
 const testPack = defineCountryPack({
-  code: 'TEST', name: 'Test Country', defaultCurrency: 'TST',
+  code: 'TEST',
+  name: 'Test Country',
+  defaultCurrency: 'TST',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6000', name: 'Rent Expense', category: 'Income Statement-Expense', description: 'Rent', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6000',
+      name: 'Rent Expense',
+      category: 'Income Statement-Expense',
+      description: 'Rent',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 // ── Multi-tenant config ──────────────────────────────────────────────────────
@@ -53,7 +72,7 @@ beforeEach(async () => {
 describe('Budget Schema', () => {
   it('creates schema with valid data', async () => {
     const schema = createBudgetSchema(stConfig);
-    if (mongoose.models['BudgetValid']) delete mongoose.models['BudgetValid'];
+    if (mongoose.models.BudgetValid) delete mongoose.models.BudgetValid;
     const Model = mongoose.model('BudgetValid', schema);
 
     const accountId = new mongoose.Types.ObjectId();
@@ -70,7 +89,7 @@ describe('Budget Schema', () => {
 
   it('validates periodEnd > periodStart', async () => {
     const schema = createBudgetSchema(stConfig);
-    if (mongoose.models['BudgetDateVal']) delete mongoose.models['BudgetDateVal'];
+    if (mongoose.models.BudgetDateVal) delete mongoose.models.BudgetDateVal;
     const Model = mongoose.model('BudgetDateVal', schema);
 
     const accountId = new mongoose.Types.ObjectId();
@@ -96,7 +115,7 @@ describe('Budget Schema', () => {
 
   it('validates amount is integer', async () => {
     const schema = createBudgetSchema(stConfig);
-    if (mongoose.models['BudgetIntVal']) delete mongoose.models['BudgetIntVal'];
+    if (mongoose.models.BudgetIntVal) delete mongoose.models.BudgetIntVal;
     const Model = mongoose.model('BudgetIntVal', schema);
 
     const accountId = new mongoose.Types.ObjectId();
@@ -120,7 +139,7 @@ describe('Budget Schema', () => {
 
   it('unique index prevents duplicate [account, periodStart, periodEnd]', async () => {
     const schema = createBudgetSchema(stConfig);
-    if (mongoose.models['BudgetUniq']) delete mongoose.models['BudgetUniq'];
+    if (mongoose.models.BudgetUniq) delete mongoose.models.BudgetUniq;
     const Model = mongoose.model('BudgetUniq', schema);
     await Model.createIndexes();
 
@@ -139,7 +158,11 @@ describe('Budget Schema', () => {
 
     // Different period should succeed
     await expect(
-      Model.create({ ...data, periodStart: new Date('2025-04-01'), periodEnd: new Date('2025-06-30') }),
+      Model.create({
+        ...data,
+        periodStart: new Date('2025-04-01'),
+        periodEnd: new Date('2025-06-30'),
+      }),
     ).resolves.toBeDefined();
   });
 
@@ -158,7 +181,7 @@ describe('Budget Schema', () => {
 
   it('allows duplicate [account, period] across different orgs in multi-tenant mode', async () => {
     const schema = createBudgetSchema(mtConfig);
-    if (mongoose.models['BudgetMTUniq']) delete mongoose.models['BudgetMTUniq'];
+    if (mongoose.models.BudgetMTUniq) delete mongoose.models.BudgetMTUniq;
     const Model = mongoose.model('BudgetMTUniq', schema);
     await Model.createIndexes();
 

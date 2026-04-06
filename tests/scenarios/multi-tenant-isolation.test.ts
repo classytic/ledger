@@ -9,12 +9,12 @@
  * (not just record-level filtering).
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAccountingEngine } from '../../src/engine.js';
-import { testPack } from '../helpers/scenario-setup.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { testPack } from '../helpers/scenario-setup.js';
 
 let mongod: MongoMemoryServer;
 let engine: ReturnType<typeof createAccountingEngine>;
@@ -31,28 +31,36 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
+  for (const n of ['MtIso_Acct', 'MtIso_JE', 'MtIso_FP', 'MtIso_B', 'MtIso_R']) {
+    if (mongoose.connection.models[n]) delete mongoose.connection.models[n];
+  }
+
   const config: AccountingEngineConfig = {
+    mongoose: mongoose.connection,
     country: testPack,
     currency: 'USD',
     multiTenant: { orgField: 'business', orgRef: 'Business' },
     retainedEarningsAccountCode: '3600',
     retainedEarningsDisplayCode: '3660',
     currentYearEarningsCode: '3680',
+    modelNames: {
+      account: 'MtIso_Acct',
+      journalEntry: 'MtIso_JE',
+      fiscalPeriod: 'MtIso_FP',
+      budget: 'MtIso_B',
+      reconciliation: 'MtIso_R',
+    },
   };
 
   engine = createAccountingEngine(config);
 
-  for (const n of ['MT_Acct', 'MT_JE']) {
-    if (mongoose.models[n]) delete mongoose.models[n];
-  }
-
-  Account = mongoose.model('MT_Acct', engine.createAccountSchema());
-  JE = mongoose.model('MT_JE', engine.createJournalEntrySchema('MT_Acct'));
+  Account = engine.models.Account;
+  JE = engine.models.JournalEntry;
 
   await Account.createIndexes();
   await JE.createIndexes();
 
-  reports = engine.createReports({ Account, JournalEntry: JE });
+  reports = engine.reports;
 
   // Seed accounts for both orgs
   for (const at of testPack.getPostingAccountTypes()) {
@@ -68,8 +76,17 @@ afterAll(async () => {
   await mongod.stop();
 });
 
-async function post(org: mongoose.Types.ObjectId, accts: Record<string, mongoose.Types.ObjectId>, date: string, items: Array<{ account: string; debit: number; credit: number }>) {
-  const journalItems = items.map(i => ({ account: accts[i.account], debit: i.debit, credit: i.credit }));
+async function post(
+  org: mongoose.Types.ObjectId,
+  accts: Record<string, mongoose.Types.ObjectId>,
+  date: string,
+  items: Array<{ account: string; debit: number; credit: number }>,
+) {
+  const journalItems = items.map((i) => ({
+    account: accts[i.account],
+    debit: i.debit,
+    credit: i.credit,
+  }));
   return JE.create({
     journalType: 'GENERAL',
     state: 'posted',
@@ -208,7 +225,7 @@ describe('3. Database-Level Isolation', () => {
     const total = await JE.countDocuments({});
 
     expect(alphaEntries).toBe(2); // revenue + salaries
-    expect(betaEntries).toBe(2);  // revenue + rent
+    expect(betaEntries).toBe(2); // revenue + rent
     expect(total).toBe(4);
   });
 

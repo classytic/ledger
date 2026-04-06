@@ -8,7 +8,7 @@
  * - Error properties are machine-readable for API consumers
  */
 
-import { describe, it, expect, expectTypeOf } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { AccountingError, Errors } from '../../src/utils/errors.js';
 
 describe('AccountingError', () => {

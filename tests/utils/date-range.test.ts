@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getDateRange, getFiscalYearStart } from '../../src/utils/date-range.js';
 
 describe('Date Range', () => {
@@ -32,14 +32,14 @@ describe('Date Range', () => {
     it('computes quarter range', () => {
       const { startDate, endDate } = getDateRange('quarter', { quarter: 2, year: 2025 });
       expect(startDate.getMonth()).toBe(3); // April
-      expect(endDate.getMonth()).toBe(5);   // June
+      expect(endDate.getMonth()).toBe(5); // June
     });
 
     it('computes year range', () => {
       const { startDate, endDate } = getDateRange('year', 2025);
-      expect(startDate.getMonth()).toBe(0);  // January
+      expect(startDate.getMonth()).toBe(0); // January
       expect(startDate.getDate()).toBe(1);
-      expect(endDate.getMonth()).toBe(11);   // December
+      expect(endDate.getMonth()).toBe(11); // December
       expect(endDate.getDate()).toBe(31);
     });
 
@@ -122,14 +122,14 @@ describe('Date Range', () => {
     it('Q1 covers January-March', () => {
       const { startDate, endDate } = getDateRange('quarter', { quarter: 1, year: 2025 });
       expect(startDate.getMonth()).toBe(0); // January
-      expect(endDate.getMonth()).toBe(2);   // March
+      expect(endDate.getMonth()).toBe(2); // March
       expect(endDate.getDate()).toBe(31);
     });
 
     it('Q4 covers October-December', () => {
       const { startDate, endDate } = getDateRange('quarter', { quarter: 4, year: 2025 });
-      expect(startDate.getMonth()).toBe(9);  // October
-      expect(endDate.getMonth()).toBe(11);   // December
+      expect(startDate.getMonth()).toBe(9); // October
+      expect(endDate.getMonth()).toBe(11); // December
       expect(endDate.getDate()).toBe(31);
     });
 

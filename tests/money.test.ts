@@ -1,10 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  fromDecimal, toDecimal, add, subtract, multiply,
-  percentage, splitTaxInclusive, splitTaxExclusive,
-  allocate, equals, isZero, abs, negate,
-  format, formatPlain, isValid, parseCents,
+  abs,
+  add,
+  allocate,
+  equals,
+  format,
+  formatPlain,
+  fromDecimal,
+  isValid,
+  isZero,
   Money,
+  multiply,
+  negate,
+  parseCents,
+  percentage,
+  splitTaxExclusive,
+  splitTaxInclusive,
+  subtract,
+  toDecimal,
 } from '../src/money.js';
 
 describe('Money — Integer-cents arithmetic', () => {
@@ -12,7 +25,7 @@ describe('Money — Integer-cents arithmetic', () => {
 
   describe('fromDecimal / toDecimal', () => {
     it('converts dollars to cents', () => {
-      expect(fromDecimal(10.50)).toBe(1050);
+      expect(fromDecimal(10.5)).toBe(1050);
       expect(fromDecimal(0)).toBe(0);
       expect(fromDecimal(100)).toBe(10000);
       expect(fromDecimal(0.01)).toBe(1);
@@ -60,9 +73,9 @@ describe('Money — Integer-cents arithmetic', () => {
     });
 
     it('calculates percentage', () => {
-      expect(percentage(10000, 5)).toBe(500);   // 5% of $100
-      expect(percentage(10000, 13)).toBe(1300);  // 13% of $100 (Ontario HST)
-      expect(percentage(10000, 15)).toBe(1500);  // 15% of $100 (Atlantic HST)
+      expect(percentage(10000, 5)).toBe(500); // 5% of $100
+      expect(percentage(10000, 13)).toBe(1300); // 13% of $100 (Ontario HST)
+      expect(percentage(10000, 15)).toBe(1500); // 15% of $100 (Atlantic HST)
     });
   });
 
@@ -198,7 +211,7 @@ describe('Money — Integer-cents arithmetic', () => {
     it('parses string to cents', () => {
       expect(parseCents('105.50')).toBe(10550);
       expect(parseCents('$1,234.56')).toBe(123456);
-      expect(parseCents(10.50)).toBe(1050);
+      expect(parseCents(10.5)).toBe(1050);
     });
 
     it('throws on unparseable strings', () => {
@@ -367,7 +380,7 @@ describe('Money — Integer-cents arithmetic', () => {
       const ratios = Array.from({ length: 100 }, () => 1);
       const result = allocate(1000, ratios);
       expect(result.reduce((s, a) => s + a, 0)).toBe(1000);
-      expect(result.every(v => v === 10)).toBe(true);
+      expect(result.every((v) => v === 10)).toBe(true);
     });
 
     it('handles unequal remainders with many parts', () => {

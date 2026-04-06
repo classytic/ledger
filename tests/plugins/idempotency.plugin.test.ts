@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { idempotencyPlugin } from '../../src/plugins/idempotency.plugin.js';
 import { createMockRepository } from '../helpers/mock-repository.js';
 
@@ -134,7 +134,7 @@ describe('idempotencyPlugin', () => {
   });
 
   it('passes session from context to findOne', async () => {
-    let receivedSession: unknown = undefined;
+    let receivedSession: unknown;
     const mockModel = {
       findOne: () => ({
         select: () => ({

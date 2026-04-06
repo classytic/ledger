@@ -8,15 +8,15 @@
  * - Equity retained earnings are never pruned even when zero
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { defineCountryPack } from '../../src/country/index.js';
+import { generateBalanceSheet } from '../../src/reports/balance-sheet.js';
+import { generateIncomeStatement } from '../../src/reports/income-statement.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { defineCountryPack } from '../../src/country/index.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { generateIncomeStatement } from '../../src/reports/income-statement.js';
-import { generateBalanceSheet } from '../../src/reports/balance-sheet.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INCOME STATEMENT — resolveGroupName deep parent chains
@@ -30,30 +30,108 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
    * resolveGroupName should walk all the way up and return "Operating Expenses".
    */
   const deepPack = defineCountryPack({
-    code: 'DP', name: 'Deep Parent Test', defaultCurrency: 'TST',
+    code: 'DP',
+    name: 'Deep Parent Test',
+    defaultCurrency: 'TST',
     accountTypes: [
       // Balance sheet accounts (needed for journal entries)
-      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-      { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
+      {
+        code: '1000',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset',
+        description: 'Cash',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: 'operating',
+      },
+      {
+        code: '3660',
+        name: 'Retained Earnings',
+        category: 'Balance Sheet-Equity',
+        description: 'RE',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Group labels
-      { code: 'Revenue', name: 'Revenue', category: 'Income Statement-Income', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-      { code: 'Operating Expenses', name: 'Operating Expenses', category: 'Income Statement-Expense', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
+      {
+        code: 'Revenue',
+        name: 'Revenue',
+        category: 'Income Statement-Income',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        isGroup: true,
+        cashFlowCategory: null,
+      },
+      {
+        code: 'Operating Expenses',
+        name: 'Operating Expenses',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        isGroup: true,
+        cashFlowCategory: null,
+      },
 
       // Intermediate non-group parent (NOT isGroup — just a regular parent)
-      { code: '9000', name: 'Admin Expenses', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
+      {
+        code: '9000',
+        name: 'Admin Expenses',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: 'Operating Expenses',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Child posting accounts — 3 levels deep
-      { code: '9100', name: 'Telephone', category: 'Income Statement-Expense', description: '', parentCode: '9000', isTotal: false, cashFlowCategory: null },
-      { code: '9200', name: 'Internet', category: 'Income Statement-Expense', description: '', parentCode: '9000', isTotal: false, cashFlowCategory: null },
+      {
+        code: '9100',
+        name: 'Telephone',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: '9000',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '9200',
+        name: 'Internet',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: '9000',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Direct child of group — 2 levels deep
-      { code: '9500', name: 'Depreciation', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
+      {
+        code: '9500',
+        name: 'Depreciation',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: 'Operating Expenses',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Revenue posting account
-      { code: '8000', name: 'Sales', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
+      {
+        code: '8000',
+        name: 'Sales',
+        category: 'Income Statement-Income',
+        description: '',
+        parentCode: 'Revenue',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
     ],
-    taxCodes: {}, taxCodesByRegion: {}, regions: [],
+    taxCodes: {},
+    taxCodesByRegion: {},
+    regions: [],
   });
 
   const config: AccountingEngineConfig = { country: deepPack, currency: 'TST' };
@@ -71,10 +149,10 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
 
-    if (mongoose.models['DPAcct']) delete mongoose.models['DPAcct'];
+    if (mongoose.models.DPAcct) delete mongoose.models.DPAcct;
     AccountModel = mongoose.model('DPAcct', createAccountSchema(config));
 
-    if (mongoose.models['DPJE']) delete mongoose.models['DPJE'];
+    if (mongoose.models.DPJE) delete mongoose.models.DPJE;
     JEModel = mongoose.model('DPJE', createJournalEntrySchema(config, 'DPAcct'));
 
     await AccountModel.createIndexes();
@@ -98,9 +176,14 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
     salesId = await seed('8000');
   });
 
-  async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+  async function postEntry(
+    date: string,
+    items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
+  ) {
     return JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date(date),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(date),
       journalItems: items,
       totalDebit: items.reduce((s, i) => s + i.debit, 0),
       totalCredit: items.reduce((s, i) => s + i.credit, 0),
@@ -130,15 +213,15 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
     );
 
     // Telephone and Internet should be in "Operating Expenses" group, NOT "Admin Expenses"
-    const opexGroup = report.expenses.groups.find(g => g.name === 'Operating Expenses');
+    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses');
     expect(opexGroup).toBeDefined();
 
-    const codes = opexGroup!.accounts.map(a => a.code);
+    const codes = opexGroup?.accounts.map((a) => a.code);
     expect(codes).toContain('9100'); // Telephone
     expect(codes).toContain('9200'); // Internet
 
     // There should NOT be a separate "Admin Expenses" group
-    const adminGroup = report.expenses.groups.find(g => g.name === 'Admin Expenses');
+    const adminGroup = report.expenses.groups.find((g) => g.name === 'Admin Expenses');
     expect(adminGroup).toBeUndefined();
   });
 
@@ -159,10 +242,10 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const opexGroup = report.expenses.groups.find(g => g.name === 'Operating Expenses');
+    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses');
     expect(opexGroup).toBeDefined();
 
-    const codes = opexGroup!.accounts.map(a => a.code);
+    const codes = opexGroup?.accounts.map((a) => a.code);
     expect(codes).toContain('9500'); // Depreciation
   });
 
@@ -210,22 +293,74 @@ describe('Income Statement — resolveGroupName circular parentCode safety', () 
    * the account's own name as fallback.
    */
   const circularPack = defineCountryPack({
-    code: 'CRC', name: 'Circular Test', defaultCurrency: 'TST',
+    code: 'CRC',
+    name: 'Circular Test',
+    defaultCurrency: 'TST',
     accountTypes: [
-      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-      { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
+      {
+        code: '1000',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset',
+        description: 'Cash',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: 'operating',
+      },
+      {
+        code: '3660',
+        name: 'Retained Earnings',
+        category: 'Balance Sheet-Equity',
+        description: 'RE',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Circular: A → B → A (neither is a group, so resolveGroupName walks endlessly without the visited check)
-      { code: 'A', name: 'Category A', category: 'Income Statement-Expense', description: '', parentCode: 'B', isTotal: false, cashFlowCategory: null },
-      { code: 'B', name: 'Category B', category: 'Income Statement-Expense', description: '', parentCode: 'A', isTotal: false, cashFlowCategory: null },
+      {
+        code: 'A',
+        name: 'Category A',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: 'B',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: 'B',
+        name: 'Category B',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: 'A',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Posting account under A
-      { code: '9000', name: 'Misc Expense', category: 'Income Statement-Expense', description: '', parentCode: 'A', isTotal: false, cashFlowCategory: null },
+      {
+        code: '9000',
+        name: 'Misc Expense',
+        category: 'Income Statement-Expense',
+        description: '',
+        parentCode: 'A',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Revenue (needed for entries)
-      { code: '8000', name: 'Sales', category: 'Income Statement-Income', description: '', parentCode: null, isTotal: false, cashFlowCategory: null },
+      {
+        code: '8000',
+        name: 'Sales',
+        category: 'Income Statement-Income',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
     ],
-    taxCodes: {}, taxCodesByRegion: {}, regions: [],
+    taxCodes: {},
+    taxCodesByRegion: {},
+    regions: [],
   });
 
   const config: AccountingEngineConfig = { country: circularPack, currency: 'TST' };
@@ -238,10 +373,10 @@ describe('Income Statement — resolveGroupName circular parentCode safety', () 
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
 
-    if (mongoose.models['CRCAcct']) delete mongoose.models['CRCAcct'];
+    if (mongoose.models.CRCAcct) delete mongoose.models.CRCAcct;
     AccountModel = mongoose.model('CRCAcct', createAccountSchema(config));
 
-    if (mongoose.models['CRCJE']) delete mongoose.models['CRCJE'];
+    if (mongoose.models.CRCJE) delete mongoose.models.CRCJE;
     JEModel = mongoose.model('CRCJE', createJournalEntrySchema(config, 'CRCAcct'));
 
     await AccountModel.createIndexes();
@@ -264,22 +399,28 @@ describe('Income Statement — resolveGroupName circular parentCode safety', () 
     const sales = await AccountModel.create({ accountTypeCode: '8000' });
 
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-06-01'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-06-01'),
       journalItems: [
         { account: expense._id, debit: 10000, credit: 0 },
         { account: cash._id, debit: 0, credit: 10000 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
 
     // Revenue entry to make the statement non-empty
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-06-01'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-06-01'),
       journalItems: [
         { account: cash._id, debit: 20000, credit: 0 },
         { account: sales._id, debit: 0, credit: 20000 },
       ],
-      totalDebit: 20000, totalCredit: 20000,
+      totalDebit: 20000,
+      totalCredit: 20000,
     });
 
     // This should complete without hanging. The visited set breaks the cycle.
@@ -292,10 +433,10 @@ describe('Income Statement — resolveGroupName circular parentCode safety', () 
     expect(report.expenses.groups.length).toBeGreaterThanOrEqual(1);
 
     // The expense should appear in some group (fallback name since no group is found)
-    const allExpenseAccounts = report.expenses.groups.flatMap(g => g.accounts);
-    const miscExpense = allExpenseAccounts.find(a => a.code === '9000');
+    const allExpenseAccounts = report.expenses.groups.flatMap((g) => g.accounts);
+    const miscExpense = allExpenseAccounts.find((a) => a.code === '9000');
     expect(miscExpense).toBeDefined();
-    expect(miscExpense!.balance).toBe(10000);
+    expect(miscExpense?.balance).toBe(10000);
   });
 });
 
@@ -305,27 +446,131 @@ describe('Income Statement — resolveGroupName circular parentCode safety', () 
 
 describe('Balance Sheet — pruneGroups', () => {
   const prunePack = defineCountryPack({
-    code: 'PRN', name: 'Prune Test', defaultCurrency: 'TST',
+    code: 'PRN',
+    name: 'Prune Test',
+    defaultCurrency: 'TST',
     accountTypes: [
       // Groups
-      { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-      { code: 'Capital Assets', name: 'Capital Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-      { code: 'Liabilities', name: 'Liabilities', category: 'Balance Sheet-Liability', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-      { code: 'Equity', name: 'Equity', category: 'Balance Sheet-Equity', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
+      {
+        code: 'Current Assets',
+        name: 'Current Assets',
+        category: 'Balance Sheet-Asset',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        isGroup: true,
+        cashFlowCategory: null,
+      },
+      {
+        code: 'Capital Assets',
+        name: 'Capital Assets',
+        category: 'Balance Sheet-Asset',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        isGroup: true,
+        cashFlowCategory: null,
+      },
+      {
+        code: 'Liabilities',
+        name: 'Liabilities',
+        category: 'Balance Sheet-Liability',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        isGroup: true,
+        cashFlowCategory: null,
+      },
+      {
+        code: 'Equity',
+        name: 'Equity',
+        category: 'Balance Sheet-Equity',
+        description: '',
+        parentCode: null,
+        isTotal: false,
+        isGroup: true,
+        cashFlowCategory: null,
+      },
 
       // Posting accounts
-      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'operating' },
-      { code: '1100', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'operating' },
-      { code: '1500', name: 'Equipment', category: 'Balance Sheet-Asset', description: 'Equip', parentCode: 'Capital Assets', isTotal: false, cashFlowCategory: null },
-      { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: 'Liabilities', isTotal: false, cashFlowCategory: 'operating' },
-      { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Shares', parentCode: 'Equity', isTotal: false, cashFlowCategory: null },
-      { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: 'Equity', isTotal: false, cashFlowCategory: null },
+      {
+        code: '1000',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset',
+        description: 'Cash',
+        parentCode: 'Current Assets',
+        isTotal: false,
+        cashFlowCategory: 'operating',
+      },
+      {
+        code: '1100',
+        name: 'Accounts Receivable',
+        category: 'Balance Sheet-Asset',
+        description: 'AR',
+        parentCode: 'Current Assets',
+        isTotal: false,
+        cashFlowCategory: 'operating',
+      },
+      {
+        code: '1500',
+        name: 'Equipment',
+        category: 'Balance Sheet-Asset',
+        description: 'Equip',
+        parentCode: 'Capital Assets',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '2000',
+        name: 'Accounts Payable',
+        category: 'Balance Sheet-Liability',
+        description: 'AP',
+        parentCode: 'Liabilities',
+        isTotal: false,
+        cashFlowCategory: 'operating',
+      },
+      {
+        code: '3000',
+        name: 'Share Capital',
+        category: 'Balance Sheet-Equity',
+        description: 'Shares',
+        parentCode: 'Equity',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '3660',
+        name: 'Retained Earnings',
+        category: 'Balance Sheet-Equity',
+        description: 'RE',
+        parentCode: 'Equity',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Income statement (needed for retained earnings calc)
-      { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-      { code: '5000', name: 'Expenses', category: 'Income Statement-Expense', description: 'Expenses', parentCode: null, isTotal: false, cashFlowCategory: null },
+      {
+        code: '4000',
+        name: 'Revenue',
+        category: 'Income Statement-Income',
+        description: 'Revenue',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '5000',
+        name: 'Expenses',
+        category: 'Income Statement-Expense',
+        description: 'Expenses',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
     ],
-    taxCodes: {}, taxCodesByRegion: {}, regions: [],
+    taxCodes: {},
+    taxCodesByRegion: {},
+    regions: [],
   });
 
   const config: AccountingEngineConfig = { country: prunePack, currency: 'TST' };
@@ -343,10 +588,10 @@ describe('Balance Sheet — pruneGroups', () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
 
-    if (mongoose.models['PRNAcct']) delete mongoose.models['PRNAcct'];
+    if (mongoose.models.PRNAcct) delete mongoose.models.PRNAcct;
     AccountModel = mongoose.model('PRNAcct', createAccountSchema(config));
 
-    if (mongoose.models['PRNJE']) delete mongoose.models['PRNJE'];
+    if (mongoose.models.PRNJE) delete mongoose.models.PRNJE;
     JEModel = mongoose.model('PRNJE', createJournalEntrySchema(config, 'PRNAcct'));
 
     await AccountModel.createIndexes();
@@ -371,9 +616,14 @@ describe('Balance Sheet — pruneGroups', () => {
     await seed('3660');
   });
 
-  async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+  async function postEntry(
+    date: string,
+    items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
+  ) {
     return JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date(date),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(date),
       journalItems: items,
       totalDebit: items.reduce((s, i) => s + i.debit, 0),
       totalCredit: items.reduce((s, i) => s + i.credit, 0),
@@ -393,9 +643,9 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // Current Assets group should only contain Cash, not AR (zero balance)
-    const currentAssets = report.assets.groups.find(g => g.name === 'Current Assets');
+    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets');
     expect(currentAssets).toBeDefined();
-    const codes = currentAssets!.accounts.map(a => a.code);
+    const codes = currentAssets?.accounts.map((a) => a.code);
     expect(codes).toContain('1000'); // Cash has balance
     expect(codes).not.toContain('1100'); // AR is zero — pruned
   });
@@ -413,7 +663,7 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // Capital Assets group should be removed entirely (Equipment has zero balance)
-    const capitalAssets = report.assets.groups.find(g => g.name === 'Capital Assets');
+    const capitalAssets = report.assets.groups.find((g) => g.name === 'Capital Assets');
     expect(capitalAssets).toBeUndefined();
   });
 
@@ -434,9 +684,9 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // Current Assets should have Cash and AR, both non-zero
-    const currentAssets = report.assets.groups.find(g => g.name === 'Current Assets')!;
+    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets')!;
     expect(currentAssets.accounts).toHaveLength(2);
-    expect(currentAssets.accounts.map(a => a.code).sort()).toEqual(['1000', '1100']);
+    expect(currentAssets.accounts.map((a) => a.code).sort()).toEqual(['1000', '1100']);
   });
 
   it('liabilities group with zero-balance AP is removed', async () => {
@@ -463,17 +713,61 @@ describe('Balance Sheet — pruneGroups', () => {
 
 describe('Balance Sheet — equity retained earnings always shown', () => {
   const equityPack = defineCountryPack({
-    code: 'EQ', name: 'Equity Test', defaultCurrency: 'TST',
+    code: 'EQ',
+    name: 'Equity Test',
+    defaultCurrency: 'TST',
     retainedEarningsAccountCode: '3660',
     currentYearEarningsCode: '3680',
     accountTypes: [
-      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-      { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Shares', parentCode: null, isTotal: false, cashFlowCategory: null },
-      { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
-      { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-      { code: '5000', name: 'Expenses', category: 'Income Statement-Expense', description: 'Expenses', parentCode: null, isTotal: false, cashFlowCategory: null },
+      {
+        code: '1000',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset',
+        description: 'Cash',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: 'operating',
+      },
+      {
+        code: '3000',
+        name: 'Share Capital',
+        category: 'Balance Sheet-Equity',
+        description: 'Shares',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '3660',
+        name: 'Retained Earnings',
+        category: 'Balance Sheet-Equity',
+        description: 'RE',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '4000',
+        name: 'Revenue',
+        category: 'Income Statement-Income',
+        description: 'Revenue',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '5000',
+        name: 'Expenses',
+        category: 'Income Statement-Expense',
+        description: 'Expenses',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
     ],
-    taxCodes: {}, taxCodesByRegion: {}, regions: [],
+    taxCodes: {},
+    taxCodesByRegion: {},
+    regions: [],
   });
 
   const config: AccountingEngineConfig = { country: equityPack, currency: 'TST' };
@@ -486,10 +780,10 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
 
-    if (mongoose.models['EQAcct']) delete mongoose.models['EQAcct'];
+    if (mongoose.models.EQAcct) delete mongoose.models.EQAcct;
     AccountModel = mongoose.model('EQAcct', createAccountSchema(config));
 
-    if (mongoose.models['EQJE']) delete mongoose.models['EQJE'];
+    if (mongoose.models.EQJE) delete mongoose.models.EQJE;
     JEModel = mongoose.model('EQJE', createJournalEntrySchema(config, 'EQAcct'));
 
     await AccountModel.createIndexes();
@@ -512,12 +806,15 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
 
     // Simple equity investment, no revenue or expenses
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-01'),
       journalItems: [
         { account: cash._id, debit: 100000, credit: 0 },
         { account: shares._id, debit: 0, credit: 100000 },
       ],
-      totalDebit: 100000, totalCredit: 100000,
+      totalDebit: 100000,
+      totalCredit: 100000,
     });
 
     const report = await generateBalanceSheet(
@@ -526,19 +823,19 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
     );
 
     // Equity section should have a "Retained Earnings" group even with zero balances
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings');
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     // It should contain the prior-retained and current-year accounts
-    const reCodes = reGroup!.accounts.map(a => a.code);
+    const reCodes = reGroup?.accounts.map((a) => a.code);
     expect(reCodes).toContain('3660'); // prior retained earnings code
     expect(reCodes).toContain('3680'); // current year net income code
 
     // Both should be zero
-    const priorRE = reGroup!.accounts.find(a => a.code === '3660');
-    const currentYearNI = reGroup!.accounts.find(a => a.code === '3680');
-    expect(priorRE!.balance).toBe(0);
-    expect(currentYearNI!.balance).toBe(0);
+    const priorRE = reGroup?.accounts.find((a) => a.code === '3660');
+    const currentYearNI = reGroup?.accounts.find((a) => a.code === '3680');
+    expect(priorRE?.balance).toBe(0);
+    expect(currentYearNI?.balance).toBe(0);
   });
 
   it('retained earnings group shows correct non-zero values', async () => {
@@ -549,32 +846,41 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
 
     // Equity investment
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-01'),
       journalItems: [
         { account: cash._id, debit: 100000, credit: 0 },
         { account: shares._id, debit: 0, credit: 100000 },
       ],
-      totalDebit: 100000, totalCredit: 100000,
+      totalDebit: 100000,
+      totalCredit: 100000,
     });
 
     // Revenue $500
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-15'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-15'),
       journalItems: [
         { account: cash._id, debit: 50000, credit: 0 },
         { account: revenue._id, debit: 0, credit: 50000 },
       ],
-      totalDebit: 50000, totalCredit: 50000,
+      totalDebit: 50000,
+      totalCredit: 50000,
     });
 
     // Expense $200
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-20'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-20'),
       journalItems: [
         { account: expense._id, debit: 20000, credit: 0 },
         { account: cash._id, debit: 0, credit: 20000 },
       ],
-      totalDebit: 20000, totalCredit: 20000,
+      totalDebit: 20000,
+      totalCredit: 20000,
     });
 
     const report = await generateBalanceSheet(
@@ -582,17 +888,17 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
       { dateOption: 'month', dateValue: '2025-01' },
     );
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
     expect(reGroup).toBeDefined();
 
     // Net income = 50000 - 20000 = 30000
-    const currentYearNI = reGroup.accounts.find(a => a.code === '3680');
+    const currentYearNI = reGroup.accounts.find((a) => a.code === '3680');
     expect(currentYearNI).toBeDefined();
-    expect(currentYearNI!.balance).toBe(30000);
+    expect(currentYearNI?.balance).toBe(30000);
 
     // Prior retained should be 0 (all entries in same fiscal year)
-    const priorRE = reGroup.accounts.find(a => a.code === '3660');
-    expect(priorRE!.balance).toBe(0);
+    const priorRE = reGroup.accounts.find((a) => a.code === '3660');
+    expect(priorRE?.balance).toBe(0);
 
     // Balance sheet should be balanced
     expect(report.summary.isBalanced).toBe(true);
@@ -604,12 +910,15 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
 
     // Only equity investment — Share Capital has balance, Retained Earnings has zero
     await JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-01'),
       journalItems: [
         { account: cash._id, debit: 100000, credit: 0 },
         { account: shares._id, debit: 0, credit: 100000 },
       ],
-      totalDebit: 100000, totalCredit: 100000,
+      totalDebit: 100000,
+      totalCredit: 100000,
     });
 
     const report = await generateBalanceSheet(
@@ -621,11 +930,11 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
     // The Retained Earnings group should still be present
     expect(report.equity.groups.length).toBeGreaterThanOrEqual(1);
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings');
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     // Even though retained earnings are 0, the accounts should still be listed
-    expect(reGroup!.accounts.length).toBeGreaterThanOrEqual(2);
+    expect(reGroup?.accounts.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -645,25 +954,87 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
    * This is inspired by Odoo's equity_unaffected account handling.
    */
   const rePack = defineCountryPack({
-    code: 'RE', name: 'RE Exclusion Test', defaultCurrency: 'TST',
+    code: 'RE',
+    name: 'RE Exclusion Test',
+    defaultCurrency: 'TST',
     retainedEarningsAccountCode: '3600',
     retainedEarningsDisplayCode: '3660',
     currentYearEarningsCode: '3680',
     accountTypes: [
       // Groups
-      { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
-      { code: 'Shareholder Equity', name: 'Shareholder Equity', category: 'Balance Sheet-Equity', description: '', parentCode: null, isGroup: true, isTotal: false, cashFlowCategory: null },
+      {
+        code: 'Current Assets',
+        name: 'Current Assets',
+        category: 'Balance Sheet-Asset',
+        description: '',
+        parentCode: null,
+        isGroup: true,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: 'Shareholder Equity',
+        name: 'Shareholder Equity',
+        category: 'Balance Sheet-Equity',
+        description: '',
+        parentCode: null,
+        isGroup: true,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Posting accounts
-      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'Operating' },
-      { code: '3500', name: 'Common Shares', category: 'Balance Sheet-Equity', description: 'Shares', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
-      { code: '3600', name: 'Retained Earnings (Deficit)', category: 'Balance Sheet-Equity', description: 'Accumulated RE', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
+      {
+        code: '1000',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset',
+        description: 'Cash',
+        parentCode: 'Current Assets',
+        isTotal: false,
+        cashFlowCategory: 'Operating',
+      },
+      {
+        code: '3500',
+        name: 'Common Shares',
+        category: 'Balance Sheet-Equity',
+        description: 'Shares',
+        parentCode: 'Shareholder Equity',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '3600',
+        name: 'Retained Earnings (Deficit)',
+        category: 'Balance Sheet-Equity',
+        description: 'Accumulated RE',
+        parentCode: 'Shareholder Equity',
+        isTotal: false,
+        cashFlowCategory: null,
+      },
 
       // Income statement
-      { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-      { code: '5000', name: 'Expenses', category: 'Income Statement-Expense', description: 'Expenses', parentCode: null, isTotal: false, cashFlowCategory: null },
+      {
+        code: '4000',
+        name: 'Revenue',
+        category: 'Income Statement-Income',
+        description: 'Revenue',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
+      {
+        code: '5000',
+        name: 'Expenses',
+        category: 'Income Statement-Expense',
+        description: 'Expenses',
+        parentCode: null,
+        isTotal: false,
+        cashFlowCategory: null,
+      },
     ],
-    taxCodes: {}, taxCodesByRegion: {}, regions: [],
+    taxCodes: {},
+    taxCodesByRegion: {},
+    regions: [],
   });
 
   const config: AccountingEngineConfig = { country: rePack, currency: 'TST' };
@@ -676,10 +1047,10 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     mongod = await MongoMemoryServer.create();
     await mongoose.connect(mongod.getUri());
 
-    if (mongoose.models['REAcct']) delete mongoose.models['REAcct'];
+    if (mongoose.models.REAcct) delete mongoose.models.REAcct;
     AccountModel = mongoose.model('REAcct', createAccountSchema(config));
 
-    if (mongoose.models['REJE']) delete mongoose.models['REJE'];
+    if (mongoose.models.REJE) delete mongoose.models.REJE;
     JEModel = mongoose.model('REJE', createJournalEntrySchema(config, 'REAcct'));
 
     await AccountModel.createIndexes();
@@ -696,9 +1067,14 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     await JEModel.deleteMany({});
   });
 
-  async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+  async function postEntry(
+    date: string,
+    items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
+  ) {
     return JEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date(date),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(date),
       journalItems: items,
       totalDebit: items.reduce((s, i) => s + i.debit, 0),
       totalCredit: items.reduce((s, i) => s + i.credit, 0),
@@ -743,19 +1119,19 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     );
 
     // 1. Shareholder Equity should contain ONLY Common Shares, not RE
-    const shGroup = report.equity.groups.find(g => g.name === 'Shareholder Equity')!;
+    const shGroup = report.equity.groups.find((g) => g.name === 'Shareholder Equity')!;
     expect(shGroup).toBeDefined();
-    const shCodes = shGroup.accounts.map(a => a.code);
+    const shCodes = shGroup.accounts.map((a) => a.code);
     expect(shCodes).toContain('3500');
     expect(shCodes).not.toContain('3600'); // RE must NOT be here
     expect(shGroup.total).toBe(1000); // Only Common Shares
 
     // 2. Retained Earnings section should include 3600's balance + prior P&L
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
     expect(reGroup).toBeDefined();
 
-    const priorLine = reGroup.accounts.find(a => a.id === 'prior-retained')!;
-    const currentLine = reGroup.accounts.find(a => a.id === 'current-year')!;
+    const priorLine = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
+    const currentLine = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
     // Display codes
     expect(priorLine.code).toBe('3660');
@@ -809,9 +1185,9 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
       { dateOption: 'year', dateValue: 2025 },
     );
 
-    const reGroup = report.equity.groups.find(g => g.name === 'Retained Earnings')!;
-    const priorLine = reGroup.accounts.find(a => a.id === 'prior-retained')!;
-    const currentLine = reGroup.accounts.find(a => a.id === 'current-year')!;
+    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const priorLine = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
+    const currentLine = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
     // After closing: RE account has 50000 (from closing entry)
     // Prior P&L = 50000 (revenue) - 50000 (closing debit) = 0 (zeroed by closing)
@@ -827,16 +1203,20 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
   it('without retainedEarningsAccountCode, 3600 shows in normal equity grouping (backward compat)', async () => {
     // Pack WITHOUT retainedEarningsAccountCode
     const noRePack = defineCountryPack({
-      code: 'NR', name: 'No RE Code', defaultCurrency: 'TST',
+      code: 'NR',
+      name: 'No RE Code',
+      defaultCurrency: 'TST',
       accountTypes: rePack.accountTypes,
-      taxCodes: {}, taxCodesByRegion: {}, regions: [],
+      taxCodes: {},
+      taxCodesByRegion: {},
+      regions: [],
     });
     const nrConfig: AccountingEngineConfig = { country: noRePack, currency: 'TST' };
 
-    if (mongoose.models['NRAcct']) delete mongoose.models['NRAcct'];
+    if (mongoose.models.NRAcct) delete mongoose.models.NRAcct;
     const NRAccountModel = mongoose.model('NRAcct', createAccountSchema(nrConfig));
 
-    if (mongoose.models['NRJE']) delete mongoose.models['NRJE'];
+    if (mongoose.models.NRJE) delete mongoose.models.NRJE;
     const NRJEModel = mongoose.model('NRJE', createJournalEntrySchema(nrConfig, 'NRAcct'));
 
     const cash = await NRAccountModel.create({ accountTypeCode: '1000' });
@@ -844,13 +1224,16 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     const re = await NRAccountModel.create({ accountTypeCode: '3600' });
 
     await NRJEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-01'),
       journalItems: [
         { account: cash._id, debit: 100000, credit: 0 },
         { account: shares._id, debit: 0, credit: 50000 },
         { account: re._id, debit: 0, credit: 50000 },
       ],
-      totalDebit: 100000, totalCredit: 100000,
+      totalDebit: 100000,
+      totalCredit: 100000,
     });
 
     const report = await generateBalanceSheet(
@@ -859,8 +1242,8 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     );
 
     // Without retainedEarningsAccountCode, 3600 should appear in Shareholder Equity (old behavior)
-    const shGroup = report.equity.groups.find(g => g.name === 'Shareholder Equity')!;
-    const shCodes = shGroup.accounts.map(a => a.code);
+    const shGroup = report.equity.groups.find((g) => g.name === 'Shareholder Equity')!;
+    const shCodes = shGroup.accounts.map((a) => a.code);
     expect(shCodes).toContain('3600');
 
     expect(report.summary.isBalanced).toBe(true);

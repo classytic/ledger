@@ -7,7 +7,16 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["src/**", "tests/**", "*.ts", "*.json", "!node_modules", "!dist", "!coverage", "!.pack-test"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "*.ts",
+      "*.json",
+      "!node_modules",
+      "!dist",
+      "!coverage",
+      "!.pack-test"
+    ]
   },
   "assist": {
     "enabled": true,
