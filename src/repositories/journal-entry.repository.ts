@@ -9,8 +9,8 @@
  * AccountingEngine.createJournalEntryRepository().
  */
 
+import type { Repository } from '@classytic/mongokit';
 import type { ClientSession } from 'mongoose';
-import type { Repository, RepositoryContext } from '@classytic/mongokit';
 import type { StrictnessConfig } from '../types/engine.js';
 import type { JournalEntryRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
@@ -38,7 +38,16 @@ interface JournalItemWithLabel extends JournalItem {
 }
 
 /** Keys that are either handled explicitly or must not be copied */
-const ITEM_CORE_KEYS = new Set(['account', 'debit', 'credit', 'label', 'date', 'taxDetails', '_id', 'id']);
+const ITEM_CORE_KEYS = new Set([
+  'account',
+  'debit',
+  'credit',
+  'label',
+  'date',
+  'taxDetails',
+  '_id',
+  'id',
+]);
 
 interface JournalEntryDoc {
   _id: unknown;
@@ -105,7 +114,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     if (typeof obj.toHexString === 'function' || obj._bsontype === 'ObjectId') return;
     // Plain objects (potential injection) — check for $ operator keys
     const keys = Object.keys(obj);
-    if (keys.some(k => k.startsWith('$'))) {
+    if (keys.some((k) => k.startsWith('$'))) {
       throw Errors.validation(`Invalid ${label} — MongoDB operators are not allowed.`);
     }
   }
@@ -118,7 +127,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     const opts: Record<string, unknown> = { lean: false };
     if (options.populate) opts.populate = options.populate;
     if (options.session) opts.session = options.session;
-    return await getByQuery(query, opts) as JournalEntryDoc | null;
+    return (await getByQuery(query, opts)) as JournalEntryDoc | null;
   }
 
   // ── post() ──────────────────────────────────────────────────────────────
@@ -127,7 +136,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
    * Post an entry (draft → posted).
    * Validates items, balance, and accounts before changing state.
    */
-  repository.post = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+  repository.post = async (id: unknown, orgId?: unknown, options: PostOptions = {}) => {
     if (strictness?.requireActor && !options.actorId) {
       throw Errors.validation('actorId is required for post operations.');
     }
@@ -155,7 +164,9 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     // Approval requirement — both approvedBy and approvedAt must be set
     if (strictness?.requireApproval) {
       if (!entry.approvedBy || !entry.approvedAt) {
-        throw Errors.validation('Entry must be approved before posting. Both approvedBy and approvedAt are required.');
+        throw Errors.validation(
+          'Entry must be approved before posting. Both approvedBy and approvedAt are required.',
+        );
       }
     }
 
@@ -200,13 +211,17 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     }
 
     // Every item must have debit or credit > 0
-    const zeroed = entry.journalItems.filter((i: JournalItem) => (i.debit || 0) === 0 && (i.credit || 0) === 0);
+    const zeroed = entry.journalItems.filter(
+      (i: JournalItem) => (i.debit || 0) === 0 && (i.credit || 0) === 0,
+    );
     if (zeroed.length > 0) {
       throw Errors.validation(`${zeroed.length} item(s) have both debit and credit as zero`);
     }
 
     // Each line must be debit OR credit, not both
-    const bothSet = entry.journalItems.filter((i: JournalItem) => (i.debit || 0) > 0 && (i.credit || 0) > 0);
+    const bothSet = entry.journalItems.filter(
+      (i: JournalItem) => (i.debit || 0) > 0 && (i.credit || 0) > 0,
+    );
     if (bothSet.length > 0) {
       throw Errors.validation(
         `${bothSet.length} item(s) have both debit and credit set — each line must be debit OR credit, not both`,
@@ -214,8 +229,14 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     }
 
     // Must be balanced — integer cents, exact comparison
-    const totalDebit = entry.journalItems.reduce((s: number, i: JournalItem) => s + (i.debit || 0), 0);
-    const totalCredit = entry.journalItems.reduce((s: number, i: JournalItem) => s + (i.credit || 0), 0);
+    const totalDebit = entry.journalItems.reduce(
+      (s: number, i: JournalItem) => s + (i.debit || 0),
+      0,
+    );
+    const totalCredit = entry.journalItems.reduce(
+      (s: number, i: JournalItem) => s + (i.credit || 0),
+      0,
+    );
     if (totalDebit !== totalCredit) {
       throw Errors.validation(
         `Entry is not balanced. Debit: ${totalDebit}, Credit: ${totalCredit}`,
@@ -239,9 +260,11 @@ export function wireJournalEntryMethods<TDoc = unknown>(
    * Resets state to draft so the entry can be edited and re-posted.
    * Also clears the reversed flag if set, allowing full re-editing.
    */
-  repository.unpost = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+  repository.unpost = async (id: unknown, orgId?: unknown, options: PostOptions = {}) => {
     if (strictness?.immutable) {
-      throw Errors.immutable('Unpost is disabled in strict mode. Use reverse() to correct posted entries.');
+      throw Errors.immutable(
+        'Unpost is disabled in strict mode. Use reverse() to correct posted entries.',
+      );
     }
     if (strictness?.requireActor && !options.actorId) {
       throw Errors.validation('actorId is required for unpost operations.');
@@ -264,7 +287,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     if (entry.reversed) {
       throw Errors.validation(
         'Cannot unpost a reversed entry. The reversal entry is still posted and linked to this entry. ' +
-        'Reverse the reversal entry first, or create a new correcting entry instead.',
+          'Reverse the reversal entry first, or create a new correcting entry instead.',
       );
     }
 
@@ -282,7 +305,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
    * Used to discard unneeded drafts without deleting them, preserving audit trail.
    * Only draft entries can be archived. Posted entries must be reversed instead.
    */
-  repository.archive = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+  repository.archive = async (id: unknown, orgId?: unknown, options: PostOptions = {}) => {
     if (strictness?.requireActor && !options.actorId) {
       throw Errors.validation('actorId is required for archive operations.');
     }
@@ -311,7 +334,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
    * Duplicate an entry as a new draft.
    * Copies journal items, journal type, and label. Assigns today's date.
    */
-  repository.duplicate = async function (id: unknown, orgId?: unknown, options: PostOptions = {}) {
+  repository.duplicate = async (id: unknown, orgId?: unknown, options: PostOptions = {}) => {
     requireOrgScope(orgField, orgId);
     const query = buildQuery(id, orgId);
 
@@ -327,9 +350,10 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       date: new Date(),
       label: entry.label ? `Copy of ${entry.label}` : 'Duplicated entry',
       journalItems: entry.journalItems.map((item: JournalItemWithLabel) => {
-        const accountId = typeof item.account === 'object' && item.account !== null
-          ? (item.account as Record<string, unknown>)._id
-          : item.account;
+        const accountId =
+          typeof item.account === 'object' && item.account !== null
+            ? (item.account as Record<string, unknown>)._id
+            : item.account;
 
         // Preserve dimension/extra fields (departmentId, projectId, locationId, etc.)
         const extra: Record<string, unknown> = {};
@@ -354,7 +378,10 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       duplicateData[orgField] = entry[orgField];
     }
 
-    const duplicated = await create(duplicateData, options.session ? { session: options.session } : {});
+    const duplicated = await create(
+      duplicateData,
+      options.session ? { session: options.session } : {},
+    );
     return duplicated;
   };
 
@@ -370,7 +397,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
    * Routes the reversal through repository.create() so all plugins (fiscal-lock,
    * double-entry) enforce policy on the reversal entry.
    */
-  repository.reverse = async function (id: unknown, orgId?: unknown, options: ReverseOptions = {}) {
+  repository.reverse = async (id: unknown, orgId?: unknown, options: ReverseOptions = {}) => {
     if (strictness?.requireActor && !options.actorId) {
       throw Errors.validation('actorId is required for reverse operations.');
     }
@@ -395,9 +422,10 @@ export function wireJournalEntryMethods<TDoc = unknown>(
 
       // Build reversal items — swap debit ↔ credit for each line
       const reversalItems = entry.journalItems.map((item: JournalItemWithLabel) => {
-        const accountId = typeof item.account === 'object' && item.account !== null
-          ? (item.account as Record<string, unknown>)._id
-          : item.account;
+        const accountId =
+          typeof item.account === 'object' && item.account !== null
+            ? (item.account as Record<string, unknown>)._id
+            : item.account;
 
         // Preserve dimension/extra fields (departmentId, projectId, locationId, etc.)
         const extra: Record<string, unknown> = {};
@@ -417,7 +445,10 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       });
 
       const totalDebit = reversalItems.reduce((s: number, i: { debit: number }) => s + i.debit, 0);
-      const totalCredit = reversalItems.reduce((s: number, i: { credit: number }) => s + i.credit, 0);
+      const totalCredit = reversalItems.reduce(
+        (s: number, i: { credit: number }) => s + i.credit,
+        0,
+      );
 
       // Build reversal entry data
       const reversalData: Record<string, unknown> = {
@@ -443,11 +474,14 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       }
 
       // Create reversal via repository so plugins (fiscal-lock, double-entry) run
-      const reversalEntry = await create(reversalData, session ? { session } : {}) as Record<string, unknown>;
+      const reversalEntry = (await create(reversalData, session ? { session } : {})) as Record<
+        string,
+        unknown
+      >;
 
       // Mark original as reversed (bidirectional link)
       entry.reversed = true;
-      entry.reversedBy = reversalEntry['_id'];
+      entry.reversedBy = reversalEntry._id;
       if (options.actorId) {
         entry.reversedByUser = options.actorId;
       }
@@ -463,10 +497,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
 
     // No external session: use withTransaction for automatic retry + standalone fallback
     if (withTransaction) {
-      return await withTransaction(
-        (session) => doReverse(session),
-        { allowFallback: true },
-      );
+      return await withTransaction((session) => doReverse(session), { allowFallback: true });
     }
 
     // Fallback: no transaction support (test mocks, legacy repos)

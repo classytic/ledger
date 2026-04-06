@@ -13,7 +13,7 @@ const NEEDS_QUOTING = /[",\r\n]/;
 /** Escape a single CSV cell value per RFC 4180. */
 export function escapeCell(value: string): string {
   if (NEEDS_QUOTING.test(value)) {
-    return '"' + value.replace(/"/g, '""') + '"';
+    return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
 }
@@ -25,9 +25,7 @@ export function serializeCsv(
 ): string {
   const { delimiter = ',', lineTerminator = '\r\n' } = options;
 
-  return rows
-    .map(row => row.map(escapeCell).join(delimiter))
-    .join(lineTerminator);
+  return rows.map((row) => row.map(escapeCell).join(delimiter)).join(lineTerminator);
 }
 
 /** Build a CSV string with optional header row. */

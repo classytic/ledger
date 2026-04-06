@@ -6,15 +6,14 @@
  */
 
 import type { Model } from 'mongoose';
-import type { CountryPack } from '../country/index.js';
-import type { GeneralLedgerReport, GeneralLedgerAccount, LedgerEntry } from '../types/report.js';
-import type { AccountType } from '../types/core.js';
-import type { CategoryKey } from '../types/core.js';
-import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
-import { computeEndingBalance } from '../utils/account-helpers.js';
 import { extractMainType } from '../constants/categories.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
+import type { CountryPack } from '../country/index.js';
+import type { AccountType, CategoryKey } from '../types/core.js';
+import type { GeneralLedgerAccount, GeneralLedgerReport, LedgerEntry } from '../types/report.js';
+import { computeEndingBalance } from '../utils/account-helpers.js';
+import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface GeneralLedgerOptions {
   AccountModel: Model<unknown>;
@@ -46,7 +45,7 @@ export async function generateGeneralLedger(
   if (orgField && params.organizationId) acctQuery[orgField] = params.organizationId;
   if (params.accountId) acctQuery._id = params.accountId;
 
-  const allAccounts = await AccountModel.find(acctQuery).lean() as Array<Record<string, unknown>>;
+  const allAccounts = (await AccountModel.find(acctQuery).lean()) as Array<Record<string, unknown>>;
 
   // Filter to postable accounts (no groups, no totals)
   const filtered: Array<{ acc: Record<string, unknown>; at: AccountType }> = [];
@@ -87,10 +86,7 @@ export async function generateGeneralLedger(
 
   // ── Batch queries (3 max, run in parallel) ──────────────────────────────────
 
-  const openingBalancePipeline = (
-    accountIds: unknown[],
-    dateFilter: Record<string, unknown>,
-  ) =>
+  const openingBalancePipeline = (accountIds: unknown[], dateFilter: Record<string, unknown>) =>
     accountIds.length > 0
       ? JournalEntryModel.aggregate([
           { $match: { state: 'posted', date: dateFilter, ...orgScope } },
@@ -128,16 +124,25 @@ export async function generateGeneralLedger(
 
   // Opening balance by account ID
   const openBalMap = new Map<string, { d: number; c: number }>();
-  for (const r of [...(bsOpenResults as Array<{ _id: unknown; d: number; c: number }>),
-                    ...(isOpenResults as Array<{ _id: unknown; d: number; c: number }>)]) {
+  for (const r of [
+    ...(bsOpenResults as Array<{ _id: unknown; d: number; c: number }>),
+    ...(isOpenResults as Array<{ _id: unknown; d: number; c: number }>),
+  ]) {
     openBalMap.set(String(r._id), { d: r.d, c: r.c });
   }
 
   // ── Pre-index period entries by account ID (O(entries × items) once) ────────
 
-  const entryItemsByAccount = new Map<string, Array<{
-    date: Date; referenceNumber: string; label: string; debit: number; credit: number;
-  }>>();
+  const entryItemsByAccount = new Map<
+    string,
+    Array<{
+      date: Date;
+      referenceNumber: string;
+      label: string;
+      debit: number;
+      credit: number;
+    }>
+  >();
 
   for (const entry of periodEntries) {
     const items = (entry.journalItems as Array<Record<string, unknown>>) ?? [];
@@ -203,9 +208,10 @@ export async function generateGeneralLedger(
     });
   }
 
-  const periodDisplay = params.dateOption === 'year'
-    ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
-    : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+  const periodDisplay =
+    params.dateOption === 'year'
+      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
+      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
 
   return {
     metadata: {

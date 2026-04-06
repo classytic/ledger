@@ -6,8 +6,8 @@
  * Used by AccountingEngine.createAccountRepository().
  */
 
-import type { Model, ClientSession } from 'mongoose';
 import type { Repository, RepositoryContext } from '@classytic/mongokit';
+import type { ClientSession, Model } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import type { AccountRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
@@ -51,18 +51,20 @@ export function wireAccountMethods<TDoc = unknown>(
   /**
    * Seed standard posting accounts for an organization.
    */
-  repository.seedAccounts = async function (orgId: unknown, options: SeedOptions = {}) {
+  repository.seedAccounts = async (orgId: unknown, options: SeedOptions = {}) => {
     requireOrgScope(orgField, orgId);
     const postingTypes = country.getPostingAccountTypes();
     const filter: Record<string, unknown> = {};
     if (orgField && orgId != null) filter[orgField] = orgId;
 
-    const existing = await AccountModel.find(filter).select('accountNumber').lean() as unknown as Array<{ accountNumber: string }>;
-    const existingNumbers = new Set(existing.map(a => a.accountNumber));
+    const existing = (await AccountModel.find(filter)
+      .select('accountNumber')
+      .lean()) as unknown as Array<{ accountNumber: string }>;
+    const existingNumbers = new Set(existing.map((a) => a.accountNumber));
 
     const toCreate = postingTypes
-      .filter(at => !existingNumbers.has(at.code))
-      .map(at => {
+      .filter((at) => !existingNumbers.has(at.code))
+      .map((at) => {
         const doc: Record<string, unknown> = {
           accountTypeCode: at.code,
           accountNumber: at.code,
@@ -103,10 +105,16 @@ export function wireAccountMethods<TDoc = unknown>(
    * and ordered: false on insertMany to handle concurrent race conditions
    * gracefully (duplicate key errors on individual docs don't abort the batch).
    */
-  repository.bulkCreate = async function (
-    accounts: Array<{ accountTypeCode?: string; accountNumber?: string; name?: string; active?: boolean; isCashAccount?: boolean }>,
+  repository.bulkCreate = async (
+    accounts: Array<{
+      accountTypeCode?: string;
+      accountNumber?: string;
+      name?: string;
+      active?: boolean;
+      isCashAccount?: boolean;
+    }>,
     orgId: unknown,
-  ) {
+  ) => {
     requireOrgScope(orgField, orgId);
     const results: {
       created: Array<Record<string, unknown>>;
@@ -115,10 +123,23 @@ export function wireAccountMethods<TDoc = unknown>(
     } = { created: [], skipped: [], errors: [] };
 
     // Validate all accounts first (no DB calls)
-    const validAccounts: Array<{ index: number; accountTypeCode: string; accountNumber: string; name: string; active: boolean; isCashAccount: boolean }> = [];
+    const validAccounts: Array<{
+      index: number;
+      accountTypeCode: string;
+      accountNumber: string;
+      name: string;
+      active: boolean;
+      isCashAccount: boolean;
+    }> = [];
 
     for (let i = 0; i < accounts.length; i++) {
-      const { accountTypeCode, accountNumber, name, active = true, isCashAccount = false } = accounts[i];
+      const {
+        accountTypeCode,
+        accountNumber,
+        name,
+        active = true,
+        isCashAccount = false,
+      } = accounts[i];
 
       if (!accountTypeCode) {
         results.errors.push({ index: i, reason: 'accountTypeCode is required' });
@@ -142,38 +163,61 @@ export function wireAccountMethods<TDoc = unknown>(
 
       const resolvedNumber = accountNumber ?? accountTypeCode;
       const resolvedName = name ?? at.name ?? accountTypeCode;
-      validAccounts.push({ index: i, accountTypeCode, accountNumber: resolvedNumber, name: resolvedName, active: Boolean(active), isCashAccount: Boolean(isCashAccount) });
+      validAccounts.push({
+        index: i,
+        accountTypeCode,
+        accountNumber: resolvedNumber,
+        name: resolvedName,
+        active: Boolean(active),
+        isCashAccount: Boolean(isCashAccount),
+      });
     }
 
     if (validAccounts.length === 0) {
       return {
-        summary: { total: accounts.length, created: 0, skipped: results.skipped.length, errors: results.errors.length },
+        summary: {
+          total: accounts.length,
+          created: 0,
+          skipped: results.skipped.length,
+          errors: results.errors.length,
+        },
         ...results,
       };
     }
 
     // Single batch query to find all existing accounts by accountNumber for this org
-    const numbersToCheck = validAccounts.map(a => a.accountNumber);
+    const numbersToCheck = validAccounts.map((a) => a.accountNumber);
     const existsFilter: Record<string, unknown> = { accountNumber: { $in: numbersToCheck } };
     if (orgField && orgId != null) existsFilter[orgField] = orgId;
 
-    const existingDocs = await AccountModel.find(existsFilter)
+    const existingDocs = (await AccountModel.find(existsFilter)
       .select('accountNumber')
-      .lean() as Array<Record<string, unknown>>;
-    const existingNumbers = new Set(existingDocs.map(d => d.accountNumber as string));
+      .lean()) as Array<Record<string, unknown>>;
+    const existingNumbers = new Set(existingDocs.map((d) => d.accountNumber as string));
 
     // Partition into create vs skip
-    const toCreate: Array<{ index: number; accountTypeCode: string; accountNumber: string; name: string; active: boolean; isCashAccount: boolean }> = [];
+    const toCreate: Array<{
+      index: number;
+      accountTypeCode: string;
+      accountNumber: string;
+      name: string;
+      active: boolean;
+      isCashAccount: boolean;
+    }> = [];
     for (const item of validAccounts) {
       if (existingNumbers.has(item.accountNumber)) {
-        results.skipped.push({ index: item.index, accountTypeCode: item.accountTypeCode, reason: 'Already exists' });
+        results.skipped.push({
+          index: item.index,
+          accountTypeCode: item.accountTypeCode,
+          reason: 'Already exists',
+        });
       } else {
         toCreate.push(item);
       }
     }
 
     if (toCreate.length > 0) {
-      const docs = toCreate.map(item => {
+      const docs = toCreate.map((item) => {
         const doc: Record<string, unknown> = {
           accountTypeCode: item.accountTypeCode,
           accountNumber: item.accountNumber,

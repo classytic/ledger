@@ -11,8 +11,8 @@
  */
 
 import mongoose from 'mongoose';
+import { _freezeJournalTypes, getJournalTypeCodes, JOURNAL_CODES } from '../constants/journals.js';
 import type { AccountingEngineConfig, JournalSchemaOptions } from '../types/engine.js';
-import { getJournalTypeCodes, JOURNAL_CODES } from '../constants/journals.js';
 import { buildCurrencyField } from './currency-field.js';
 
 export function createJournalEntrySchema(
@@ -53,11 +53,25 @@ export function createJournalEntrySchema(
   if (currencyField) {
     currencyItemFields.currency = currencyField;
     currencyItemFields.exchangeRate = {
-      type: Number, default: null,
-      validate: { validator: (v: number | null) => v === null || v > 0, message: 'exchangeRate must be greater than zero when set, got {VALUE}' },
+      type: Number,
+      default: null,
+      validate: {
+        validator: (v: number | null) => v === null || v > 0,
+        message: 'exchangeRate must be greater than zero when set, got {VALUE}',
+      },
     };
-    currencyItemFields.originalDebit = { type: Number, default: null, min: 0, validate: amountValidator };
-    currencyItemFields.originalCredit = { type: Number, default: null, min: 0, validate: amountValidator };
+    currencyItemFields.originalDebit = {
+      type: Number,
+      default: null,
+      min: 0,
+      validate: amountValidator,
+    };
+    currencyItemFields.originalCredit = {
+      type: Number,
+      default: null,
+      min: 0,
+      validate: amountValidator,
+    };
   }
 
   const JournalItemSchema = new mongoose.Schema(
@@ -80,11 +94,13 @@ export function createJournalEntrySchema(
 
   // ── Main fields ──────────────────────────────────────────────────────────
 
+  _freezeJournalTypes(); // lock registry — no more registerJournalType() after this point
+
   const fields: Record<string, unknown> = {
     journalType: {
       type: String,
       enum: getJournalTypeCodes(),
-      default: JOURNAL_CODES['MISC'],
+      default: JOURNAL_CODES.MISC,
       required: true,
     },
     referenceNumber: { type: String },
@@ -97,8 +113,18 @@ export function createJournalEntrySchema(
       },
     },
     journalItems: { type: [JournalItemSchema], default: [] },
-    totalDebit: { type: Number, required: true, min: 0, validate: { validator: Number.isInteger, message: 'totalDebit must be an integer (cents)' } },
-    totalCredit: { type: Number, required: true, min: 0, validate: { validator: Number.isInteger, message: 'totalCredit must be an integer (cents)' } },
+    totalDebit: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: { validator: Number.isInteger, message: 'totalDebit must be an integer (cents)' },
+    },
+    totalCredit: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: { validator: Number.isInteger, message: 'totalCredit must be an integer (cents)' },
+    },
     state: {
       type: String,
       enum: ['draft', 'posted', 'archived'],
@@ -211,7 +237,11 @@ export function createJournalEntrySchema(
     // Helper: compute next reference number from DB
     // Uses aggregation pipeline to extract & sort the numeric suffix,
     // avoiding lexicographic sort issues beyond sequence 9999.
-    const generateReferenceNumber = async (doc: Record<string, unknown>, Model: mongoose.Model<unknown>, session: unknown) => {
+    const generateReferenceNumber = async (
+      doc: Record<string, unknown>,
+      Model: mongoose.Model<unknown>,
+      session: unknown,
+    ) => {
       const jt = (doc.journalType as string) || 'MISC';
       const d = new Date(doc.date as string | number | Date);
       const year = d.getFullYear();
@@ -245,8 +275,9 @@ export function createJournalEntrySchema(
         { $project: { _refSeq: 1 } },
       ];
 
-      const results = await Model.aggregate(pipeline)
-        .session(session as mongoose.mongo.ClientSession | null);
+      const results = await Model.aggregate(pipeline).session(
+        session as mongoose.mongo.ClientSession | null,
+      );
 
       let seq = 1;
       if (results.length > 0 && typeof results[0]._refSeq === 'number') {
@@ -294,17 +325,19 @@ export function createJournalEntrySchema(
 
     // Retry on duplicate key error (race condition between concurrent inserts)
     const MAX_REF_RETRIES = 3;
-    schema.post('save', async function (error: Error, doc: unknown, next: (err?: Error) => void) {
+    schema.post('save', async (error: Error, doc: unknown, next: (err?: Error) => void) => {
       const mongoError = error as MongoError;
       // 11000 = MongoDB duplicate key error
       if (mongoError.code === 11000 && mongoError.keyPattern?.referenceNumber) {
         const entry = doc as RetryDoc;
         const retryCount: number = entry.__refRetries ?? 0;
         if (retryCount >= MAX_REF_RETRIES) {
-          next(new Error(
-            `Failed to generate unique reference number after ${MAX_REF_RETRIES} retries. ` +
-            'Too many concurrent inserts for this period.',
-          ));
+          next(
+            new Error(
+              `Failed to generate unique reference number after ${MAX_REF_RETRIES} retries. ` +
+                'Too many concurrent inserts for this period.',
+            ),
+          );
           return;
         }
         entry.__refRetries = retryCount + 1;
@@ -330,7 +363,9 @@ export function createJournalEntrySchema(
 
     // Partial filter: unique constraint only applies to docs with a string
     // referenceNumber — allows multiple entries without a ref when autoReference is off.
-    const refPartial = { partialFilterExpression: { referenceNumber: { $exists: true, $type: 'string' } } };
+    const refPartial = {
+      partialFilterExpression: { referenceNumber: { $exists: true, $type: 'string' } },
+    };
 
     if (org) {
       schema.index({ [org]: 1, referenceNumber: 1 }, { unique: true, ...refPartial });

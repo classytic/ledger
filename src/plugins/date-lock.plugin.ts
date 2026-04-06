@@ -7,8 +7,8 @@
  * More flexible than period-based locks — just a single date.
  */
 
-import type { Model, ClientSession } from 'mongoose';
-import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
+import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
+import type { ClientSession, Model } from 'mongoose';
 import { Errors } from '../utils/errors.js';
 
 export interface DateLockPluginOptions {
@@ -52,10 +52,10 @@ export function dateLockPlugin(options: DateLockPluginOptions) {
             );
           }
           const selectFields = orgField ? `date ${orgField}` : 'date';
-          persistedDoc = await JournalEntryModel.findById(context.id)
+          persistedDoc = (await JournalEntryModel.findById(context.id)
             .select(selectFields)
             .session(session)
-            .lean() as Record<string, unknown> | null;
+            .lean()) as Record<string, unknown> | null;
           if (persistedDoc?.date) {
             entryDate = new Date(persistedDoc.date as string | number | Date);
           }
@@ -73,10 +73,10 @@ export function dateLockPlugin(options: DateLockPluginOptions) {
             if (persistedDoc) {
               orgValue = persistedDoc[orgField];
             } else if (context.id) {
-              const persisted = await JournalEntryModel.findById(context.id)
+              const persisted = (await JournalEntryModel.findById(context.id)
                 .select(orgField)
                 .session(session)
-                .lean() as Record<string, unknown> | null;
+                .lean()) as Record<string, unknown> | null;
               if (persisted) orgValue = persisted[orgField];
             }
           }
@@ -89,7 +89,7 @@ export function dateLockPlugin(options: DateLockPluginOptions) {
         if (entryDate < lockDate) {
           throw Errors.fiscal(
             `Cannot post entry dated ${entryDate.toISOString().split('T')[0]}: ` +
-            `date is before lock date ${lockDate.toISOString().split('T')[0]}.`,
+              `date is before lock date ${lockDate.toISOString().split('T')[0]}.`,
           );
         }
       };

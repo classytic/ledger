@@ -12,10 +12,7 @@ import mongoose from 'mongoose';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
 import { buildCurrencyField } from './currency-field.js';
 
-export function createAccountSchema(
-  config: AccountingEngineConfig,
-  options: SchemaOptions = {},
-) {
+export function createAccountSchema(config: AccountingEngineConfig, options: SchemaOptions = {}) {
   const { multiTenant, country } = config;
   const { indexes = true, extraFields = {}, extraIndexes = [] } = options;
 

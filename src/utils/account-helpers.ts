@@ -2,15 +2,18 @@
  * Account Helper Utilities
  */
 
-import type { AccountType, TotalAccountOp, CategoryKey } from '../types/core.js';
 import { extractMainType } from '../constants/categories.js';
+import type { AccountType, CategoryKey, TotalAccountOp } from '../types/core.js';
 
 /**
  * Check if an account type is a virtual tax sub-account.
  * Returns true if the account's parent has `isVirtualTotal: true`.
  * Works for any country pack — no code format assumptions.
  */
-export function isVirtualTaxAccount(accountType: AccountType, accountMap: Map<string, AccountType>): boolean {
+export function isVirtualTaxAccount(
+  accountType: AccountType,
+  accountMap: Map<string, AccountType>,
+): boolean {
   if (!accountType.parentCode) return false;
   const parent = accountMap.get(accountType.parentCode);
   return parent?.isVirtualTotal === true;
@@ -19,7 +22,9 @@ export function isVirtualTaxAccount(accountType: AccountType, accountMap: Map<st
 /** Check if an account type is a balance sheet account */
 export function isBalanceSheetAccountType(accountType: AccountType): boolean {
   const { category } = accountType;
-  return category.endsWith('-Asset') || category.endsWith('-Liability') || category.endsWith('-Equity');
+  return (
+    category.endsWith('-Asset') || category.endsWith('-Liability') || category.endsWith('-Equity')
+  );
 }
 
 /** Check if an account type is an income statement account */
@@ -67,7 +72,9 @@ export function computeEndingBalance(
 /**
  * Build a lookup map from an array of account types.
  */
-export function buildAccountTypeMap(accountTypes: readonly AccountType[]): Map<string, AccountType> {
+export function buildAccountTypeMap(
+  accountTypes: readonly AccountType[],
+): Map<string, AccountType> {
   const map = new Map<string, AccountType>();
   for (const at of accountTypes) {
     map.set(at.code, at);

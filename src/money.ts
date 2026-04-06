@@ -37,7 +37,7 @@ export function fromDecimal(dollars: number, minorUnit = 2): number {
   if (!Number.isSafeInteger(cents)) {
     throw new Error(
       `Amount ${dollars} exceeds safe integer limit when converted to minor units. ` +
-      `Max safe amount: ${Number.MAX_SAFE_INTEGER / factor}`,
+        `Max safe amount: ${Number.MAX_SAFE_INTEGER / factor}`,
     );
   }
   return cents;
@@ -108,19 +108,19 @@ export function splitTaxExclusive(
  */
 export function allocate(totalCents: number, ratios: number[]): number[] {
   if (ratios.length === 0) throw new Error('Ratios must be non-empty');
-  if (ratios.some(r => r < 0)) throw new Error('Ratios must be non-negative');
+  if (ratios.some((r) => r < 0)) throw new Error('Ratios must be non-negative');
 
   const ratioSum = ratios.reduce((s, r) => s + r, 0);
   if (ratioSum === 0) throw new Error('Sum of ratios must be > 0');
 
   // Base allocation (floor)
-  const allocations = ratios.map(r => Math.floor((totalCents * r) / ratioSum));
-  let remainder = totalCents - allocations.reduce((s, a) => s + a, 0);
+  const allocations = ratios.map((r) => Math.floor((totalCents * r) / ratioSum));
+  const remainder = totalCents - allocations.reduce((s, a) => s + a, 0);
 
   // Distribute remainder by largest fractional part
   const fractions = ratios.map((r, i) => ({
     index: i,
-    frac: ((totalCents * r) / ratioSum) - allocations[i],
+    frac: (totalCents * r) / ratioSum - allocations[i],
   }));
   fractions.sort((a, b) => b.frac - a.frac);
 
@@ -218,7 +218,7 @@ export function parseCents(input: string | number, minorUnit = 2): number {
 
   const cleaned = input.replace(/[$,\s]/g, '');
   const parsed = parseFloat(cleaned);
-  if (isNaN(parsed)) throw new Error(`Cannot parse "${input}" as money`);
+  if (Number.isNaN(parsed)) throw new Error(`Cannot parse "${input}" as money`);
   return fromDecimal(parsed, minorUnit);
 }
 

@@ -7,11 +7,7 @@
  * @module @classytic/ledger/exports
  */
 
-import type {
-  PopulatedJournalEntry,
-  PopulatedAccount,
-  FlatJournalRow,
-} from './types.js';
+import type { FlatJournalRow, PopulatedAccount, PopulatedJournalEntry } from './types.js';
 
 function toDate(value: Date | string | undefined | null): Date {
   if (!value) return new Date(0);
@@ -19,9 +15,11 @@ function toDate(value: Date | string | undefined | null): Date {
   return new Date(value);
 }
 
-function resolveAccount(
-  account: PopulatedAccount | string | null | undefined,
-): { id: string; name: string; typeCode: string } {
+function resolveAccount(account: PopulatedAccount | string | null | undefined): {
+  id: string;
+  name: string;
+  typeCode: string;
+} {
   if (!account) return { id: '', name: '', typeCode: '' };
   if (typeof account === 'string') return { id: account, name: '', typeCode: '' };
   return {
@@ -81,9 +79,7 @@ export function flattenJournalEntry(entry: PopulatedJournalEntry): FlatJournalRo
 }
 
 /** Flatten multiple journal entries into a single flat row array. */
-export function flattenJournalEntries(
-  entries: readonly PopulatedJournalEntry[],
-): FlatJournalRow[] {
+export function flattenJournalEntries(entries: readonly PopulatedJournalEntry[]): FlatJournalRow[] {
   const rows: FlatJournalRow[] = [];
   for (const entry of entries) {
     rows.push(...flattenJournalEntry(entry));

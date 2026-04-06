@@ -10,14 +10,14 @@
 
 import type { Model } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
-import { requireOrgScope } from '../utils/tenant-guard.js';
 import {
-  computeRevaluation,
+  type AccountForeignBalance,
   buildRevaluationEntry,
+  computeRevaluation,
   type RevaluationRate,
   type RevaluationResult,
-  type AccountForeignBalance,
 } from '../utils/revaluation.js';
+import { requireOrgScope } from '../utils/tenant-guard.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -78,10 +78,12 @@ export async function generateRevaluation(
     accountQuery[orgField] = params.organizationId;
   }
 
-  const allForeignAccounts = await AccountModel.find(accountQuery).lean() as Array<Record<string, unknown>>;
+  const allForeignAccounts = (await AccountModel.find(accountQuery).lean()) as Array<
+    Record<string, unknown>
+  >;
 
   // Filter to balance sheet accounts only
-  const bsAccounts = allForeignAccounts.filter(a => {
+  const bsAccounts = allForeignAccounts.filter((a) => {
     const at = country.getAccountType(a.accountTypeCode as string);
     return at && !at.isGroup && at.category.startsWith('Balance Sheet');
   });
@@ -98,7 +100,7 @@ export async function generateRevaluation(
     };
   }
 
-  const bsAccountIds = bsAccounts.map(a => a._id);
+  const bsAccountIds = bsAccounts.map((a) => a._id);
 
   // ── 2. Aggregate balances ───────────────────────────────────────────────
 
@@ -110,7 +112,7 @@ export async function generateRevaluation(
     baseMatch[orgField] = params.organizationId;
   }
 
-  const balanceResults = await JournalEntryModel.aggregate([
+  const balanceResults = (await JournalEntryModel.aggregate([
     { $match: baseMatch },
     { $unwind: '$journalItems' },
     { $match: { 'journalItems.account': { $in: bsAccountIds } } },
@@ -123,7 +125,7 @@ export async function generateRevaluation(
         originalCredit: { $sum: { $ifNull: ['$journalItems.originalCredit', 0] } },
       },
     },
-  ]) as Array<{
+  ])) as Array<{
     _id: unknown;
     debit: number;
     credit: number;
@@ -133,7 +135,7 @@ export async function generateRevaluation(
 
   // ── 3. Build AccountForeignBalance array ────────────────────────────────
 
-  const accountMap = new Map(bsAccounts.map(a => [String(a._id), a]));
+  const accountMap = new Map(bsAccounts.map((a) => [String(a._id), a]));
 
   const accountBalances: AccountForeignBalance[] = [];
   for (const r of balanceResults) {

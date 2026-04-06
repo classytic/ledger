@@ -31,27 +31,27 @@ export { AccountingEngine, createAccountingEngine } from './engine.js';
 
 // ── Money ──────────────────────────────────────────────────────────────────
 
-export { Money } from './money.js';
 export {
-  fromDecimal,
-  toDecimal,
   add,
-  subtract,
-  multiply,
-  percentage,
-  splitTaxInclusive,
-  splitTaxExclusive,
   allocate,
   format,
   formatPlain,
+  fromDecimal,
+  Money,
+  multiply,
   parseCents,
+  percentage,
+  splitTaxExclusive,
+  splitTaxInclusive,
+  subtract,
+  toDecimal,
 } from './money.js';
 
 // ── Schemas ────────────────────────────────────────────────────────────────
 
 export { createAccountSchema } from './schemas/account.schema.js';
-export { createJournalEntrySchema } from './schemas/journal-entry.schema.js';
 export { createFiscalPeriodSchema } from './schemas/fiscal-period.schema.js';
+export { createJournalEntrySchema } from './schemas/journal-entry.schema.js';
 
 // ── Plugins ────────────────────────────────────────────────────────────────
 
@@ -62,48 +62,69 @@ export { idempotencyPlugin } from './plugins/idempotency.plugin.js';
 
 // ── Reports ────────────────────────────────────────────────────────────────
 
-export { generateTrialBalance } from './reports/trial-balance.js';
+export type {
+  AgedBalanceOptions,
+  AgedBalanceParams,
+  AgedBalanceReport,
+  AgedBalanceRow,
+  AgedBucketConfig,
+} from './reports/aged-balance.js';
+export { DEFAULT_BUCKETS, generateAgedBalance } from './reports/aged-balance.js';
 export { generateBalanceSheet } from './reports/balance-sheet.js';
-export { generateIncomeStatement } from './reports/income-statement.js';
-export { generateGeneralLedger } from './reports/general-ledger.js';
+export type {
+  BudgetVsActualOptions,
+  BudgetVsActualParams,
+  BudgetVsActualReport,
+  BudgetVsActualRow,
+} from './reports/budget-vs-actual.js';
+export { generateBudgetVsActual } from './reports/budget-vs-actual.js';
 export { generateCashFlow } from './reports/cash-flow.js';
-export { closeFiscalPeriod, reopenFiscalPeriod } from './reports/fiscal-close.js';
 export { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
-export { generateAgedBalance, DEFAULT_BUCKETS } from './reports/aged-balance.js';
-export type { AgedBucketConfig, AgedBalanceOptions, AgedBalanceParams, AgedBalanceRow, AgedBalanceReport } from './reports/aged-balance.js';
+export { closeFiscalPeriod, reopenFiscalPeriod } from './reports/fiscal-close.js';
+export { generateGeneralLedger } from './reports/general-ledger.js';
+export { generateIncomeStatement } from './reports/income-statement.js';
+export type {
+  RevaluationOptions,
+  RevaluationParams,
+  RevaluationReport,
+} from './reports/revaluation.js';
 export { generateRevaluation } from './reports/revaluation.js';
-export type { RevaluationOptions, RevaluationParams, RevaluationReport } from './reports/revaluation.js';
-export { computeRevaluation, buildRevaluationEntry } from './utils/revaluation.js';
-export type { RevaluationRate, AccountForeignBalance, RevaluationResult } from './utils/revaluation.js';
+export { generateTrialBalance } from './reports/trial-balance.js';
+export type {
+  AccountForeignBalance,
+  RevaluationRate,
+  RevaluationResult,
+} from './utils/revaluation.js';
+export { buildRevaluationEntry, computeRevaluation } from './utils/revaluation.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 export {
   CATEGORIES,
   CATEGORY_KEYS,
-  isValidCategory,
   getNormalBalance,
   isBalanceSheet,
   isIncomeStatement,
+  isValidCategory,
 } from './constants/categories.js';
-
-export {
-  JOURNAL_TYPES,
-  JOURNAL_CODES,
-  getJournalTypeCodes,
-  isValidJournalType,
-} from './constants/journals.js';
-
 export {
   CURRENCIES,
   getCurrency,
-  isValidCurrency,
   getMinorUnit,
+  isValidCurrency,
 } from './constants/currencies.js';
+export {
+  getCustomJournalTypes,
+  getJournalType,
+  getJournalTypeCodes,
+  isValidJournalType,
+  JOURNAL_CODES,
+  JOURNAL_TYPES,
+  registerJournalType,
+} from './constants/journals.js';
 
 // ── Country Pack ───────────────────────────────────────────────────────────
 
-export { defineCountryPack } from './country/index.js';
 export type {
   CountryPack,
   CountryPackInput,
@@ -112,121 +133,115 @@ export type {
   TaxReportLine,
   TaxReportTemplate,
 } from './country/index.js';
+export { defineCountryPack } from './country/index.js';
 
 // ── Repositories ──────────────────────────────────────────────────────────
 
-export { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
 export { wireAccountMethods } from './repositories/account.repository.js';
+export { wireJournalEntryMethods } from './repositories/journal-entry.repository.js';
 export { wireReconciliationMethods } from './repositories/reconciliation.repository.js';
 export type {
-  JournalEntryRepository,
   AccountRepository,
-  ReconciliationRepository,
-  PostOptions,
-  ReverseOptions,
-  SeedOptions,
-  SeedResult,
   BulkCreateInput,
   BulkCreateResult,
-  ReverseResult,
+  JournalEntryRepository,
+  PostOptions,
   ReconcileParams,
+  ReconciliationRepository,
+  ReverseOptions,
+  ReverseResult,
+  SeedOptions,
+  SeedResult,
 } from './types/repositories.js';
 
 // ── Utilities ──────────────────────────────────────────────────────────────
 
 export {
+  buildAccountTypeMap,
+  calculateTotal,
+  computeEndingBalance,
+  isVirtualTaxAccount,
+} from './utils/account-helpers.js';
+export {
   getDateRange,
   getFiscalYearStart,
 } from './utils/date-range.js';
-
-export {
-  isVirtualTaxAccount,
-  computeEndingBalance,
-  calculateTotal,
-  buildAccountTypeMap,
-} from './utils/account-helpers.js';
-
-export { AccountingError, Errors } from './utils/errors.js';
-export { defaultLogger } from './utils/logger.js';
-export type { Logger } from './utils/logger.js';
-export { acquireSession, finalizeSession } from './utils/session.js';
-export type { SessionResult } from './utils/session.js';
-export { buildItemFilters } from './utils/filter-builder.js';
-export { buildDimensionFields, buildDimensionIndexes } from './utils/dimensions.js';
 export type { DimensionDefinition } from './utils/dimensions.js';
+export { buildDimensionFields, buildDimensionIndexes } from './utils/dimensions.js';
+export { AccountingError, Errors } from './utils/errors.js';
+export { buildItemFilters } from './utils/filter-builder.js';
+export type { Logger } from './utils/logger.js';
+export { defaultLogger } from './utils/logger.js';
+export type { SessionResult } from './utils/session.js';
+export { acquireSession, finalizeSession } from './utils/session.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 export type {
+  DimensionBreakdownOptions,
+  DimensionBreakdownParams,
+  DimensionBreakdownReport,
+  DimensionBreakdownRow,
+} from './reports/dimension-breakdown.js';
+export type {
+  // Engine
+  AccountingEngineConfig,
+  AccountType,
+  AuditConfig,
+  BalanceSheetReport,
+  CashFlowCategory,
+  CashFlowReport,
+  CashFlowSection,
+  CategoryKey,
   // Core
   Cents,
-  StatementType,
-  MainType,
-  CategoryKey,
-  NormalBalance,
-  CashFlowCategory,
-  AccountType,
-  TotalAccountOp,
-  TaxMetadata,
-  JournalType,
-  EntryState,
-  TaxDetail,
-  JournalItem,
   Currency,
   DateOption,
   DateRange,
-
-  // Engine
-  AccountingEngineConfig,
-  MultiTenantConfig,
-  MultiCurrencyConfig,
-  SchemaOptions,
+  EntryState,
+  GeneralLedgerAccount,
+  GeneralLedgerReport,
+  IncomeStatementReport,
+  JournalItem,
   JournalSchemaOptions,
-  AuditConfig,
-  StrictnessConfig,
-
-  // Posting Contracts
-  SubledgerPostingInput,
-  SubledgerJournalItem,
+  JournalType,
+  LedgerEntry,
+  MainType,
+  MultiCurrencyConfig,
+  MultiTenantConfig,
+  NormalBalance,
   PostingContract,
   PostingResult,
-
+  ReportAccount,
+  ReportCategory,
+  ReportGroup,
+  SchemaOptions,
+  StatementType,
+  StrictnessConfig,
+  SubledgerJournalItem,
+  // Posting Contracts
+  SubledgerPostingInput,
+  TaxDetail,
+  TaxMetadata,
+  TaxReport,
+  TaxReturnSummary,
+  TotalAccountOp,
   // Reports
   TrialBalanceReport,
   TrialBalanceRow,
-  BalanceSheetReport,
-  IncomeStatementReport,
-  GeneralLedgerReport,
-  GeneralLedgerAccount,
-  LedgerEntry,
-  CashFlowReport,
-  CashFlowSection,
-  TaxReport,
-  TaxReturnSummary,
-  ReportCategory,
-  ReportGroup,
-  ReportAccount,
 } from './types/index.js';
-
-export type {
-  DimensionBreakdownOptions,
-  DimensionBreakdownParams,
-  DimensionBreakdownRow,
-  DimensionBreakdownReport,
-} from './reports/dimension-breakdown.js';
 
 // ── Exports ───────────────────────────────────────────────────────────────
 
+export type {
+  ExportField,
+  ExportFieldMap,
+  FlatJournalRow,
+  PopulatedJournalEntry,
+} from './exports/index.js';
 export {
   exportToCsv,
   flattenJournalEntries,
   quickbooksFieldMap,
   universalFieldMap,
-} from './exports/index.js';
-
-export type {
-  PopulatedJournalEntry,
-  FlatJournalRow,
-  ExportFieldMap,
-  ExportField,
 } from './exports/index.js';

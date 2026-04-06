@@ -19,8 +19,8 @@
  * ```
  */
 
-import type { ClientSession } from 'mongoose';
 import type { Repository } from '@classytic/mongokit';
+import type { ClientSession } from 'mongoose';
 
 // ── Shared Options ────────────────────────────────────────────────────────
 
@@ -114,7 +114,13 @@ export interface ReconciliationRepository<TDoc = unknown> extends Repository<TDo
   /** Reconcile journal entries for a specific account. */
   reconcile(params: ReconcileParams): Promise<Record<string, unknown>>;
   /** Remove a reconciliation record. */
-  unreconcile(params: { reconciliationId: unknown; organizationId?: unknown }): Promise<{ success: boolean }>;
+  unreconcile(params: {
+    reconciliationId: unknown;
+    organizationId?: unknown;
+  }): Promise<{ success: boolean }>;
   /** Get unreconciled journal entries for an account. */
-  getUnreconciled(params: { accountId: unknown; organizationId?: unknown }): Promise<Record<string, unknown>[]>;
+  getUnreconciled(params: {
+    accountId: unknown;
+    organizationId?: unknown;
+  }): Promise<Record<string, unknown>[]>;
 }

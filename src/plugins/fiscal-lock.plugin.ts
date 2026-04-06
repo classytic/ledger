@@ -7,8 +7,8 @@
  * Requires a FiscalPeriod model to check against.
  */
 
-import type { Model, ClientSession } from 'mongoose';
-import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
+import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
+import type { ClientSession, Model } from 'mongoose';
 import { Errors } from '../utils/errors.js';
 
 export interface FiscalLockPluginOptions {
@@ -54,14 +54,14 @@ export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
           if (!JournalEntryModel) {
             throw new Error(
               'fiscalLockPlugin: JournalEntryModel is required to validate partial updates that set state to "posted". ' +
-              'Pass JournalEntryModel in plugin options.',
+                'Pass JournalEntryModel in plugin options.',
             );
           }
           const selectFields = orgField ? `date ${orgField}` : 'date';
-          persistedDoc = await JournalEntryModel.findById(context.id)
+          persistedDoc = (await JournalEntryModel.findById(context.id)
             .select(selectFields)
             .session(session)
-            .lean() as Record<string, unknown> | null;
+            .lean()) as Record<string, unknown> | null;
           if (persistedDoc?.date) {
             entryDate = new Date(persistedDoc.date as string | number | Date);
           }
@@ -85,10 +85,10 @@ export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
             if (persistedDoc) {
               orgValue = persistedDoc[orgField];
             } else if (context.id && JournalEntryModel) {
-              const persisted = await JournalEntryModel.findById(context.id)
+              const persisted = (await JournalEntryModel.findById(context.id)
                 .select(orgField)
                 .session(session)
-                .lean() as Record<string, unknown> | null;
+                .lean()) as Record<string, unknown> | null;
               if (persisted) orgValue = persisted[orgField];
             }
           }
@@ -96,7 +96,7 @@ export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
           if (!orgValue) {
             throw new Error(
               `fiscalLockPlugin: orgField "${orgField}" is configured but could not be resolved from ` +
-              'payload, context, or persisted document. Refusing to run unscoped fiscal period query.',
+                'payload, context, or persisted document. Refusing to run unscoped fiscal period query.',
             );
           }
 
@@ -109,7 +109,7 @@ export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
           const period = closedPeriod as Record<string, unknown>;
           throw Errors.fiscal(
             `Cannot post entry dated ${entryDate.toISOString().split('T')[0]}: ` +
-            `fiscal period "${period.name}" is closed.`,
+              `fiscal period "${period.name}" is closed.`,
           );
         }
       };

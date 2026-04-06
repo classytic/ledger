@@ -68,7 +68,7 @@ export function buildDimensionIndexes(
   dimensions: DimensionDefinition[],
   orgField?: string,
 ): Array<{ fields: Record<string, 1 | -1>; options?: Record<string, unknown> }> {
-  return dimensions.map(dim => {
+  return dimensions.map((dim) => {
     const fields: Record<string, 1 | -1> = {};
 
     if (orgField) {

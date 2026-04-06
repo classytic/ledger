@@ -6,10 +6,10 @@
  * to a user-supplied TaxLineGenerator.
  */
 
-import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
+import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
+import type { JournalItem } from '../types/core.js';
 import type { TaxLineGenerator } from '../utils/tax-hooks.js';
 import { applyTaxHook } from '../utils/tax-hooks.js';
-import type { JournalItem } from '../types/core.js';
 
 export interface TaxHookPluginOptions {
   /** Tax line generator — implements the tax calculation logic */

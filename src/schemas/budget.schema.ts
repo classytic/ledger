@@ -9,10 +9,7 @@
 import mongoose from 'mongoose';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
 
-export function createBudgetSchema(
-  config: AccountingEngineConfig,
-  options: SchemaOptions = {},
-) {
+export function createBudgetSchema(config: AccountingEngineConfig, options: SchemaOptions = {}) {
   const { multiTenant } = config;
   const { indexes = true, extraFields = {}, extraIndexes = [] } = options;
 
@@ -50,7 +47,12 @@ export function createBudgetSchema(
   schema.pre('validate', function () {
     const doc = this as unknown as mongoose.Document & { periodStart: Date; periodEnd: Date };
     if (doc.periodStart && doc.periodEnd && doc.periodEnd <= doc.periodStart) {
-      doc.invalidate('periodEnd', 'periodEnd must be after periodStart.', doc.periodEnd, 'periodEnd');
+      doc.invalidate(
+        'periodEnd',
+        'periodEnd must be after periodStart.',
+        doc.periodEnd,
+        'periodEnd',
+      );
     }
   });
 

@@ -5,8 +5,8 @@
  * with the same idempotency key before creation.
  */
 
-import type { Model, ClientSession } from 'mongoose';
-import type { RepositoryInstance, RepositoryContext } from '@classytic/mongokit';
+import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
+import type { ClientSession, Model } from 'mongoose';
 import { Errors } from '../utils/errors.js';
 
 export interface IdempotencyPluginOptions {
@@ -33,10 +33,10 @@ export function idempotencyPlugin(options: IdempotencyPluginOptions) {
           query[orgField] = data[orgField];
         }
 
-        const existing = await JournalEntryModel.findOne(query)
+        const existing = (await JournalEntryModel.findOne(query)
           .select('_id')
           .session((context.session ?? null) as ClientSession | null)
-          .lean() as Record<string, unknown> | null;
+          .lean()) as Record<string, unknown> | null;
 
         if (existing) {
           throw Errors.conflict(

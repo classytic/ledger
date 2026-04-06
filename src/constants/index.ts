@@ -5,28 +5,28 @@
 export {
   CATEGORIES,
   CATEGORY_KEYS,
-  isValidCategory,
-  getCategoryMainType,
-  getCategoryStatementType,
-  isBalanceSheet,
-  isIncomeStatement,
-  getNormalBalance,
   categoryKey,
   extractMainType,
   extractStatementType,
+  getCategoryMainType,
+  getCategoryStatementType,
+  getNormalBalance,
+  isBalanceSheet,
+  isIncomeStatement,
+  isValidCategory,
 } from './categories.js';
-
-export {
-  JOURNAL_TYPES,
-  JOURNAL_CODES,
-  getJournalTypeCodes,
-  isValidJournalType,
-  getJournalType,
-} from './journals.js';
-
 export {
   CURRENCIES,
   getCurrency,
-  isValidCurrency,
   getMinorUnit,
+  isValidCurrency,
 } from './currencies.js';
+export {
+  getCustomJournalTypes,
+  getJournalType,
+  getJournalTypeCodes,
+  isValidJournalType,
+  JOURNAL_CODES,
+  JOURNAL_TYPES,
+  registerJournalType,
+} from './journals.js';

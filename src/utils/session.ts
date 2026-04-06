@@ -58,9 +58,7 @@ export async function acquireSession(
       const topologyType = client?.topology?.description?.type;
       if (topologyType === 'Single') {
         session.endSession();
-        logger.warn(
-          'Transactions unavailable (standalone MongoDB). Operation is not atomic.',
-        );
+        logger.warn('Transactions unavailable (standalone MongoDB). Operation is not atomic.');
         return { session: null, ownSession: false };
       }
     } catch {
@@ -73,10 +71,9 @@ export async function acquireSession(
     } catch (err) {
       // startTransaction failed for unexpected reasons — clean up and fall back
       session.endSession();
-      logger.warn(
-        'Transactions unavailable (no replica set). Operation is not atomic.',
-        { error: (err as Error).message },
-      );
+      logger.warn('Transactions unavailable (no replica set). Operation is not atomic.', {
+        error: (err as Error).message,
+      });
       return { session: null, ownSession: false };
     }
   } catch {
