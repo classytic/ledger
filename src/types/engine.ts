@@ -5,6 +5,7 @@
  * single-tenant vs multi-tenant, currency, country pack, etc.
  */
 
+import type { Connection } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import type { Logger } from '../utils/logger.js';
 
@@ -87,10 +88,40 @@ export interface MultiCurrencyConfig {
   currencies?: readonly string[];
 }
 
+// ─── Model Names ─────────────────────────────────────────────────────────────
+
+/**
+ * Override default model names. Useful when you want to avoid collisions
+ * with existing models or use custom naming conventions.
+ */
+export interface ModelNames {
+  account?: string; // default: 'Account'
+  journalEntry?: string; // default: 'JournalEntry'
+  fiscalPeriod?: string; // default: 'FiscalPeriod'
+  budget?: string; // default: 'Budget'
+  reconciliation?: string; // default: 'Reconciliation'
+}
+
 // ─── Engine Config ───────────────────────────────────────────────────────────
 
 /** Main engine configuration */
 export interface AccountingEngineConfig {
+  /**
+   * Mongoose connection. Required for `engine.models` and `engine.repositories`
+   * to be auto-populated. If omitted, you must use the low-level schema
+   * factories (`engine.createAccountSchema()`) and register models yourself.
+   */
+  mongoose?: Connection;
+  /** Override default model names (e.g. 'Account' → 'GLAccount') */
+  modelNames?: ModelNames;
+  /** Extra fields / indexes per model */
+  schemaOptions?: {
+    account?: SchemaOptions;
+    journalEntry?: JournalSchemaOptions;
+    fiscalPeriod?: SchemaOptions;
+    budget?: SchemaOptions;
+    reconciliation?: SchemaOptions;
+  };
   /** Country pack providing account types, tax codes, and templates */
   country: CountryPack;
   /** Default ISO 4217 currency code — the functional/base currency (e.g., 'CAD', 'BDT') */

@@ -47,6 +47,7 @@ export type {
   AccountingEngineConfig,
   AuditConfig,
   JournalSchemaOptions,
+  ModelNames,
   MultiCurrencyConfig,
   // Engine config
   MultiTenantConfig,
