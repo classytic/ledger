@@ -1,22 +1,72 @@
-import { describe, it, expect } from 'vitest';
-import {
-  isVirtualTaxAccount, computeEndingBalance, calculateTotal,
-  isBalanceSheetAccountType, isIncomeStatementAccountType,
-  buildAccountTypeMap,
-} from '../../src/utils/account-helpers.js';
+import { describe, expect, it } from 'vitest';
 import type { AccountType } from '../../src/types/core.js';
+import {
+  buildAccountTypeMap,
+  calculateTotal,
+  computeEndingBalance,
+  isBalanceSheetAccountType,
+  isIncomeStatementAccountType,
+  isVirtualTaxAccount,
+} from '../../src/utils/account-helpers.js';
 
 describe('Account Helpers', () => {
   describe('isVirtualTaxAccount', () => {
     // Build a test account type map with a virtualTotal parent
     const types: AccountType[] = [
-      { code: '2680', name: 'Taxes Payable', category: 'Balance Sheet-Liability' as any, description: '', parentCode: null, isTotal: true, isVirtualTotal: true },
-      { code: '2680.GST.COLLECTED', name: 'GST Collected', category: 'Balance Sheet-Liability' as any, description: '', parentCode: '2680' },
-      { code: '1066', name: 'Taxes Receivable', category: 'Balance Sheet-Asset' as any, description: '', parentCode: null, isTotal: true, isVirtualTotal: true },
-      { code: '1066.GST-HST.REFUND', name: 'GST Refund', category: 'Balance Sheet-Asset' as any, description: '', parentCode: '1066' },
-      { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset' as any, description: '', parentCode: 'Current Assets' },
-      { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset' as any, description: '', parentCode: null, isGroup: true },
-      { code: '2100', name: 'State Tax', category: 'Balance Sheet-Liability' as any, description: '', parentCode: '2680' },
+      {
+        code: '2680',
+        name: 'Taxes Payable',
+        category: 'Balance Sheet-Liability' as any,
+        description: '',
+        parentCode: null,
+        isTotal: true,
+        isVirtualTotal: true,
+      },
+      {
+        code: '2680.GST.COLLECTED',
+        name: 'GST Collected',
+        category: 'Balance Sheet-Liability' as any,
+        description: '',
+        parentCode: '2680',
+      },
+      {
+        code: '1066',
+        name: 'Taxes Receivable',
+        category: 'Balance Sheet-Asset' as any,
+        description: '',
+        parentCode: null,
+        isTotal: true,
+        isVirtualTotal: true,
+      },
+      {
+        code: '1066.GST-HST.REFUND',
+        name: 'GST Refund',
+        category: 'Balance Sheet-Asset' as any,
+        description: '',
+        parentCode: '1066',
+      },
+      {
+        code: '1000',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset' as any,
+        description: '',
+        parentCode: 'Current Assets',
+      },
+      {
+        code: 'Current Assets',
+        name: 'Current Assets',
+        category: 'Balance Sheet-Asset' as any,
+        description: '',
+        parentCode: null,
+        isGroup: true,
+      },
+      {
+        code: '2100',
+        name: 'State Tax',
+        category: 'Balance Sheet-Liability' as any,
+        description: '',
+        parentCode: '2680',
+      },
     ];
     const map = buildAccountTypeMap(types);
 
@@ -40,7 +90,13 @@ describe('Account Helpers', () => {
     });
 
     it('returns false when parentCode does not exist in map', () => {
-      const orphan: AccountType = { code: 'X', name: 'Orphan', category: 'Balance Sheet-Asset' as any, description: '', parentCode: 'NONEXISTENT' };
+      const orphan: AccountType = {
+        code: 'X',
+        name: 'Orphan',
+        category: 'Balance Sheet-Asset' as any,
+        description: '',
+        parentCode: 'NONEXISTENT',
+      };
       expect(isVirtualTaxAccount(orphan, map)).toBe(false);
     });
   });
@@ -73,7 +129,10 @@ describe('Account Helpers', () => {
         { account: 'A', operation: '+' as const },
         { account: 'B', operation: '+' as const },
       ];
-      const map = new Map([['A', 10000], ['B', 20000]]);
+      const map = new Map([
+        ['A', 10000],
+        ['B', 20000],
+      ]);
       expect(calculateTotal(formula, map)).toBe(30000);
     });
 
@@ -82,7 +141,10 @@ describe('Account Helpers', () => {
         { account: 'A', operation: '+' as const },
         { account: 'B', operation: '-' as const },
       ];
-      const map = new Map([['A', 100000], ['B', 30000]]);
+      const map = new Map([
+        ['A', 100000],
+        ['B', 30000],
+      ]);
       expect(calculateTotal(formula, map)).toBe(70000);
     });
 
@@ -105,7 +167,10 @@ describe('Account Helpers', () => {
         { account: 'A', operation: '-' as const },
         { account: 'B', operation: '-' as const },
       ];
-      const map = new Map([['A', 10000], ['B', 5000]]);
+      const map = new Map([
+        ['A', 10000],
+        ['B', 5000],
+      ]);
       expect(calculateTotal(formula, map)).toBe(-15000);
     });
   });
@@ -124,8 +189,11 @@ describe('Account Helpers', () => {
 
   describe('isBalanceSheetAccountType', () => {
     const makeAccountType = (category: string): AccountType => ({
-      code: '1010', name: 'Test', category: category as any,
-      description: 'Test', parentCode: null,
+      code: '1010',
+      name: 'Test',
+      category: category as any,
+      description: 'Test',
+      parentCode: null,
     });
 
     it('returns true for Asset accounts', () => {
@@ -151,8 +219,11 @@ describe('Account Helpers', () => {
 
   describe('isIncomeStatementAccountType', () => {
     const makeAccountType = (category: string): AccountType => ({
-      code: '4000', name: 'Test', category: category as any,
-      description: 'Test', parentCode: null,
+      code: '4000',
+      name: 'Test',
+      category: category as any,
+      description: 'Test',
+      parentCode: null,
     });
 
     it('returns true for Income accounts', () => {
@@ -174,9 +245,27 @@ describe('Account Helpers', () => {
 
   describe('buildAccountTypeMap', () => {
     const types: AccountType[] = [
-      { code: '1010', name: 'Cash', category: 'Balance Sheet-Asset', description: '', parentCode: null },
-      { code: '2100', name: 'AP', category: 'Balance Sheet-Liability', description: '', parentCode: null },
-      { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: '', parentCode: null },
+      {
+        code: '1010',
+        name: 'Cash',
+        category: 'Balance Sheet-Asset',
+        description: '',
+        parentCode: null,
+      },
+      {
+        code: '2100',
+        name: 'AP',
+        category: 'Balance Sheet-Liability',
+        description: '',
+        parentCode: null,
+      },
+      {
+        code: '4000',
+        name: 'Revenue',
+        category: 'Income Statement-Income',
+        description: '',
+        parentCode: null,
+      },
     ];
 
     it('builds map with all account types', () => {

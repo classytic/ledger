@@ -5,8 +5,8 @@
  * All CRUD methods are vi.fn() mocks with sensible defaults.
  */
 
-import { vi } from 'vitest';
 import type { Repository } from '@classytic/mongokit';
+import { vi } from 'vitest';
 
 /**
  * Create a mock Repository<unknown> with all required methods.
@@ -25,7 +25,7 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
     // Hook system
     on: vi.fn((event: string, handler: (ctx: unknown) => void | Promise<void>) => {
       if (!hooks.has(event)) hooks.set(event, []);
-      hooks.get(event)!.push(handler);
+      hooks.get(event)?.push(handler);
       return base;
     }),
     off: vi.fn(),
@@ -39,7 +39,16 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
     createMany: vi.fn().mockResolvedValue([]),
     getById: vi.fn().mockResolvedValue(null),
     getByQuery: vi.fn().mockResolvedValue(null),
-    getAll: vi.fn().mockResolvedValue({ method: 'offset', docs: [], total: 0, page: 1, limit: 10, pages: 0, hasNext: false, hasPrev: false }),
+    getAll: vi.fn().mockResolvedValue({
+      method: 'offset',
+      docs: [],
+      total: 0,
+      page: 1,
+      limit: 10,
+      pages: 0,
+      hasNext: false,
+      hasPrev: false,
+    }),
     update: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({ success: true, message: 'deleted' }),
     count: vi.fn().mockResolvedValue(0),
@@ -49,11 +58,22 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
 
     // Aggregation
     aggregate: vi.fn().mockResolvedValue([]),
-    aggregatePaginate: vi.fn().mockResolvedValue({ method: 'aggregate', docs: [], total: 0, page: 1, limit: 10, pages: 0, hasNext: false, hasPrev: false }),
+    aggregatePaginate: vi.fn().mockResolvedValue({
+      method: 'aggregate',
+      docs: [],
+      total: 0,
+      page: 1,
+      limit: 10,
+      pages: 0,
+      hasNext: false,
+      hasPrev: false,
+    }),
     lookupPopulate: vi.fn().mockResolvedValue({ data: [], total: 0, limit: 10 }),
 
     // Transactions
-    withTransaction: vi.fn().mockImplementation(async (cb: (session: unknown) => Promise<unknown>) => cb(null)),
+    withTransaction: vi
+      .fn()
+      .mockImplementation(async (cb: (session: unknown) => Promise<unknown>) => cb(null)),
 
     // Builders
     buildAggregation: vi.fn(),

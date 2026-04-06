@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { suggestMatches, type UnreconciledEntry } from '../../src/utils/reconciliation-helpers.js';
 
 function entry(id: string, debit: number, credit: number): UnreconciledEntry {
@@ -7,10 +7,7 @@ function entry(id: string, debit: number, credit: number): UnreconciledEntry {
 
 describe('suggestMatches', () => {
   it('finds exact 1:1 matches', () => {
-    const entries: UnreconciledEntry[] = [
-      entry('d1', 5000, 0),
-      entry('c1', 0, 5000),
-    ];
+    const entries: UnreconciledEntry[] = [entry('d1', 5000, 0), entry('c1', 0, 5000)];
 
     const suggestions = suggestMatches(entries);
 
@@ -23,7 +20,7 @@ describe('suggestMatches', () => {
   it('matches with tolerance for close amounts', () => {
     const entries: UnreconciledEntry[] = [
       entry('d1', 5000, 0),
-      entry('c1', 0, 4998),  // 2 cents off
+      entry('c1', 0, 4998), // 2 cents off
     ];
 
     // No match with zero tolerance
@@ -38,10 +35,7 @@ describe('suggestMatches', () => {
   });
 
   it('returns empty for no matches', () => {
-    const entries: UnreconciledEntry[] = [
-      entry('d1', 5000, 0),
-      entry('c1', 0, 3000),
-    ];
+    const entries: UnreconciledEntry[] = [entry('d1', 5000, 0), entry('c1', 0, 3000)];
 
     const suggestions = suggestMatches(entries);
     expect(suggestions).toHaveLength(0);
@@ -52,19 +46,13 @@ describe('suggestMatches', () => {
   });
 
   it('returns empty when only debits exist', () => {
-    const entries: UnreconciledEntry[] = [
-      entry('d1', 5000, 0),
-      entry('d2', 3000, 0),
-    ];
+    const entries: UnreconciledEntry[] = [entry('d1', 5000, 0), entry('d2', 3000, 0)];
 
     expect(suggestMatches(entries)).toHaveLength(0);
   });
 
   it('returns empty when only credits exist', () => {
-    const entries: UnreconciledEntry[] = [
-      entry('c1', 0, 5000),
-      entry('c2', 0, 3000),
-    ];
+    const entries: UnreconciledEntry[] = [entry('c1', 0, 5000), entry('c2', 0, 3000)];
 
     expect(suggestMatches(entries)).toHaveLength(0);
   });
@@ -81,7 +69,7 @@ describe('suggestMatches', () => {
 
     expect(suggestions).toHaveLength(2);
 
-    const amounts = suggestions.map(s => s.amount).sort((a, b) => a - b);
+    const amounts = suggestions.map((s) => s.amount).sort((a, b) => a - b);
     expect(amounts).toEqual([3000, 5000]);
   });
 
@@ -89,7 +77,7 @@ describe('suggestMatches', () => {
     const entries: UnreconciledEntry[] = [
       entry('d1', 5000, 0),
       entry('d2', 5000, 0),
-      entry('c1', 0, 5000),  // Only one credit, should match only one debit
+      entry('c1', 0, 5000), // Only one credit, should match only one debit
     ];
 
     const suggestions = suggestMatches(entries);

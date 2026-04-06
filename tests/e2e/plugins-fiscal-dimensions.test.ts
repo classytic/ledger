@@ -9,17 +9,21 @@
  * with dimensions, fiscal close, and budget features.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
-import { buildDimensionFields } from '../../src/utils/dimensions.js';
-import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import { dateLockPlugin } from '../../src/plugins/date-lock.plugin.js';
 import { taxHookPlugin } from '../../src/plugins/tax-hook.plugin.js';
-import type { TaxLineGenerator, TaxLineInput, GeneratedTaxLine } from '../../src/utils/tax-hooks.js';
+import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { buildDimensionFields } from '../../src/utils/dimensions.js';
+import type {
+  GeneratedTaxLine,
+  TaxLineGenerator,
+  TaxLineInput,
+} from '../../src/utils/tax-hooks.js';
 
 // ── Country Pack: TechVenture Labs ──────────────────────────────────────────
 
@@ -30,20 +34,100 @@ const techVenturePack = defineCountryPack({
   retainedEarningsAccountCode: '3600',
   accountTypes: [
     // Balance Sheet — Assets
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash and equivalents', parentCode: null, isTotal: false, cashFlowCategory: 'Operating' },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash and equivalents',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'Operating',
+    },
     // Balance Sheet — Liabilities
-    { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'Operating' },
-    { code: '2300', name: 'HST Payable', category: 'Balance Sheet-Liability', description: 'HST collected', parentCode: null, isTotal: false, cashFlowCategory: 'Operating' },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'Operating',
+    },
+    {
+      code: '2300',
+      name: 'HST Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'HST collected',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'Operating',
+    },
     // Balance Sheet — Equity
-    { code: '3500', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Common shares', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '3600', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'Retained Earnings', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '3500',
+      name: 'Share Capital',
+      category: 'Balance Sheet-Equity',
+      description: 'Common shares',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3600',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: 'Retained Earnings',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
     // Income Statement — Revenue
-    { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Service revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '4000',
+      name: 'Revenue',
+      category: 'Income Statement-Income',
+      description: 'Service revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
     // Income Statement — Expenses
-    { code: '6000', name: 'Salaries', category: 'Income Statement-Expense', description: 'Salary expense', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6100', name: 'Cloud Hosting', category: 'Income Statement-Expense', description: 'Cloud services', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6200', name: 'Travel', category: 'Income Statement-Expense', description: 'Travel expense', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6300', name: 'Office Supplies', category: 'Income Statement-Expense', description: 'Supplies', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '6000',
+      name: 'Salaries',
+      category: 'Income Statement-Expense',
+      description: 'Salary expense',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6100',
+      name: 'Cloud Hosting',
+      category: 'Income Statement-Expense',
+      description: 'Cloud services',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6200',
+      name: 'Travel',
+      category: 'Income Statement-Expense',
+      description: 'Travel expense',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6300',
+      name: 'Office Supplies',
+      category: 'Income Statement-Expense',
+      description: 'Supplies',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
   taxCodes: {},
   taxCodesByRegion: {},
@@ -52,9 +136,7 @@ const techVenturePack = defineCountryPack({
 
 // ── Dimension Fields ────────────────────────────────────────────────────────
 
-const dimFields = buildDimensionFields([
-  { field: 'departmentId', label: 'Department' },
-]);
+const dimFields = buildDimensionFields([{ field: 'departmentId', label: 'Department' }]);
 
 // ── Tax Line Generator: 13% HST ────────────────────────────────────────────
 
@@ -69,21 +151,25 @@ const hstGenerator: TaxLineGenerator = {
     // Tax on credit (revenue): debit the receivable/cash, credit HST payable
     // Tax on debit (expense): debit HST payable (recoverable), credit cash
     if (input.side === 'credit') {
-      return [{
-        account: hstPayableAccountId,
-        debit: 0,
-        credit: taxAmount,
-        label: 'HST 13% collected',
-        taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
-      }];
+      return [
+        {
+          account: hstPayableAccountId,
+          debit: 0,
+          credit: taxAmount,
+          label: 'HST 13% collected',
+          taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
+        },
+      ];
     } else {
-      return [{
-        account: hstPayableAccountId,
-        debit: taxAmount,
-        credit: 0,
-        label: 'HST 13% recoverable',
-        taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
-      }];
+      return [
+        {
+          account: hstPayableAccountId,
+          debit: taxAmount,
+          credit: 0,
+          label: 'HST 13% recoverable',
+          taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
+        },
+      ];
     }
   },
 };
@@ -94,13 +180,16 @@ let lockDateCutoff: Date | null = null;
 
 // ── Engine + Config ─────────────────────────────────────────────────────────
 
-const config: AccountingEngineConfig = {
+const baseConfig: Omit<AccountingEngineConfig, 'mongoose' | 'modelNames'> = {
   country: techVenturePack,
   currency: 'CAD',
   retainedEarningsAccountCode: '3600',
+  schemaOptions: {
+    journalEntry: { extraItemFields: dimFields },
+  },
 };
 
-const engine = createAccountingEngine(config);
+let engine: ReturnType<typeof createAccountingEngine>;
 
 // ── DB Models ───────────────────────────────────────────────────────────────
 
@@ -158,20 +247,32 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
-  // Schemas
-  const acctSchema = engine.createAccountSchema();
-  const jeSchema = engine.createJournalEntrySchema('E2EAccount', { extraItemFields: dimFields });
-  const fpSchema = engine.createFiscalPeriodSchema();
-  const budgetSchema = engine.createBudgetSchema();
-
-  // Register models (cleanup first to avoid OverwriteModelError on re-runs)
-  for (const name of ['E2EAccount', 'E2EJournalEntry', 'E2EFiscalPeriod', 'E2EBudget']) {
-    if (mongoose.models[name]) delete mongoose.models[name];
+  for (const name of [
+    'TvlE2E_Account',
+    'TvlE2E_JE',
+    'TvlE2E_FP',
+    'TvlE2E_Budget',
+    'TvlE2E_Recon',
+  ]) {
+    if (mongoose.connection.models[name]) delete mongoose.connection.models[name];
   }
-  AccountModel = mongoose.model('E2EAccount', acctSchema);
-  JEModel = mongoose.model('E2EJournalEntry', jeSchema);
-  FPModel = mongoose.model('E2EFiscalPeriod', fpSchema);
-  BudgetModel = mongoose.model('E2EBudget', budgetSchema);
+
+  engine = createAccountingEngine({
+    ...baseConfig,
+    mongoose: mongoose.connection,
+    modelNames: {
+      account: 'TvlE2E_Account',
+      journalEntry: 'TvlE2E_JE',
+      fiscalPeriod: 'TvlE2E_FP',
+      budget: 'TvlE2E_Budget',
+      reconciliation: 'TvlE2E_Recon',
+    },
+  });
+
+  AccountModel = engine.models.Account;
+  JEModel = engine.models.JournalEntry;
+  FPModel = engine.models.FiscalPeriod;
+  BudgetModel = engine.models.Budget;
 
   await AccountModel.createIndexes();
   await JEModel.createIndexes();
@@ -229,15 +330,14 @@ describe('Engine Setup with All Plugins', () => {
   });
 
   it('creates schemas with dimension fields on journal items', () => {
-    const schema = engine.createJournalEntrySchema('E2EAccount', { extraItemFields: dimFields });
+    const schema = engine.models.JournalEntry.schema;
     const itemPath = schema.path('journalItems') as any;
-    // The subdocument schema should include departmentId
     const subPaths = itemPath.schema.paths;
     expect(subPaths).toHaveProperty('departmentId');
   });
 
   it('creates budget schema', () => {
-    const schema = engine.createBudgetSchema();
+    const schema = engine.models.Budget.schema;
     expect(schema.path('account')).toBeDefined();
     expect(schema.path('amount')).toBeDefined();
     expect(schema.path('periodStart')).toBeDefined();
@@ -245,7 +345,7 @@ describe('Engine Setup with All Plugins', () => {
   });
 
   it('creates fiscal period schema', () => {
-    const schema = engine.createFiscalPeriodSchema();
+    const schema = engine.models.FiscalPeriod.schema;
     expect(schema.path('name')).toBeDefined();
     expect(schema.path('startDate')).toBeDefined();
     expect(schema.path('endDate')).toBeDefined();
@@ -296,7 +396,7 @@ describe('Dimension Tracking — Department Expenses', () => {
   });
 
   it('generates dimension breakdown for departmentId', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const report = await reports.dimensionBreakdown({
       dateOption: 'year',
       dateValue: 2025,
@@ -309,7 +409,7 @@ describe('Dimension Tracking — Department Expenses', () => {
   });
 
   it('reports correct totals for Engineering department ($25,000)', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const report = await reports.dimensionBreakdown({
       dateOption: 'year',
       dateValue: 2025,
@@ -317,14 +417,14 @@ describe('Dimension Tracking — Department Expenses', () => {
       accountCategory: 'Income Statement-Expense',
     });
 
-    const engRow = report.rows.find(r => String(r.dimensionValue) === String(engDeptId));
+    const engRow = report.rows.find((r) => String(r.dimensionValue) === String(engDeptId));
     expect(engRow).toBeDefined();
     // Engineering: 2,000,000 (salaries) + 500,000 (cloud) = 2,500,000 cents
-    expect(engRow!.total).toBe(2_500_000);
+    expect(engRow?.total).toBe(2_500_000);
   });
 
   it('reports correct totals for Sales department ($18,000)', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const report = await reports.dimensionBreakdown({
       dateOption: 'year',
       dateValue: 2025,
@@ -332,14 +432,14 @@ describe('Dimension Tracking — Department Expenses', () => {
       accountCategory: 'Income Statement-Expense',
     });
 
-    const salesRow = report.rows.find(r => String(r.dimensionValue) === String(salesDeptId));
+    const salesRow = report.rows.find((r) => String(r.dimensionValue) === String(salesDeptId));
     expect(salesRow).toBeDefined();
     // Sales: 1,500,000 (salaries) + 300,000 (travel) = 1,800,000 cents
-    expect(salesRow!.total).toBe(1_800_000);
+    expect(salesRow?.total).toBe(1_800_000);
   });
 
   it('reports correct totals for Operations department ($12,000)', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const report = await reports.dimensionBreakdown({
       dateOption: 'year',
       dateValue: 2025,
@@ -347,14 +447,14 @@ describe('Dimension Tracking — Department Expenses', () => {
       accountCategory: 'Income Statement-Expense',
     });
 
-    const opsRow = report.rows.find(r => String(r.dimensionValue) === String(opsDeptId));
+    const opsRow = report.rows.find((r) => String(r.dimensionValue) === String(opsDeptId));
     expect(opsRow).toBeDefined();
     // Operations: 1,000,000 (salaries) + 200,000 (office) = 1,200,000 cents
-    expect(opsRow!.total).toBe(1_200_000);
+    expect(opsRow?.total).toBe(1_200_000);
   });
 
   it('sorts accounts within each department by account code', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const report = await reports.dimensionBreakdown({
       dateOption: 'year',
       dateValue: 2025,
@@ -372,7 +472,7 @@ describe('Dimension Tracking — Department Expenses', () => {
   });
 
   it('grand total equals sum of all departments ($55,000)', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const report = await reports.dimensionBreakdown({
       dateOption: 'year',
       dateValue: 2025,
@@ -396,19 +496,39 @@ describe('Budget vs Actual', () => {
     const q1End = new Date('2025-03-31');
 
     await BudgetModel.create([
-      { account: salariesId, periodStart: q1Start, periodEnd: q1End, amount: 5_000_000, label: 'Salary Budget' },
-      { account: cloudId, periodStart: q1Start, periodEnd: q1End, amount: 400_000, label: 'Cloud Budget' },
-      { account: travelId, periodStart: q1Start, periodEnd: q1End, amount: 200_000, label: 'Travel Budget' },
-      { account: officeId, periodStart: q1Start, periodEnd: q1End, amount: 300_000, label: 'Office Budget' },
+      {
+        account: salariesId,
+        periodStart: q1Start,
+        periodEnd: q1End,
+        amount: 5_000_000,
+        label: 'Salary Budget',
+      },
+      {
+        account: cloudId,
+        periodStart: q1Start,
+        periodEnd: q1End,
+        amount: 400_000,
+        label: 'Cloud Budget',
+      },
+      {
+        account: travelId,
+        periodStart: q1Start,
+        periodEnd: q1End,
+        amount: 200_000,
+        label: 'Travel Budget',
+      },
+      {
+        account: officeId,
+        periodStart: q1Start,
+        periodEnd: q1End,
+        amount: 300_000,
+        label: 'Office Budget',
+      },
     ]);
   });
 
   it('generates budget vs actual report', async () => {
-    const reports = engine.createReports({
-      Account: AccountModel,
-      JournalEntry: JEModel,
-      Budget: BudgetModel,
-    });
+    const reports = engine.reports;
 
     const report = await reports.budgetVsActual({
       dateOption: 'quarter',
@@ -420,72 +540,56 @@ describe('Budget vs Actual', () => {
   });
 
   it('salary is under budget ($45,000 actual vs $50,000 budget)', async () => {
-    const reports = engine.createReports({
-      Account: AccountModel,
-      JournalEntry: JEModel,
-      Budget: BudgetModel,
-    });
+    const reports = engine.reports;
 
     const report = await reports.budgetVsActual({
       dateOption: 'quarter',
       dateValue: { quarter: 1, year: 2025 },
     });
 
-    const salaryRow = report.rows.find(r => r.accountCode === '6000');
+    const salaryRow = report.rows.find((r) => r.accountCode === '6000');
     expect(salaryRow).toBeDefined();
     // Actual: 2,000,000 + 1,500,000 + 1,000,000 = 4,500,000
-    expect(salaryRow!.actualAmount).toBe(4_500_000);
-    expect(salaryRow!.budgetAmount).toBe(5_000_000);
+    expect(salaryRow?.actualAmount).toBe(4_500_000);
+    expect(salaryRow?.budgetAmount).toBe(5_000_000);
     // Under budget: actual - budget = -500,000
-    expect(salaryRow!.variance).toBe(-500_000);
+    expect(salaryRow?.variance).toBe(-500_000);
   });
 
   it('travel is over budget ($3,000 actual vs $2,000 budget)', async () => {
-    const reports = engine.createReports({
-      Account: AccountModel,
-      JournalEntry: JEModel,
-      Budget: BudgetModel,
-    });
+    const reports = engine.reports;
 
     const report = await reports.budgetVsActual({
       dateOption: 'quarter',
       dateValue: { quarter: 1, year: 2025 },
     });
 
-    const travelRow = report.rows.find(r => r.accountCode === '6200');
+    const travelRow = report.rows.find((r) => r.accountCode === '6200');
     expect(travelRow).toBeDefined();
     // Actual: 300,000 cents
-    expect(travelRow!.actualAmount).toBe(300_000);
-    expect(travelRow!.budgetAmount).toBe(200_000);
+    expect(travelRow?.actualAmount).toBe(300_000);
+    expect(travelRow?.budgetAmount).toBe(200_000);
     // Over budget: 300,000 - 200,000 = 100,000
-    expect(travelRow!.variance).toBe(100_000);
+    expect(travelRow?.variance).toBe(100_000);
   });
 
   it('cloud hosting is over budget ($5,000 actual vs $4,000 budget)', async () => {
-    const reports = engine.createReports({
-      Account: AccountModel,
-      JournalEntry: JEModel,
-      Budget: BudgetModel,
-    });
+    const reports = engine.reports;
 
     const report = await reports.budgetVsActual({
       dateOption: 'quarter',
       dateValue: { quarter: 1, year: 2025 },
     });
 
-    const cloudRow = report.rows.find(r => r.accountCode === '6100');
+    const cloudRow = report.rows.find((r) => r.accountCode === '6100');
     expect(cloudRow).toBeDefined();
-    expect(cloudRow!.actualAmount).toBe(500_000);
-    expect(cloudRow!.budgetAmount).toBe(400_000);
-    expect(cloudRow!.variance).toBe(100_000);
+    expect(cloudRow?.actualAmount).toBe(500_000);
+    expect(cloudRow?.budgetAmount).toBe(400_000);
+    expect(cloudRow?.variance).toBe(100_000);
   });
 
   it('summary totals are correct', async () => {
-    const reports = engine.createReports({
-      Account: AccountModel,
-      JournalEntry: JEModel,
-      Budget: BudgetModel,
-    });
+    const reports = engine.reports;
 
     const report = await reports.budgetVsActual({
       dateOption: 'quarter',
@@ -543,13 +647,13 @@ describe('Fiscal Period Management', () => {
     expect(result.accountsClosed).toBeGreaterThan(0);
 
     // Verify the period is marked as closed
-    const period = await FPModel.findById(q1PeriodId).lean() as any;
+    const period = (await FPModel.findById(q1PeriodId).lean()) as any;
     expect(period.closed).toBe(true);
   });
 
   it('closing entry zeroes IS accounts and credits retained earnings', async () => {
-    const period = await FPModel.findById(q1PeriodId).lean() as any;
-    const closingEntry = await JEModel.findById(period.closingEntryId).lean() as any;
+    const period = (await FPModel.findById(q1PeriodId).lean()) as any;
+    const closingEntry = (await JEModel.findById(period.closingEntryId).lean()) as any;
 
     expect(closingEntry).toBeDefined();
     expect(closingEntry.journalType).toBe('YEAR_END');
@@ -596,7 +700,7 @@ describe('Fiscal Period Management', () => {
     expect(result.deletedEntryId).toBeDefined();
 
     // Verify the period is open again
-    const period = await FPModel.findById(q1PeriodId).lean() as any;
+    const period = (await FPModel.findById(q1PeriodId).lean()) as any;
     expect(period.closed).toBe(false);
     expect(period.reopenedAt).toBeDefined();
   });
@@ -630,7 +734,9 @@ describe('Date Lock Plugin', () => {
     // Simulate the plugin's before:create hook
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -659,7 +765,9 @@ describe('Date Lock Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -690,7 +798,9 @@ describe('Date Lock Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -719,7 +829,9 @@ describe('Date Lock Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -746,7 +858,9 @@ describe('Tax Hook Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -778,7 +892,9 @@ describe('Tax Hook Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -812,7 +928,9 @@ describe('Tax Hook Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -849,7 +967,9 @@ describe('Tax Hook Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -879,7 +999,9 @@ describe('Tax Hook Plugin', () => {
 
     const listeners: Record<string, Function> = {};
     const fakeRepo = {
-      on(event: string, listener: Function) { listeners[event] = listener; },
+      on(event: string, listener: Function) {
+        listeners[event] = listener;
+      },
     };
     plugin.apply(fakeRepo);
 
@@ -920,7 +1042,7 @@ describe('Cross-Feature Integration', () => {
   });
 
   it('trial balance debits equal credits', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const tb = await reports.trialBalance({
       dateOption: 'year',
       dateValue: 2025,
@@ -934,11 +1056,11 @@ describe('Cross-Feature Integration', () => {
   });
 
   it('balance sheet is balanced (assets = liabilities + equity)', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
-    const bs = await reports.balanceSheet({
+    const reports = engine.reports;
+    const bs = (await reports.balanceSheet({
       dateOption: 'year',
       dateValue: 2025,
-    }) as any;
+    })) as any;
 
     // Balance sheet has assets, liabilities, equity as top-level categories
     expect(bs.assets).toBeDefined();
@@ -951,7 +1073,7 @@ describe('Cross-Feature Integration', () => {
   });
 
   it('income statement net income is consistent', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
     const is = await reports.incomeStatement({
       dateOption: 'year',
       dateValue: 2025,
@@ -967,11 +1089,7 @@ describe('Cross-Feature Integration', () => {
   });
 
   it('all reports generate without errors', async () => {
-    const reports = engine.createReports({
-      Account: AccountModel,
-      JournalEntry: JEModel,
-      Budget: BudgetModel,
-    });
+    const reports = engine.reports;
 
     // All these should resolve without throwing
     const [tb, bs, incStmt, bva] = await Promise.all([
@@ -991,7 +1109,7 @@ describe('Cross-Feature Integration', () => {
   });
 
   it('dimension breakdown grand total matches expense accounts in trial balance', async () => {
-    const reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+    const reports = engine.reports;
 
     const [dimReport, tb] = await Promise.all([
       reports.dimensionBreakdown({
@@ -1006,7 +1124,7 @@ describe('Cross-Feature Integration', () => {
     // Sum expense account balances from trial balance
     const expenseAccountCodes = ['6000', '6100', '6200', '6300'];
     const tbExpenseTotal = tb.rows
-      .filter(r => expenseAccountCodes.includes((r.account as any).accountNumber))
+      .filter((r) => expenseAccountCodes.includes((r.account as any).accountNumber))
       .reduce((s, r) => s + (r.ending.debit - r.ending.credit), 0);
 
     // Dimension breakdown only captures items WITH a departmentId dimension.

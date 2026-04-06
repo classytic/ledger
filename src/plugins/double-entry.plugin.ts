@@ -30,19 +30,30 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
     data: Record<string, unknown>,
   ): void {
     // Each line must be debit OR credit (not both), and cannot be zero-value
+    const lineErrors: Array<{ path: string; issue: string; value?: unknown }> = [];
     for (let i = 0; i < items.length; i++) {
       const d = items[i].debit ?? 0;
       const c = items[i].credit ?? 0;
       if (d > 0 && c > 0) {
-        throw Errors.validation(
-          `Invalid journal item at index ${i}: a line cannot have both debit (${d}) and credit (${c}) greater than zero.`,
-        );
+        lineErrors.push({
+          path: `journalItems.${i}`,
+          issue: 'line cannot have both debit and credit greater than zero',
+          value: { debit: d, credit: c },
+        });
       }
       if (d === 0 && c === 0) {
-        throw Errors.validation(
-          `Invalid journal item at index ${i}: a line cannot have both debit and credit equal to zero.`,
-        );
+        lineErrors.push({
+          path: `journalItems.${i}`,
+          issue: 'line cannot have both debit and credit equal to zero',
+          value: { debit: 0, credit: 0 },
+        });
       }
+    }
+    if (lineErrors.length > 0) {
+      throw Errors.validation(
+        `Invalid journal line(s): ${lineErrors.map((e) => `${e.path} — ${e.issue}`).join('; ')}`,
+        lineErrors,
+      );
     }
 
     const totalDebit = items.reduce((s, i) => s + (i.debit ?? 0), 0);
@@ -53,6 +64,13 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
       throw Errors.validation(
         `Double-entry violation: debits (${totalDebit}) ≠ credits (${totalCredit}). ` +
           `Difference: ${Math.abs(totalDebit - totalCredit)}`,
+        [
+          {
+            path: 'journalItems',
+            issue: 'debits must equal credits',
+            value: { totalDebit, totalCredit, difference: totalDebit - totalCredit },
+          },
+        ],
       );
     }
 
@@ -104,12 +122,21 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         data: Record<string, unknown>,
         context: RepositoryContext,
       ) => {
-        const accountIds = items.map((i) => i.account).filter((a) => a != null && a !== '');
-
-        if (accountIds.length === 0) {
-          throw Errors.validation('Posted entry has items with missing accounts.');
+        const missingIdxs: number[] = [];
+        items.forEach((item, idx) => {
+          if (item.account == null || item.account === '') missingIdxs.push(idx);
+        });
+        if (missingIdxs.length > 0) {
+          throw Errors.validation(
+            `Posted entry has items with missing accounts at index(es): ${missingIdxs.join(', ')}.`,
+            missingIdxs.map((i) => ({
+              path: `journalItems.${i}.account`,
+              issue: 'account is required on posted entries',
+            })),
+          );
         }
 
+        const accountIds = items.map((i) => i.account);
         const selectFields = orgField ? `_id ${orgField}` : '_id';
         const accounts = (await AccountModel?.find({ _id: { $in: accountIds } })
           .select(selectFields)
@@ -118,18 +145,45 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
 
         // Check all accounts exist
         const foundIds = new Set(accounts.map((a) => String(a._id)));
-        const missingCount = accountIds.filter((id) => !foundIds.has(String(id))).length;
-        if (missingCount > 0) {
-          throw Errors.validation(`${missingCount} item(s) reference non-existent accounts.`);
+        const missingFieldErrors: Array<{ path: string; issue: string; value?: unknown }> = [];
+        items.forEach((item, idx) => {
+          if (!foundIds.has(String(item.account))) {
+            missingFieldErrors.push({
+              path: `journalItems.${idx}.account`,
+              issue: 'account does not exist',
+              value: item.account,
+            });
+          }
+        });
+        if (missingFieldErrors.length > 0) {
+          throw Errors.validation(
+            `${missingFieldErrors.length} item(s) reference non-existent accounts.`,
+            missingFieldErrors,
+          );
         }
 
         // Check tenant scoping
         if (orgField && data[orgField] != null) {
           const dataOrg = String(data[orgField]);
-          const crossTenant = accounts.filter((a) => String(a[orgField]) !== dataOrg);
-          if (crossTenant.length > 0) {
+          const accountOrgById = new Map(
+            accounts.map((a) => [String(a._id), String(a[orgField])] as const),
+          );
+          const crossTenantFieldErrors: Array<{ path: string; issue: string; value?: unknown }> =
+            [];
+          items.forEach((item, idx) => {
+            const acctOrg = accountOrgById.get(String(item.account));
+            if (acctOrg !== undefined && acctOrg !== dataOrg) {
+              crossTenantFieldErrors.push({
+                path: `journalItems.${idx}.account`,
+                issue: 'account belongs to another organization',
+                value: { account: item.account, expectedOrg: dataOrg, actualOrg: acctOrg },
+              });
+            }
+          });
+          if (crossTenantFieldErrors.length > 0) {
             throw Errors.validation(
-              `${crossTenant.length} item(s) reference accounts from another organization.`,
+              `${crossTenantFieldErrors.length} item(s) reference accounts from another organization.`,
+              crossTenantFieldErrors,
             );
           }
         }

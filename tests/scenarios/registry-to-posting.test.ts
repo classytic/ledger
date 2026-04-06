@@ -8,16 +8,18 @@
  * This is THE test that proves the PR's feature works in production.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountingEngine } from '../../src/engine.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  registerJournalType, getJournalTypeCodes,
-  isValidJournalType, _resetCustomJournalTypes,
+  _resetCustomJournalTypes,
+  getJournalTypeCodes,
+  isValidJournalType,
+  registerJournalType,
 } from '../../src/constants/journals.js';
-import { testPack } from '../helpers/scenario-setup.js';
+import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { testPack } from '../helpers/scenario-setup.js';
 
 let mongod: MongoMemoryServer;
 let JE: mongoose.Model<any>;
@@ -44,22 +46,30 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
+  for (const n of ['RegPost_Acct', 'RegPost_JE', 'RegPost_FP', 'RegPost_B', 'RegPost_R']) {
+    if (mongoose.connection.models[n]) delete mongoose.connection.models[n];
+  }
+
   const config: AccountingEngineConfig = {
+    mongoose: mongoose.connection,
     country: testPack,
     currency: 'USD',
     retainedEarningsAccountCode: '3600',
     retainedEarningsDisplayCode: '3660',
     currentYearEarningsCode: '3680',
+    modelNames: {
+      account: 'RegPost_Acct',
+      journalEntry: 'RegPost_JE',
+      fiscalPeriod: 'RegPost_FP',
+      budget: 'RegPost_B',
+      reconciliation: 'RegPost_R',
+    },
   };
 
   const engine = createAccountingEngine(config);
 
-  for (const n of ['Reg_Acct', 'Reg_JE']) {
-    if (mongoose.models[n]) delete mongoose.models[n];
-  }
-
-  Account = mongoose.model('Reg_Acct', engine.createAccountSchema());
-  JE = mongoose.model('Reg_JE', engine.createJournalEntrySchema('Reg_Acct'));
+  Account = engine.models.Account;
+  JE = engine.models.JournalEntry;
 
   await Account.createIndexes();
   await JE.createIndexes();
@@ -162,7 +172,7 @@ describe('2. Schema Validation', () => {
     });
     const err = doc.validateSync();
     expect(err).toBeDefined();
-    expect(err!.errors?.journalType).toBeDefined();
+    expect(err?.errors?.journalType).toBeDefined();
   });
 });
 

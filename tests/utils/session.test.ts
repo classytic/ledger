@@ -6,11 +6,11 @@
  * to verify graceful fallback behavior.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { acquireSession, finalizeSession } from '../../src/utils/session.js';
 import type { ClientSession } from 'mongoose';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { acquireSession, finalizeSession } from '../../src/utils/session.js';
 
 let mongod: MongoMemoryServer;
 
@@ -68,9 +68,15 @@ describe('finalizeSession', () => {
   it('no-ops when ownSession is false (external session)', async () => {
     const mockSession = {
       inTransaction: () => true,
-      commitTransaction: () => { throw new Error('should not commit'); },
-      abortTransaction: () => { throw new Error('should not abort'); },
-      endSession: () => { throw new Error('should not end'); },
+      commitTransaction: () => {
+        throw new Error('should not commit');
+      },
+      abortTransaction: () => {
+        throw new Error('should not abort');
+      },
+      endSession: () => {
+        throw new Error('should not end');
+      },
     } as unknown as ClientSession;
 
     // Should not commit/abort/end an external session
@@ -83,8 +89,12 @@ describe('finalizeSession', () => {
     let ended = false;
     const mockSession = {
       inTransaction: () => true,
-      commitTransaction: async () => { committed = true; },
-      endSession: () => { ended = true; },
+      commitTransaction: async () => {
+        committed = true;
+      },
+      endSession: () => {
+        ended = true;
+      },
     } as unknown as ClientSession;
 
     await finalizeSession(mockSession, true, true);
@@ -97,8 +107,12 @@ describe('finalizeSession', () => {
     let ended = false;
     const mockSession = {
       inTransaction: () => true,
-      abortTransaction: async () => { aborted = true; },
-      endSession: () => { ended = true; },
+      abortTransaction: async () => {
+        aborted = true;
+      },
+      endSession: () => {
+        ended = true;
+      },
     } as unknown as ClientSession;
 
     await finalizeSession(mockSession, true, false);
@@ -110,8 +124,12 @@ describe('finalizeSession', () => {
     let ended = false;
     const mockSession = {
       inTransaction: () => true,
-      abortTransaction: async () => { throw new Error('abort failed'); },
-      endSession: () => { ended = true; },
+      abortTransaction: async () => {
+        throw new Error('abort failed');
+      },
+      endSession: () => {
+        ended = true;
+      },
     } as unknown as ClientSession;
 
     await finalizeSession(mockSession, true, false);
@@ -122,9 +140,15 @@ describe('finalizeSession', () => {
     let ended = false;
     const mockSession = {
       inTransaction: () => false,
-      commitTransaction: async () => { throw new Error('should not commit'); },
-      abortTransaction: async () => { throw new Error('should not abort'); },
-      endSession: () => { ended = true; },
+      commitTransaction: async () => {
+        throw new Error('should not commit');
+      },
+      abortTransaction: async () => {
+        throw new Error('should not abort');
+      },
+      endSession: () => {
+        ended = true;
+      },
     } as unknown as ClientSession;
 
     await finalizeSession(mockSession, true, true);

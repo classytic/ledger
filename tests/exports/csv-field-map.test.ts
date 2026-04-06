@@ -1,9 +1,14 @@
-import { describe, it, expect } from 'vitest';
-import { escapeCell, serializeCsv, buildCsv } from '../../src/exports/csv-serializer.js';
-import { getHeaders, extractRow, extractAllRows, exportToCsv } from '../../src/exports/field-map.js';
+import { describe, expect, it } from 'vitest';
+import { buildCsv, escapeCell, serializeCsv } from '../../src/exports/csv-serializer.js';
+import {
+  exportToCsv,
+  extractAllRows,
+  extractRow,
+  getHeaders,
+} from '../../src/exports/field-map.js';
 import { quickbooksFieldMap } from '../../src/exports/field-maps/quickbooks.js';
 import { universalFieldMap } from '../../src/exports/field-maps/universal.js';
-import type { FlatJournalRow, ExportFieldMap } from '../../src/exports/types.js';
+import type { ExportFieldMap, FlatJournalRow } from '../../src/exports/types.js';
 
 // ── CSV Serializer Edge Cases ─────────────────────────────────────────────
 
@@ -43,7 +48,10 @@ describe('serializeCsv (edge cases)', () => {
   });
 
   it('serializes multiple rows with CRLF', () => {
-    const csv = serializeCsv([['a', 'b'], ['c', 'd']]);
+    const csv = serializeCsv([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
     expect(csv).toBe('a,b\r\nc,d');
   });
 
@@ -114,7 +122,10 @@ describe('extractAllRows', () => {
       { name: 'Alice', age: 30 },
       { name: 'Bob', age: 25 },
     ]);
-    expect(rows).toEqual([['Alice', '30'], ['Bob', '25']]);
+    expect(rows).toEqual([
+      ['Alice', '30'],
+      ['Bob', '25'],
+    ]);
   });
 
   it('handles empty array', () => {
@@ -182,13 +193,13 @@ describe('quickbooksFieldMap', () => {
   it('shows debit amount and blank credit for debit line', () => {
     const row = extractRow(quickbooksFieldMap, sampleRow);
     expect(row[6]).toBe('100.00'); // debit
-    expect(row[7]).toBe('');       // credit (zero → blank)
+    expect(row[7]).toBe(''); // credit (zero → blank)
   });
 
   it('shows blank debit and credit amount for credit line', () => {
     const creditRow = { ...sampleRow, debit: 0, credit: 10000 };
     const row = extractRow(quickbooksFieldMap, creditRow);
-    expect(row[6]).toBe('');       // debit (zero → blank)
+    expect(row[6]).toBe(''); // debit (zero → blank)
     expect(row[7]).toBe('100.00'); // credit
   });
 
@@ -257,7 +268,7 @@ describe('universalFieldMap', () => {
   it('converts cents to dollar strings', () => {
     const row = extractRow(universalFieldMap, sampleRow);
     expect(row[10]).toBe('100.00'); // debit
-    expect(row[11]).toBe('0.00');   // credit
+    expect(row[11]).toBe('0.00'); // credit
   });
 
   it('shows line number (1-indexed)', () => {

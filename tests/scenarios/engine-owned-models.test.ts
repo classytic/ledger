@@ -9,20 +9,68 @@
  * that use framework auto-discovery.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountingEngine } from '../../src/engine.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
+import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
 
 const accountTypes: readonly AccountType[] = [
-  { code: '1001', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '2001', name: 'AP', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '3100', name: 'Capital', category: 'Balance Sheet-Equity', description: 'Capital', parentCode: null, isTotal: false, cashFlowCategory: 'Financing' },
-  { code: '3600', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
-  { code: '4010', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-  { code: '6010', name: 'Rent', category: 'Income Statement-Expense', description: 'Rent', parentCode: null, isTotal: false, cashFlowCategory: null },
+  {
+    code: '1001',
+    name: 'Cash',
+    category: 'Balance Sheet-Asset',
+    description: 'Cash',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '2001',
+    name: 'AP',
+    category: 'Balance Sheet-Liability',
+    description: 'AP',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '3100',
+    name: 'Capital',
+    category: 'Balance Sheet-Equity',
+    description: 'Capital',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: 'Financing',
+  },
+  {
+    code: '3600',
+    name: 'Retained Earnings',
+    category: 'Balance Sheet-Equity',
+    description: 'RE',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '4010',
+    name: 'Revenue',
+    category: 'Income Statement-Income',
+    description: 'Revenue',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6010',
+    name: 'Rent',
+    category: 'Income Statement-Expense',
+    description: 'Rent',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 ];
 
 const testPack = defineCountryPack({
@@ -103,13 +151,11 @@ describe('1. Engine ownership — models', () => {
     expect(engine.models.JournalEntry.modelName).toBe('EOM_JE_2');
   });
 
-  it('engine.models throws when mongoose is not provided', () => {
-    const engine = createAccountingEngine({
-      country: testPack,
-      currency: 'USD',
-    });
-
-    expect(() => engine.models).toThrow('requires a Mongoose connection');
+  it('createAccountingEngine throws when mongoose is not provided', () => {
+    // @ts-expect-error — intentionally omit required field
+    expect(() => createAccountingEngine({ country: testPack, currency: 'USD' })).toThrow(
+      'mongoose` connection is required',
+    );
   });
 
   it('reusing model names on same connection returns existing models (idempotent)', () => {
@@ -261,13 +307,11 @@ describe('3. Engine ownership — reports', () => {
     expect(totalD).toBe(totalC);
   });
 
-  it('engine.reports throws when mongoose is not provided', () => {
-    const engine = createAccountingEngine({
-      country: testPack,
-      currency: 'USD',
-    });
-
-    expect(() => engine.reports).toThrow('requires a Mongoose connection');
+  it('createAccountingEngine throws when mongoose is not provided (reports dep)', () => {
+    // @ts-expect-error — intentionally omit required field
+    expect(() => createAccountingEngine({ country: testPack, currency: 'USD' })).toThrow(
+      'mongoose` connection is required',
+    );
   });
 });
 

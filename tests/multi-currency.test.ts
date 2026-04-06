@@ -5,26 +5,62 @@
  * to Account and JournalEntry schemas when enabled, and absent when not.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { defineCountryPack } from '../src/country/index.js';
+import { createAccountingEngine } from '../src/engine.js';
 import { createAccountSchema } from '../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../src/schemas/journal-entry.schema.js';
-import { defineCountryPack } from '../src/country/index.js';
 import type { AccountingEngineConfig } from '../src/types/engine.js';
-import { createAccountingEngine } from '../src/engine.js';
 
 // ── Minimal country pack ────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'MC', name: 'Multi-Currency Test', defaultCurrency: 'CAD',
+  code: 'MC',
+  name: 'Multi-Currency Test',
+  defaultCurrency: 'CAD',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2000', name: 'Payables', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Expenses', category: 'Income Statement-Expense', description: 'Expenses', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2000',
+      name: 'Payables',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '4000',
+      name: 'Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Expenses',
+      category: 'Income Statement-Expense',
+      description: 'Expenses',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 // ── Configs ─────────────────────────────────────────────────────────────────
@@ -108,7 +144,7 @@ describe('Schema creation WITH multiCurrency enabled', () => {
     const schema = createAccountSchema(multiCurrencyConfig);
     const currencyPath = schema.path('currency');
     expect(currencyPath).toBeDefined();
-    expect(currencyPath!.instance).toBe('String');
+    expect(currencyPath?.instance).toBe('String');
   });
 
   it('JournalEntry items HAVE currency, exchangeRate, originalDebit, originalCredit', () => {
@@ -124,13 +160,13 @@ describe('Schema creation WITH multiCurrency enabled', () => {
     const schema = createJournalEntrySchema(multiCurrencyConfig, 'MCAcctExRate');
     const erPath = schema.path('journalItems.exchangeRate');
     expect(erPath).toBeDefined();
-    expect(erPath!.instance).toBe('Number');
+    expect(erPath?.instance).toBe('Number');
   });
 
   it('originalDebit and originalCredit are of type Number', () => {
     const schema = createJournalEntrySchema(multiCurrencyConfig, 'MCAcctOrigAmts');
-    expect(schema.path('journalItems.originalDebit')!.instance).toBe('Number');
-    expect(schema.path('journalItems.originalCredit')!.instance).toBe('Number');
+    expect(schema.path('journalItems.originalDebit')?.instance).toBe('Number');
+    expect(schema.path('journalItems.originalCredit')?.instance).toBe('Number');
   });
 });
 
@@ -143,11 +179,14 @@ describe('exchangeRate validation', () => {
   let JEModel: mongoose.Model<any>;
 
   beforeAll(() => {
-    if (mongoose.models['MCExRateAcct']) delete mongoose.models['MCExRateAcct'];
+    if (mongoose.models.MCExRateAcct) delete mongoose.models.MCExRateAcct;
     AccountModel = mongoose.model('MCExRateAcct', createAccountSchema(multiCurrencyConfig));
 
-    if (mongoose.models['MCExRateJE']) delete mongoose.models['MCExRateJE'];
-    JEModel = mongoose.model('MCExRateJE', createJournalEntrySchema(multiCurrencyConfig, 'MCExRateAcct'));
+    if (mongoose.models.MCExRateJE) delete mongoose.models.MCExRateJE;
+    JEModel = mongoose.model(
+      'MCExRateJE',
+      createJournalEntrySchema(multiCurrencyConfig, 'MCExRateAcct'),
+    );
   });
 
   it('allows null exchangeRate', async () => {
@@ -155,12 +194,29 @@ describe('exchangeRate validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
-        { account: acc1._id, debit: 10000, credit: 0, exchangeRate: null, originalDebit: 10000, originalCredit: 0 },
-        { account: acc2._id, debit: 0, credit: 10000, exchangeRate: null, originalDebit: 0, originalCredit: 10000 },
+        {
+          account: acc1._id,
+          debit: 10000,
+          credit: 0,
+          exchangeRate: null,
+          originalDebit: 10000,
+          originalCredit: 0,
+        },
+        {
+          account: acc2._id,
+          debit: 0,
+          credit: 10000,
+          exchangeRate: null,
+          originalDebit: 0,
+          originalCredit: 10000,
+        },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).resolves.toBeUndefined();
   });
@@ -170,12 +226,29 @@ describe('exchangeRate validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
-        { account: acc1._id, debit: 10000, credit: 0, exchangeRate: 1.35, originalDebit: 7407, originalCredit: 0 },
-        { account: acc2._id, debit: 0, credit: 10000, exchangeRate: 1.35, originalDebit: 0, originalCredit: 7407 },
+        {
+          account: acc1._id,
+          debit: 10000,
+          credit: 0,
+          exchangeRate: 1.35,
+          originalDebit: 7407,
+          originalCredit: 0,
+        },
+        {
+          account: acc2._id,
+          debit: 0,
+          credit: 10000,
+          exchangeRate: 1.35,
+          originalDebit: 0,
+          originalCredit: 7407,
+        },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).resolves.toBeUndefined();
   });
@@ -185,12 +258,15 @@ describe('exchangeRate validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0, exchangeRate: 0 },
         { account: acc2._id, debit: 0, credit: 10000, exchangeRate: 1.0 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).rejects.toThrow(/exchangeRate must be greater than zero/);
   });
@@ -200,12 +276,15 @@ describe('exchangeRate validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0, exchangeRate: -1.5 },
         { account: acc2._id, debit: 0, credit: 10000, exchangeRate: 1.0 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).rejects.toThrow(/exchangeRate must be greater than zero/);
   });
@@ -220,11 +299,14 @@ describe('originalDebit / originalCredit validation', () => {
   let JEModel: mongoose.Model<any>;
 
   beforeAll(() => {
-    if (mongoose.models['MCOrigAcct']) delete mongoose.models['MCOrigAcct'];
+    if (mongoose.models.MCOrigAcct) delete mongoose.models.MCOrigAcct;
     AccountModel = mongoose.model('MCOrigAcct', createAccountSchema(multiCurrencyConfig));
 
-    if (mongoose.models['MCOrigJE']) delete mongoose.models['MCOrigJE'];
-    JEModel = mongoose.model('MCOrigJE', createJournalEntrySchema(multiCurrencyConfig, 'MCOrigAcct'));
+    if (mongoose.models.MCOrigJE) delete mongoose.models.MCOrigJE;
+    JEModel = mongoose.model(
+      'MCOrigJE',
+      createJournalEntrySchema(multiCurrencyConfig, 'MCOrigAcct'),
+    );
   });
 
   it('allows non-negative integer originalDebit', async () => {
@@ -232,12 +314,15 @@ describe('originalDebit / originalCredit validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0, originalDebit: 7500, originalCredit: 0 },
         { account: acc2._id, debit: 0, credit: 10000, originalDebit: 0, originalCredit: 7500 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).resolves.toBeUndefined();
   });
@@ -247,12 +332,15 @@ describe('originalDebit / originalCredit validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0, originalDebit: 75.5, originalCredit: 0 },
         { account: acc2._id, debit: 0, credit: 10000 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).rejects.toThrow(/must be a non-negative integer/);
   });
@@ -262,12 +350,15 @@ describe('originalDebit / originalCredit validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0 },
         { account: acc2._id, debit: 0, credit: 10000, originalDebit: 0, originalCredit: -100 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).rejects.toThrow();
   });
@@ -277,12 +368,15 @@ describe('originalDebit / originalCredit validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0, originalDebit: 0, originalCredit: 0 },
         { account: acc2._id, debit: 0, credit: 10000, originalDebit: 0, originalCredit: 0 },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).resolves.toBeUndefined();
   });
@@ -297,11 +391,14 @@ describe('currency enum validation', () => {
   let JEModel: mongoose.Model<any>;
 
   beforeAll(() => {
-    if (mongoose.models['MCEnumAcct']) delete mongoose.models['MCEnumAcct'];
+    if (mongoose.models.MCEnumAcct) delete mongoose.models.MCEnumAcct;
     AccountModel = mongoose.model('MCEnumAcct', createAccountSchema(multiCurrencyConfig));
 
-    if (mongoose.models['MCEnumJE']) delete mongoose.models['MCEnumJE'];
-    JEModel = mongoose.model('MCEnumJE', createJournalEntrySchema(multiCurrencyConfig, 'MCEnumAcct'));
+    if (mongoose.models.MCEnumJE) delete mongoose.models.MCEnumJE;
+    JEModel = mongoose.model(
+      'MCEnumJE',
+      createJournalEntrySchema(multiCurrencyConfig, 'MCEnumAcct'),
+    );
   });
 
   it('accepts base currency (CAD)', async () => {
@@ -344,12 +441,15 @@ describe('currency enum validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0, currency: 'EUR' },
         { account: acc2._id, debit: 0, credit: 10000, currency: 'EUR' },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).rejects.toThrow();
   });
@@ -359,12 +459,29 @@ describe('currency enum validation', () => {
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
-        { account: acc1._id, debit: 10000, credit: 0, currency: 'USD', originalDebit: 7500, originalCredit: 0 },
-        { account: acc2._id, debit: 0, credit: 10000, currency: 'USD', originalDebit: 0, originalCredit: 7500 },
+        {
+          account: acc1._id,
+          debit: 10000,
+          credit: 0,
+          currency: 'USD',
+          originalDebit: 7500,
+          originalCredit: 0,
+        },
+        {
+          account: acc2._id,
+          debit: 0,
+          credit: 10000,
+          currency: 'USD',
+          originalDebit: 0,
+          originalCredit: 7500,
+        },
       ],
-      totalDebit: 10000, totalCredit: 10000,
+      totalDebit: 10000,
+      totalCredit: 10000,
     });
     await expect(entry.validate()).resolves.toBeUndefined();
   });
@@ -392,7 +509,7 @@ describe('currency field on Account', () => {
   });
 
   it('accepts any currency when currencies list is omitted', async () => {
-    if (mongoose.models['MCNoListAcct']) delete mongoose.models['MCNoListAcct'];
+    if (mongoose.models.MCNoListAcct) delete mongoose.models.MCNoListAcct;
     const Model = mongoose.model('MCNoListAcct', createAccountSchema(multiCurrencyNoListConfig));
 
     // With no enum restriction, any string should pass
@@ -407,7 +524,26 @@ describe('currency field on Account', () => {
 
 describe('Backward compatibility — engine without multiCurrency', () => {
   it('createAccountingEngine works without multiCurrency config', () => {
-    const engine = createAccountingEngine({ country: testPack, currency: 'CAD' });
+    if (mongoose.connection.models.MCBackCompat_Acct)
+      delete mongoose.connection.models.MCBackCompat_Acct;
+    if (mongoose.connection.models.MCBackCompat_JE)
+      delete mongoose.connection.models.MCBackCompat_JE;
+    if (mongoose.connection.models.MCBackCompat_FP)
+      delete mongoose.connection.models.MCBackCompat_FP;
+    if (mongoose.connection.models.MCBackCompat_B) delete mongoose.connection.models.MCBackCompat_B;
+    if (mongoose.connection.models.MCBackCompat_R) delete mongoose.connection.models.MCBackCompat_R;
+    const engine = createAccountingEngine({
+      mongoose: mongoose.connection,
+      country: testPack,
+      currency: 'CAD',
+      modelNames: {
+        account: 'MCBackCompat_Acct',
+        journalEntry: 'MCBackCompat_JE',
+        fiscalPeriod: 'MCBackCompat_FP',
+        budget: 'MCBackCompat_B',
+        reconciliation: 'MCBackCompat_R',
+      },
+    });
     expect(engine).toBeDefined();
     expect(engine.currency).toBe('CAD');
     expect(engine.country).toBe(testPack);
@@ -416,10 +552,10 @@ describe('Backward compatibility — engine without multiCurrency', () => {
   it('schemas created without multiCurrency function identically to before', async () => {
     const config: AccountingEngineConfig = { country: testPack, currency: 'CAD' };
 
-    if (mongoose.models['MCBackAcct']) delete mongoose.models['MCBackAcct'];
+    if (mongoose.models.MCBackAcct) delete mongoose.models.MCBackAcct;
     const AccountModel = mongoose.model('MCBackAcct', createAccountSchema(config));
 
-    if (mongoose.models['MCBackJE']) delete mongoose.models['MCBackJE'];
+    if (mongoose.models.MCBackJE) delete mongoose.models.MCBackJE;
     const JEModel = mongoose.model('MCBackJE', createJournalEntrySchema(config, 'MCBackAcct'));
 
     // Account creation works
@@ -429,12 +565,15 @@ describe('Backward compatibility — engine without multiCurrency', () => {
 
     // Journal entry creation works
     const entry = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 5000, credit: 0 },
         { account: acc2._id, debit: 0, credit: 5000 },
       ],
-      totalDebit: 5000, totalCredit: 5000,
+      totalDebit: 5000,
+      totalCredit: 5000,
     });
     await expect(entry.validate()).resolves.toBeUndefined();
 
@@ -448,23 +587,29 @@ describe('Backward compatibility — engine without multiCurrency', () => {
   it('double-entry validation still works without multiCurrency', async () => {
     const config: AccountingEngineConfig = { country: testPack, currency: 'CAD' };
 
-    if (mongoose.models['MCBackDE_Acct']) delete mongoose.models['MCBackDE_Acct'];
+    if (mongoose.models.MCBackDE_Acct) delete mongoose.models.MCBackDE_Acct;
     const AccountModel = mongoose.model('MCBackDE_Acct', createAccountSchema(config));
 
-    if (mongoose.models['MCBackDE_JE']) delete mongoose.models['MCBackDE_JE'];
-    const JEModel = mongoose.model('MCBackDE_JE', createJournalEntrySchema(config, 'MCBackDE_Acct'));
+    if (mongoose.models.MCBackDE_JE) delete mongoose.models.MCBackDE_JE;
+    const JEModel = mongoose.model(
+      'MCBackDE_JE',
+      createJournalEntrySchema(config, 'MCBackDE_Acct'),
+    );
 
     const acc1 = await AccountModel.create({ accountTypeCode: '1000' });
     const acc2 = await AccountModel.create({ accountTypeCode: '4000' });
 
     // Unbalanced posted entry should fail
     const unbalanced = new JEModel({
-      journalType: 'GENERAL', state: 'posted', date: new Date(),
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date(),
       journalItems: [
         { account: acc1._id, debit: 10000, credit: 0 },
         { account: acc2._id, debit: 0, credit: 5000 },
       ],
-      totalDebit: 10000, totalCredit: 5000,
+      totalDebit: 10000,
+      totalCredit: 5000,
     });
     await expect(unbalanced.validate()).rejects.toThrow('Total debit must equal total credit');
   });

@@ -1,9 +1,13 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
-  JOURNAL_TYPES, JOURNAL_CODES,
-  getJournalTypeCodes, isValidJournalType, getJournalType,
-  registerJournalType, getCustomJournalTypes,
   _resetCustomJournalTypes,
+  getCustomJournalTypes,
+  getJournalType,
+  getJournalTypeCodes,
+  isValidJournalType,
+  JOURNAL_CODES,
+  JOURNAL_TYPES,
+  registerJournalType,
 } from '../../src/constants/journals.js';
 
 describe('Journals', () => {
@@ -66,8 +70,8 @@ describe('Journals', () => {
     it('returns journal type for valid code', () => {
       const jt = getJournalType('SALES');
       expect(jt).toBeDefined();
-      expect(jt!.code).toBe('SALES');
-      expect(jt!.name).toBe('Sales Journal');
+      expect(jt?.code).toBe('SALES');
+      expect(jt?.name).toBe('Sales Journal');
     });
 
     it('returns null for invalid code', () => {
@@ -112,8 +116,8 @@ describe('Journals', () => {
       });
       const jt = getJournalType('POS_SALES');
       expect(jt).toBeDefined();
-      expect(jt!.code).toBe('POS_SALES');
-      expect(jt!.name).toBe('POS Sales Journal');
+      expect(jt?.code).toBe('POS_SALES');
+      expect(jt?.name).toBe('POS Sales Journal');
     });
 
     it('returns custom types via getCustomJournalTypes', () => {
@@ -129,8 +133,8 @@ describe('Journals', () => {
       });
       const custom = getCustomJournalTypes();
       expect(custom).toHaveLength(2);
-      expect(custom.map(t => t.code)).toContain('POS_SALES');
-      expect(custom.map(t => t.code)).toContain('ECOM_SALES');
+      expect(custom.map((t) => t.code)).toContain('POS_SALES');
+      expect(custom.map((t) => t.code)).toContain('ECOM_SALES');
     });
 
     it('does not mutate built-in JOURNAL_TYPES', () => {

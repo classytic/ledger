@@ -1,18 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  escapeCell,
-  serializeCsv,
   buildCsv,
-  getHeaders,
-  extractRow,
-  extractAllRows,
+  escapeCell,
   exportToCsv,
-  flattenJournalEntry,
+  extractAllRows,
+  extractRow,
   flattenJournalEntries,
+  flattenJournalEntry,
+  getHeaders,
   quickbooksFieldMap,
+  serializeCsv,
   universalFieldMap,
 } from '../../src/exports/index.js';
-import type { PopulatedJournalEntry, FlatJournalRow } from '../../src/exports/types.js';
+import type { FlatJournalRow, PopulatedJournalEntry } from '../../src/exports/types.js';
 
 // ── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -102,7 +102,10 @@ describe('CSV Serializer', () => {
 
   describe('serializeCsv', () => {
     it('serializes a simple 2D array to CSV', () => {
-      const rows = [['a', 'b'], ['c', 'd']];
+      const rows = [
+        ['a', 'b'],
+        ['c', 'd'],
+      ];
       expect(serializeCsv(rows)).toBe('a,b\r\nc,d');
     });
 
@@ -176,9 +179,7 @@ describe('flattenJournalEntry', () => {
 
   it('handles unpopulated (string) account references', () => {
     const entry = makeEntry({
-      journalItems: [
-        { account: 'raw-id-123', debit: 1000, credit: 0 },
-      ],
+      journalItems: [{ account: 'raw-id-123', debit: 1000, credit: 0 }],
     });
     const rows = flattenJournalEntry(entry);
     expect(rows[0].accountId).toBe('raw-id-123');
@@ -187,9 +188,7 @@ describe('flattenJournalEntry', () => {
 
   it('handles missing account', () => {
     const entry = makeEntry({
-      journalItems: [
-        { account: null as any, debit: 1000, credit: 0 },
-      ],
+      journalItems: [{ account: null as any, debit: 1000, credit: 0 }],
     });
     const rows = flattenJournalEntry(entry);
     expect(rows[0].accountId).toBe('');
@@ -208,7 +207,8 @@ describe('flattenJournalEntry', () => {
       journalItems: [
         {
           account: { _id: 'a', accountTypeCode: '1000', name: 'Cash' },
-          debit: 1000, credit: 0,
+          debit: 1000,
+          credit: 0,
         },
       ],
     });
@@ -259,10 +259,7 @@ describe('flattenJournalEntries', () => {
   });
 
   it('maintains entry order', () => {
-    const entries = [
-      makeEntry({ _id: 'first' }),
-      makeEntry({ _id: 'second' }),
-    ];
+    const entries = [makeEntry({ _id: 'first' }), makeEntry({ _id: 'second' })];
     const rows = flattenJournalEntries(entries);
     expect(rows[0].entryId).toBe('first');
     expect(rows[2].entryId).toBe('second');
@@ -279,8 +276,15 @@ describe('Field Map Application', () => {
   it('returns headers from quickbooks field map', () => {
     const headers = getHeaders(quickbooksFieldMap);
     expect(headers).toEqual([
-      'Date', 'Transaction Type', 'Num', 'Name',
-      'Memo/Description', 'Account', 'Debit', 'Credit', 'Class',
+      'Date',
+      'Transaction Type',
+      'Num',
+      'Name',
+      'Memo/Description',
+      'Account',
+      'Debit',
+      'Credit',
+      'Class',
     ]);
   });
 
@@ -399,7 +403,9 @@ describe('End-to-end: entries -> CSV', () => {
     expect(lines).toHaveLength(3); // header + 2 items
 
     // Header row
-    expect(lines[0]).toBe('Date,Transaction Type,Num,Name,Memo/Description,Account,Debit,Credit,Class');
+    expect(lines[0]).toBe(
+      'Date,Transaction Type,Num,Name,Memo/Description,Account,Debit,Credit,Class',
+    );
 
     // First item: debit line
     expect(lines[1]).toContain('01/15/2025');

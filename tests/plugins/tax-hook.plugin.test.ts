@@ -1,13 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { taxHookPlugin } from '../../src/plugins/tax-hook.plugin.js';
-import type { TaxLineGenerator, TaxLineInput, GeneratedTaxLine } from '../../src/utils/tax-hooks.js';
+import type {
+  GeneratedTaxLine,
+  TaxLineGenerator,
+  TaxLineInput,
+} from '../../src/utils/tax-hooks.js';
 import { createMockRepository } from '../helpers/mock-repository.js';
 
 /** A 10% tax generator for testing */
 const tenPercentGenerator: TaxLineGenerator = {
   generateTaxLines(input: TaxLineInput): GeneratedTaxLine[] {
     if (input.taxCode === 'GST10') {
-      const taxAmount = Math.round(input.amount * 0.10);
+      const taxAmount = Math.round(input.amount * 0.1);
       return [
         {
           account: 'tax-collected',
@@ -86,7 +90,7 @@ describe('taxHookPlugin', () => {
     const balancedGenerator: TaxLineGenerator = {
       generateTaxLines(input: TaxLineInput): GeneratedTaxLine[] {
         if (input.taxCode === 'VAT20') {
-          const taxAmount = Math.round(input.amount * 0.20);
+          const taxAmount = Math.round(input.amount * 0.2);
           if (input.side === 'debit') {
             // Original was a debit — add a debit to tax account and credit to offset
             return [

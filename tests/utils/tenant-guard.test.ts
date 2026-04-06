@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { requireOrgScope, orgFilter } from '../../src/utils/tenant-guard.js';
+import { describe, expect, it } from 'vitest';
+import { orgFilter, requireOrgScope } from '../../src/utils/tenant-guard.js';
 
 describe('requireOrgScope', () => {
   it('throws when orgField set but organizationId missing', () => {

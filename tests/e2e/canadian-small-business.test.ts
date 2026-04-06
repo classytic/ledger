@@ -14,13 +14,13 @@
  *  - Report metadata and data quality checks
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountingEngine } from '../../src/engine.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
-import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
+import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Inline Canada-like Country Pack (self-contained — no ledger-ca dependency)
@@ -28,38 +28,198 @@ import type { AccountType } from '../../src/types/core.js';
 
 const MAPLE_ACCOUNT_TYPES: readonly AccountType[] = [
   // ── Asset Groups & Accounts ─────────────────────────────────────────────
-  { code: '1000', name: 'Current Assets', category: 'Balance Sheet-Asset', description: 'Current Assets Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '1001', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash and bank accounts', parentCode: '1000', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'Trade receivables', parentCode: '1000', isTotal: false, cashFlowCategory: 'Operating' },
+  {
+    code: '1000',
+    name: 'Current Assets',
+    category: 'Balance Sheet-Asset',
+    description: 'Current Assets Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '1001',
+    name: 'Cash',
+    category: 'Balance Sheet-Asset',
+    description: 'Cash and bank accounts',
+    parentCode: '1000',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '1200',
+    name: 'Accounts Receivable',
+    category: 'Balance Sheet-Asset',
+    description: 'Trade receivables',
+    parentCode: '1000',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
 
-  { code: '1400', name: 'Capital Assets', category: 'Balance Sheet-Asset', description: 'Capital Assets Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '1500', name: 'Equipment', category: 'Balance Sheet-Asset', description: 'Office and computer equipment', parentCode: '1400', isTotal: false, cashFlowCategory: 'Investing' },
+  {
+    code: '1400',
+    name: 'Capital Assets',
+    category: 'Balance Sheet-Asset',
+    description: 'Capital Assets Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '1500',
+    name: 'Equipment',
+    category: 'Balance Sheet-Asset',
+    description: 'Office and computer equipment',
+    parentCode: '1400',
+    isTotal: false,
+    cashFlowCategory: 'Investing',
+  },
 
   // ── Liability Groups & Accounts ─────────────────────────────────────────
-  { code: '2000', name: 'Current Liabilities', category: 'Balance Sheet-Liability', description: 'Current Liabilities Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '2001', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'Trade payables', parentCode: '2000', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '2300', name: 'HST Collected', category: 'Balance Sheet-Liability', description: 'HST collected on sales', parentCode: '2000', isTotal: false, cashFlowCategory: 'Operating' },
-  { code: '2400', name: 'HST Paid (ITC)', category: 'Balance Sheet-Asset', description: 'HST input tax credits recoverable', parentCode: '1000', isTotal: false, cashFlowCategory: 'Operating' },
+  {
+    code: '2000',
+    name: 'Current Liabilities',
+    category: 'Balance Sheet-Liability',
+    description: 'Current Liabilities Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '2001',
+    name: 'Accounts Payable',
+    category: 'Balance Sheet-Liability',
+    description: 'Trade payables',
+    parentCode: '2000',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '2300',
+    name: 'HST Collected',
+    category: 'Balance Sheet-Liability',
+    description: 'HST collected on sales',
+    parentCode: '2000',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
+  {
+    code: '2400',
+    name: 'HST Paid (ITC)',
+    category: 'Balance Sheet-Asset',
+    description: 'HST input tax credits recoverable',
+    parentCode: '1000',
+    isTotal: false,
+    cashFlowCategory: 'Operating',
+  },
 
   // ── Equity Groups & Accounts ────────────────────────────────────────────
-  { code: '3400', name: 'Shareholder Equity', category: 'Balance Sheet-Equity', description: 'Shareholder Equity Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '3500', name: 'Common Shares', category: 'Balance Sheet-Equity', description: 'Issued share capital', parentCode: '3400', isTotal: false, cashFlowCategory: 'Financing' },
+  {
+    code: '3400',
+    name: 'Shareholder Equity',
+    category: 'Balance Sheet-Equity',
+    description: 'Shareholder Equity Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '3500',
+    name: 'Common Shares',
+    category: 'Balance Sheet-Equity',
+    description: 'Issued share capital',
+    parentCode: '3400',
+    isTotal: false,
+    cashFlowCategory: 'Financing',
+  },
 
-  { code: '3600', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'Accumulated retained earnings', parentCode: null, isTotal: false, cashFlowCategory: null },
+  {
+    code: '3600',
+    name: 'Retained Earnings',
+    category: 'Balance Sheet-Equity',
+    description: 'Accumulated retained earnings',
+    parentCode: null,
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 
   // ── Revenue Group & Accounts ────────────────────────────────────────────
-  { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Revenue Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '4020', name: 'Consulting Revenue', category: 'Income Statement-Income', description: 'IT consulting fees', parentCode: '4000', isTotal: false, cashFlowCategory: null },
+  {
+    code: '4000',
+    name: 'Revenue',
+    category: 'Income Statement-Income',
+    description: 'Revenue Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '4020',
+    name: 'Consulting Revenue',
+    category: 'Income Statement-Income',
+    description: 'IT consulting fees',
+    parentCode: '4000',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 
   // ── COGS Group & Accounts ───────────────────────────────────────────────
-  { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'Cost of Sales Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '5020', name: 'Subcontractor Costs', category: 'Income Statement-Expense', description: 'Subcontractor and freelancer costs', parentCode: '5000', isTotal: false, cashFlowCategory: null },
+  {
+    code: '5000',
+    name: 'Cost of Sales',
+    category: 'Income Statement-Expense',
+    description: 'Cost of Sales Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '5020',
+    name: 'Subcontractor Costs',
+    category: 'Income Statement-Expense',
+    description: 'Subcontractor and freelancer costs',
+    parentCode: '5000',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 
   // ── Operating Expense Group & Accounts ──────────────────────────────────
-  { code: '6000', name: 'Operating Expenses', category: 'Income Statement-Expense', description: 'Operating Expenses Group', parentCode: null, isGroup: true, cashFlowCategory: null },
-  { code: '6010', name: 'Rent', category: 'Income Statement-Expense', description: 'Office rent', parentCode: '6000', isTotal: false, cashFlowCategory: null },
-  { code: '6100', name: 'Salaries', category: 'Income Statement-Expense', description: 'Employee salaries', parentCode: '6000', isTotal: false, cashFlowCategory: null },
-  { code: '6200', name: 'Office Supplies', category: 'Income Statement-Expense', description: 'Office supplies and stationery', parentCode: '6000', isTotal: false, cashFlowCategory: null },
+  {
+    code: '6000',
+    name: 'Operating Expenses',
+    category: 'Income Statement-Expense',
+    description: 'Operating Expenses Group',
+    parentCode: null,
+    isGroup: true,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6010',
+    name: 'Rent',
+    category: 'Income Statement-Expense',
+    description: 'Office rent',
+    parentCode: '6000',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6100',
+    name: 'Salaries',
+    category: 'Income Statement-Expense',
+    description: 'Employee salaries',
+    parentCode: '6000',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
+  {
+    code: '6200',
+    name: 'Office Supplies',
+    category: 'Income Statement-Expense',
+    description: 'Office supplies and stationery',
+    parentCode: '6000',
+    isTotal: false,
+    cashFlowCategory: null,
+  },
 ];
 
 const maplePack = defineCountryPack({
@@ -76,7 +236,7 @@ const maplePack = defineCountryPack({
   cogsGroupCode: 'Cost of Sales',
 });
 
-const config: AccountingEngineConfig = {
+const baseConfig: Omit<AccountingEngineConfig, 'mongoose' | 'modelNames'> = {
   country: maplePack,
   currency: 'CAD',
   retainedEarningsAccountCode: '3600',
@@ -92,7 +252,7 @@ let mongod: MongoMemoryServer;
 let AccountModel: mongoose.Model<any>;
 let JEModel: mongoose.Model<any>;
 let engine: ReturnType<typeof createAccountingEngine>;
-let reports: ReturnType<typeof engine.createReports>;
+let reports: typeof engine.reports;
 
 // Account ObjectId lookup
 const acctIds: Record<string, mongoose.Types.ObjectId> = {};
@@ -125,21 +285,35 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
-  engine = createAccountingEngine(config);
+  for (const n of [
+    'CanMaple_Account',
+    'CanMaple_JE',
+    'CanMaple_FP',
+    'CanMaple_Budget',
+    'CanMaple_Recon',
+  ]) {
+    if (mongoose.connection.models[n]) delete mongoose.connection.models[n];
+  }
 
-  // Register models with unique names to avoid collisions with other test files
-  const acctSchema = engine.createAccountSchema();
-  if (mongoose.models['MapleAccount']) delete mongoose.models['MapleAccount'];
-  AccountModel = mongoose.model('MapleAccount', acctSchema);
+  engine = createAccountingEngine({
+    ...baseConfig,
+    mongoose: mongoose.connection,
+    modelNames: {
+      account: 'CanMaple_Account',
+      journalEntry: 'CanMaple_JE',
+      fiscalPeriod: 'CanMaple_FP',
+      budget: 'CanMaple_Budget',
+      reconciliation: 'CanMaple_Recon',
+    },
+  });
 
-  const jeSchema = engine.createJournalEntrySchema('MapleAccount');
-  if (mongoose.models['MapleJE']) delete mongoose.models['MapleJE'];
-  JEModel = mongoose.model('MapleJE', jeSchema);
+  AccountModel = engine.models.Account;
+  JEModel = engine.models.JournalEntry;
 
   await AccountModel.createIndexes();
   await JEModel.createIndexes();
 
-  reports = engine.createReports({ Account: AccountModel, JournalEntry: JEModel });
+  reports = engine.reports;
 });
 
 afterAll(async () => {
@@ -177,14 +351,14 @@ describe('Account Setup', () => {
   it('has a retained earnings account at code 3600', () => {
     const re = maplePack.getAccountType('3600');
     expect(re).toBeDefined();
-    expect(re!.name).toBe('Retained Earnings');
-    expect(re!.category).toBe('Balance Sheet-Equity');
+    expect(re?.name).toBe('Retained Earnings');
+    expect(re?.category).toBe('Balance Sheet-Equity');
   });
 
   it('marks group accounts as non-posting', () => {
     expect(maplePack.isPostingAccount('1000')).toBe(false); // Current Assets group
     expect(maplePack.isPostingAccount('6000')).toBe(false); // Operating Expenses group
-    expect(maplePack.isPostingAccount('1001')).toBe(true);  // Cash — posting
+    expect(maplePack.isPostingAccount('1001')).toBe(true); // Cash — posting
   });
 });
 
@@ -196,10 +370,10 @@ describe('Opening Balances — Migration from QuickBooks', () => {
   it('posts an opening balance entry with Assets = Equity', async () => {
     // Migration: Cash $50,000 + Equipment $20,000 = Shares $10,000 + RE $60,000
     await postEntry('2025-01-01', [
-      { account: '1001', debit: 5_000_000, credit: 0 },        // Cash $50,000
-      { account: '1500', debit: 2_000_000, credit: 0 },        // Equipment $20,000
-      { account: '3500', debit: 0, credit: 1_000_000 },        // Common Shares $10,000
-      { account: '3600', debit: 0, credit: 6_000_000 },        // Retained Earnings $60,000
+      { account: '1001', debit: 5_000_000, credit: 0 }, // Cash $50,000
+      { account: '1500', debit: 2_000_000, credit: 0 }, // Equipment $20,000
+      { account: '3500', debit: 0, credit: 1_000_000 }, // Common Shares $10,000
+      { account: '3600', debit: 0, credit: 6_000_000 }, // Retained Earnings $60,000
     ]);
 
     // Verify the entry was stored
@@ -347,9 +521,7 @@ describe('Monthly Operations — Q1 2025', () => {
     expect(q1TB.rows.length).toBeGreaterThan(0);
 
     // Every row with activity should have non-zero ending balance
-    const activeRows = q1TB.rows.filter(
-      (r) => r.ending.debit > 0 || r.ending.credit > 0,
-    );
+    const activeRows = q1TB.rows.filter((r) => r.ending.debit > 0 || r.ending.credit > 0);
     expect(activeRows.length).toBeGreaterThanOrEqual(5);
 
     // Trial balance must be balanced
@@ -368,8 +540,8 @@ describe('Tax Collection — HST', () => {
     // HST Collected = 13% of $45,000 = $5,850
     // In practice, HST would be recorded per invoice. We batch for simplicity.
     await postEntry('2025-03-31', [
-      { account: '1200', debit: 585_000, credit: 0 },    // AR for HST portion
-      { account: '2300', debit: 0, credit: 585_000 },     // HST Collected liability
+      { account: '1200', debit: 585_000, credit: 0 }, // AR for HST portion
+      { account: '2300', debit: 0, credit: 585_000 }, // HST Collected liability
     ]);
 
     const hstCollectedAccount = await AccountModel.findOne({ accountTypeCode: '2300' });
@@ -380,8 +552,8 @@ describe('Tax Collection — HST', () => {
     // ITC on eligible expenses: Rent $2k + Supplies $500 = $2,500 x 13% = $325
     // (Salaries are not subject to HST)
     await postEntry('2025-03-31', [
-      { account: '2400', debit: 32_500, credit: 0 },      // HST Paid (ITC) asset
-      { account: '2001', debit: 0, credit: 32_500 },      // AP for HST portion
+      { account: '2400', debit: 32_500, credit: 0 }, // HST Paid (ITC) asset
+      { account: '2001', debit: 0, credit: 32_500 }, // AP for HST portion
     ]);
 
     const hstPaidAccount = await AccountModel.findOne({ accountTypeCode: '2400' });
@@ -399,14 +571,14 @@ describe('Tax Collection — HST', () => {
       (r) => String((r.account as any)._id) === String(acctIds['2300']),
     );
     expect(hstCollectedRow).toBeDefined();
-    expect(hstCollectedRow!.ending.credit).toBe(585_000);
+    expect(hstCollectedRow?.ending.credit).toBe(585_000);
 
     // HST Paid (2400) should have a debit balance of $325
     const hstPaidRow = tb.rows.find(
       (r) => String((r.account as any)._id) === String(acctIds['2400']),
     );
     expect(hstPaidRow).toBeDefined();
-    expect(hstPaidRow!.ending.debit).toBe(32_500);
+    expect(hstPaidRow?.ending.debit).toBe(32_500);
   });
 });
 
@@ -464,16 +636,12 @@ describe('Balance Sheet — Mid-Year', () => {
     });
 
     // Find the Shareholder Equity group in equity categories
-    const shareholderGroup = bs.equity.groups.find(
-      (g) => g.name === 'Shareholder Equity',
-    );
+    const shareholderGroup = bs.equity.groups.find((g) => g.name === 'Shareholder Equity');
 
     if (shareholderGroup) {
       // 3600 should NOT appear in the Shareholder Equity group —
       // it should be handled as part of the retained earnings computation
-      const reInShareholderGroup = shareholderGroup.accounts.find(
-        (a) => a.code === '3600',
-      );
+      const reInShareholderGroup = shareholderGroup.accounts.find((a) => a.code === '3600');
       expect(reInShareholderGroup).toBeUndefined();
     }
   });
@@ -639,9 +807,7 @@ describe('General Ledger — Cash Account', () => {
     const totalDebits = cashLedger.entries.reduce((s, e) => s + e.debit, 0);
     const totalCredits = cashLedger.entries.reduce((s, e) => s + e.credit, 0);
 
-    expect(cashLedger.closingBalance).toBe(
-      cashLedger.openingBalance + totalDebits - totalCredits,
-    );
+    expect(cashLedger.closingBalance).toBe(cashLedger.openingBalance + totalDebits - totalCredits);
   });
 
   it('has multiple transactions reflecting business activity', async () => {
@@ -686,9 +852,7 @@ describe('Cash Flow Statement', () => {
     expect(cf.operating.accounts.length).toBeGreaterThan(0);
 
     // Net cash flow = operating + investing + financing
-    expect(cf.netCashFlow).toBe(
-      cf.operating.total + cf.investing.total + cf.financing.total,
-    );
+    expect(cf.netCashFlow).toBe(cf.operating.total + cf.investing.total + cf.financing.total);
   });
 
   it('equipment purchase appears in Investing activities', async () => {
@@ -699,12 +863,10 @@ describe('Cash Flow Statement', () => {
     });
 
     // Equipment (1500) has cashFlowCategory 'Investing'
-    const equipmentEntry = cf.investing.accounts.find(
-      (a) => a.code === '1500',
-    );
+    const equipmentEntry = cf.investing.accounts.find((a) => a.code === '1500');
     expect(equipmentEntry).toBeDefined();
     // Equipment was purchased (debited), so investing shows outflow
-    expect(equipmentEntry!.amount).not.toBe(0);
+    expect(equipmentEntry?.amount).not.toBe(0);
   });
 
   it('has correct metadata', async () => {
@@ -799,7 +961,7 @@ describe('Report Data Quality', () => {
     // We verify indirectly: if BS is balanced and IS net income is correct,
     // then equity must absorb the correct net income.
     const sharesBalance = 1_000_000; // $10k from migration
-    const openingRE = 6_000_000;    // $60k from migration
+    const openingRE = 6_000_000; // $60k from migration
 
     // Total equity should be shares + opening RE + current year net income
     expect(bs.equity.total).toBe(sharesBalance + openingRE + is.netIncome);

@@ -1,6 +1,6 @@
 {
   "name": "@classytic/ledger",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Production-grade double-entry accounting engine for MongoDB — schemas, reports, tax, multi-tenant",
   "type": "module",
   "sideEffects": false,
@@ -17,11 +17,6 @@
       "types": "./dist/money.d.mts",
       "import": "./dist/money.mjs",
       "default": "./dist/money.mjs"
-    },
-    "./schemas": {
-      "types": "./dist/schemas/index.d.mts",
-      "import": "./dist/schemas/index.mjs",
-      "default": "./dist/schemas/index.mjs"
     },
     "./reports": {
       "types": "./dist/reports/index.d.mts",
@@ -42,11 +37,6 @@
       "types": "./dist/country/index.d.mts",
       "import": "./dist/country/index.mjs",
       "default": "./dist/country/index.mjs"
-    },
-    "./repositories": {
-      "types": "./dist/repositories/index.d.mts",
-      "import": "./dist/repositories/index.mjs",
-      "default": "./dist/repositories/index.mjs"
     },
     "./exports": {
       "types": "./dist/exports/index.d.mts",

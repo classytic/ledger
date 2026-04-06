@@ -8,7 +8,7 @@
  * to re-export something, this test catches it.
  */
 
-import { describe, it, expect, expectTypeOf } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 // ── @classytic/ledger/constants ───────────────────────────────────────────
 
@@ -16,148 +16,100 @@ import {
   // Categories
   CATEGORIES,
   CATEGORY_KEYS,
-  isValidCategory,
-  getCategoryMainType,
-  getCategoryStatementType,
-  isBalanceSheet,
-  isIncomeStatement,
-  getNormalBalance,
+  // Currencies
+  CURRENCIES,
   categoryKey,
   extractMainType,
   extractStatementType,
-
+  getCategoryMainType,
+  getCategoryStatementType,
+  getCurrency,
+  getCustomJournalTypes,
+  getJournalType,
+  getJournalTypeCodes,
+  getMinorUnit,
+  getNormalBalance,
+  isBalanceSheet,
+  isIncomeStatement,
+  isValidCategory,
+  isValidCurrency,
+  isValidJournalType,
+  JOURNAL_CODES,
   // Journals
   JOURNAL_TYPES,
-  JOURNAL_CODES,
-  getJournalTypeCodes,
-  isValidJournalType,
-  getJournalType,
   registerJournalType,
-  getCustomJournalTypes,
-
-  // Currencies
-  CURRENCIES,
-  getCurrency,
-  isValidCurrency,
-  getMinorUnit,
 } from '../../src/constants/index.js';
-
-// ── @classytic/ledger/schemas ─────────────────────────────────────────────
-
-import {
-  createAccountSchema,
-  createJournalEntrySchema,
-  createFiscalPeriodSchema,
-  createBudgetSchema,
-  createReconciliationSchema,
-} from '../../src/schemas/index.js';
 
 // ── @classytic/ledger/reports ─────────────────────────────────────────────
 
-import {
-  generateTrialBalance,
-  generateBalanceSheet,
-  generateIncomeStatement,
-  generateGeneralLedger,
-  generateCashFlow,
-  closeFiscalPeriod,
-  reopenFiscalPeriod,
-  generateDimensionBreakdown,
-  generateAgedBalance,
-  DEFAULT_BUCKETS,
-  generateBudgetVsActual,
-  generateRevaluation,
-} from '../../src/reports/index.js';
-
 import type {
-  TrialBalanceOptions,
-  BalanceSheetOptions,
-  IncomeStatementOptions,
-  GeneralLedgerOptions,
-  CashFlowOptions,
-  FiscalCloseOptions,
-  FiscalCloseResult,
-  FiscalReopenResult,
-  DimensionBreakdownOptions,
-  DimensionBreakdownParams,
-  DimensionBreakdownRow,
-  DimensionBreakdownReport,
-  AgedBucketConfig,
-  AgedBalanceOptions,
-  AgedBalanceParams,
-  AgedBalanceRow,
   AgedBalanceReport,
-  BudgetVsActualOptions,
-  BudgetVsActualParams,
-  BudgetVsActualRow,
+  BalanceSheetOptions,
   BudgetVsActualReport,
-  RevaluationOptions,
-  RevaluationParams,
+  CashFlowOptions,
+  DimensionBreakdownReport,
+  FiscalCloseOptions,
+  GeneralLedgerOptions,
+  IncomeStatementOptions,
   RevaluationReport,
+  TrialBalanceOptions,
+} from '../../src/reports/index.js';
+import {
+  closeFiscalPeriod,
+  DEFAULT_BUCKETS,
+  generateAgedBalance,
+  generateBalanceSheet,
+  generateBudgetVsActual,
+  generateCashFlow,
+  generateDimensionBreakdown,
+  generateGeneralLedger,
+  generateIncomeStatement,
+  generateRevaluation,
+  generateTrialBalance,
+  reopenFiscalPeriod,
 } from '../../src/reports/index.js';
 
 // ── @classytic/ledger/plugins ─────────────────────────────────────────────
 
+import type {
+  DateLockPluginOptions,
+  DoubleEntryPluginOptions,
+  FiscalLockPluginOptions,
+  IdempotencyPluginOptions,
+  TaxHookPluginOptions,
+} from '../../src/plugins/index.js';
 import {
+  dateLockPlugin,
   doubleEntryPlugin,
   fiscalLockPlugin,
-  dateLockPlugin,
   idempotencyPlugin,
   taxHookPlugin,
 } from '../../src/plugins/index.js';
 
-import type {
-  DoubleEntryPluginOptions,
-  FiscalLockPluginOptions,
-  DateLockPluginOptions,
-  IdempotencyPluginOptions,
-  TaxHookPluginOptions,
-} from '../../src/plugins/index.js';
-
-// ── @classytic/ledger/repositories ────────────────────────────────────────
-
-import {
-  wireJournalEntryMethods,
-  wireAccountMethods,
-  wireReconciliationMethods,
-} from '../../src/repositories/index.js';
-
 // ── @classytic/ledger/country ─────────────────────────────────────────────
 
+import type { CountryPack, CountryPackInput, TaxCode } from '../../src/country/index.js';
 import { defineCountryPack } from '../../src/country/index.js';
-import type {
-  CountryPack,
-  CountryPackInput,
-  TaxCode,
-  TaxCodesByRegion,
-  TaxReportLine,
-  TaxReportTemplate,
-} from '../../src/country/index.js';
 
 // ── @classytic/ledger/exports ─────────────────────────────────────────────
 
-import {
-  escapeCell,
-  serializeCsv,
-  buildCsv,
-  getHeaders,
-  extractRow,
-  extractAllRows,
-  exportToCsv,
-  flattenJournalEntry,
-  flattenJournalEntries,
-  quickbooksFieldMap,
-  universalFieldMap,
-} from '../../src/exports/index.js';
-
 import type {
-  PopulatedAccount,
-  PopulatedJournalItem,
-  PopulatedJournalEntry,
-  FlatJournalRow,
-  ExportField,
   ExportFieldMap,
-  CsvOptions,
+  FlatJournalRow,
+  PopulatedJournalEntry,
+} from '../../src/exports/index.js';
+import {
+  buildCsv,
+  escapeCell,
+  exportToCsv,
+  extractAllRows,
+  extractRow,
+  flattenJournalEntries,
+  flattenJournalEntry,
+  getHeaders,
+  quickbooksFieldMap,
+  serializeCsv,
+  universalFieldMap,
 } from '../../src/exports/index.js';
 
 // ─── Tests ────────────────────────────────────────────────────────────────
@@ -165,17 +117,29 @@ import type {
 describe('Subpath: constants', () => {
   it('exports all category symbols (11)', () => {
     const symbols = [
-      CATEGORIES, CATEGORY_KEYS, isValidCategory, getCategoryMainType,
-      getCategoryStatementType, isBalanceSheet, isIncomeStatement,
-      getNormalBalance, categoryKey, extractMainType, extractStatementType,
+      CATEGORIES,
+      CATEGORY_KEYS,
+      isValidCategory,
+      getCategoryMainType,
+      getCategoryStatementType,
+      isBalanceSheet,
+      isIncomeStatement,
+      getNormalBalance,
+      categoryKey,
+      extractMainType,
+      extractStatementType,
     ];
     for (const s of symbols) expect(s).toBeDefined();
   });
 
   it('exports all journal symbols (7)', () => {
     const symbols = [
-      JOURNAL_TYPES, JOURNAL_CODES, getJournalTypeCodes,
-      isValidJournalType, getJournalType, registerJournalType,
+      JOURNAL_TYPES,
+      JOURNAL_CODES,
+      getJournalTypeCodes,
+      isValidJournalType,
+      getJournalType,
+      registerJournalType,
       getCustomJournalTypes,
     ];
     for (const s of symbols) expect(s).toBeDefined();
@@ -187,27 +151,21 @@ describe('Subpath: constants', () => {
   });
 });
 
-describe('Subpath: schemas', () => {
-  it('exports all 5 schema factories', () => {
-    const factories = [
-      createAccountSchema, createJournalEntrySchema,
-      createFiscalPeriodSchema, createBudgetSchema,
-      createReconciliationSchema,
-    ];
-    for (const f of factories) {
-      expect(f).toBeDefined();
-      expect(typeof f).toBe('function');
-    }
-  });
-});
-
 describe('Subpath: reports', () => {
   it('exports all 12 report functions/constants', () => {
     const fns = [
-      generateTrialBalance, generateBalanceSheet, generateIncomeStatement,
-      generateGeneralLedger, generateCashFlow, closeFiscalPeriod,
-      reopenFiscalPeriod, generateDimensionBreakdown, generateAgedBalance,
-      generateBudgetVsActual, generateRevaluation, DEFAULT_BUCKETS,
+      generateTrialBalance,
+      generateBalanceSheet,
+      generateIncomeStatement,
+      generateGeneralLedger,
+      generateCashFlow,
+      closeFiscalPeriod,
+      reopenFiscalPeriod,
+      generateDimensionBreakdown,
+      generateAgedBalance,
+      generateBudgetVsActual,
+      generateRevaluation,
+      DEFAULT_BUCKETS,
     ];
     for (const f of fns) expect(f).toBeDefined();
   });
@@ -229,8 +187,11 @@ describe('Subpath: reports', () => {
 describe('Subpath: plugins', () => {
   it('exports all 5 plugins', () => {
     const plugins = [
-      doubleEntryPlugin, fiscalLockPlugin, dateLockPlugin,
-      idempotencyPlugin, taxHookPlugin,
+      doubleEntryPlugin,
+      fiscalLockPlugin,
+      dateLockPlugin,
+      idempotencyPlugin,
+      taxHookPlugin,
     ];
     for (const p of plugins) {
       expect(p).toBeDefined();
@@ -245,14 +206,6 @@ describe('Subpath: plugins', () => {
     expectTypeOf<DateLockPluginOptions>().toBeObject();
     expectTypeOf<IdempotencyPluginOptions>().toBeObject();
     expectTypeOf<TaxHookPluginOptions>().toBeObject();
-  });
-});
-
-describe('Subpath: repositories', () => {
-  it('exports all 3 wire functions', () => {
-    for (const fn of [wireJournalEntryMethods, wireAccountMethods, wireReconciliationMethods]) {
-      expect(typeof fn).toBe('function');
-    }
   });
 });
 
@@ -271,9 +224,15 @@ describe('Subpath: country', () => {
 describe('Subpath: exports', () => {
   it('exports all CSV/flatten functions (11)', () => {
     const fns = [
-      escapeCell, serializeCsv, buildCsv, getHeaders,
-      extractRow, extractAllRows, exportToCsv,
-      flattenJournalEntry, flattenJournalEntries,
+      escapeCell,
+      serializeCsv,
+      buildCsv,
+      getHeaders,
+      extractRow,
+      extractAllRows,
+      exportToCsv,
+      flattenJournalEntry,
+      flattenJournalEntries,
     ];
     for (const fn of fns) expect(typeof fn).toBe('function');
   });

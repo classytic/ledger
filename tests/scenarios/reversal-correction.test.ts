@@ -9,16 +9,23 @@
  * Post → Discover Error → Reverse → Correct → Reports show net effect.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  setupScenario, teardownScenario, postEntry, assertConservation,
+  assertConservation,
+  postEntry,
   type ScenarioEngine,
+  setupScenario,
+  teardownScenario,
 } from '../helpers/scenario-setup.js';
 
 let s: ScenarioEngine;
 
-beforeAll(async () => { s = await setupScenario({}, 'Reversal'); });
-afterAll(async () => { await teardownScenario(s); });
+beforeAll(async () => {
+  s = await setupScenario({}, 'Reversal');
+});
+afterAll(async () => {
+  await teardownScenario(s);
+});
 
 // ═════════════════════════════════════════════════════════════════════════════
 // 1. Setup — Owner invests, business starts
@@ -26,10 +33,16 @@ afterAll(async () => { await teardownScenario(s); });
 
 describe('1. Setup', () => {
   it('owner invests $100,000', async () => {
-    await postEntry(s, '2025-01-01', 'GENERAL', [
-      { account: '1001', debit: 10_000_000, credit: 0 },
-      { account: '3100', debit: 0, credit: 10_000_000 },
-    ], 'Owner investment');
+    await postEntry(
+      s,
+      '2025-01-01',
+      'GENERAL',
+      [
+        { account: '1001', debit: 10_000_000, credit: 0 },
+        { account: '3100', debit: 0, credit: 10_000_000 },
+      ],
+      'Owner investment',
+    );
   });
 });
 
@@ -39,10 +52,16 @@ describe('1. Setup', () => {
 
 describe('2. The Mistake', () => {
   it('posts wrong revenue amount ($50,000 instead of $5,000)', async () => {
-    await postEntry(s, '2025-01-15', 'SALES', [
-      { account: '1001', debit: 5_000_000, credit: 0 },
-      { account: '4010', debit: 0, credit: 5_000_000 },
-    ], 'WRONG: Jan revenue (should be $5K not $50K)');
+    await postEntry(
+      s,
+      '2025-01-15',
+      'SALES',
+      [
+        { account: '1001', debit: 5_000_000, credit: 0 },
+        { account: '4010', debit: 0, credit: 5_000_000 },
+      ],
+      'WRONG: Jan revenue (should be $5K not $50K)',
+    );
 
     // At this point, income statement would show $50K revenue — incorrect
     const is = await s.reports.incomeStatement({
@@ -60,10 +79,16 @@ describe('2. The Mistake', () => {
 describe('3. The Reversal', () => {
   it('posts reversal entry (mirror of the mistake)', async () => {
     // Reverse: swap debit/credit
-    await postEntry(s, '2025-01-16', 'GENERAL', [
-      { account: '4010', debit: 5_000_000, credit: 0 },         // Reverse revenue
-      { account: '1001', debit: 0, credit: 5_000_000 },         // Reverse cash
-    ], 'REVERSAL: Correcting wrong Jan revenue entry');
+    await postEntry(
+      s,
+      '2025-01-16',
+      'GENERAL',
+      [
+        { account: '4010', debit: 5_000_000, credit: 0 }, // Reverse revenue
+        { account: '1001', debit: 0, credit: 5_000_000 }, // Reverse cash
+      ],
+      'REVERSAL: Correcting wrong Jan revenue entry',
+    );
 
     await assertConservation(s);
   });
@@ -84,10 +109,16 @@ describe('3. The Reversal', () => {
 
 describe('4. The Correction', () => {
   it('posts correct revenue amount ($5,000)', async () => {
-    await postEntry(s, '2025-01-17', 'SALES', [
-      { account: '1001', debit: 500_000, credit: 0 },           // Cash $5,000
-      { account: '4010', debit: 0, credit: 500_000 },           // Service Revenue
-    ], 'CORRECTED: Jan revenue ($5,000)');
+    await postEntry(
+      s,
+      '2025-01-17',
+      'SALES',
+      [
+        { account: '1001', debit: 500_000, credit: 0 }, // Cash $5,000
+        { account: '4010', debit: 0, credit: 500_000 }, // Service Revenue
+      ],
+      'CORRECTED: Jan revenue ($5,000)',
+    );
 
     await assertConservation(s);
   });

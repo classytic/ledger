@@ -1,36 +1,120 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createAccountSchema } from '../../src/schemas/account.schema.js';
-import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
-import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { generateTrialBalance } from '../../src/reports/trial-balance.js';
 import { generateBalanceSheet } from '../../src/reports/balance-sheet.js';
-import { generateIncomeStatement } from '../../src/reports/income-statement.js';
-import { generateGeneralLedger } from '../../src/reports/general-ledger.js';
 import { generateCashFlow } from '../../src/reports/cash-flow.js';
 import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
+import { generateGeneralLedger } from '../../src/reports/general-ledger.js';
+import { generateIncomeStatement } from '../../src/reports/income-statement.js';
+import { generateTrialBalance } from '../../src/reports/trial-balance.js';
+import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema.js';
+import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
+import type { AccountingEngineConfig } from '../../src/types/engine.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'RPT', name: 'Report Test', defaultCurrency: 'TST',
+  code: 'RPT',
+  name: 'Report Test',
+  defaultCurrency: 'TST',
   retainedEarningsAccountCode: '3660',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1200', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: 'AR', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2000', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: 'AP', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '3000', name: 'Share Capital', category: 'Balance Sheet-Equity', description: 'Equity', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'COGS', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6000', name: 'Rent Expense', category: 'Income Statement-Expense', description: 'Rent', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '1500', name: 'Equipment', category: 'Balance Sheet-Asset', description: 'Equipment', parentCode: null, isTotal: false, cashFlowCategory: 'Investing' as any },
-    { code: '2500', name: 'Loan Payable', category: 'Balance Sheet-Liability', description: 'Loan', parentCode: null, isTotal: false, cashFlowCategory: 'Financing' as any },
-    { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'Retained Earnings', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1200',
+      name: 'Accounts Receivable',
+      category: 'Balance Sheet-Asset',
+      description: 'AR',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2000',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'AP',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '3000',
+      name: 'Share Capital',
+      category: 'Balance Sheet-Equity',
+      description: 'Equity',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6000',
+      name: 'Rent Expense',
+      category: 'Income Statement-Expense',
+      description: 'Rent',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '1500',
+      name: 'Equipment',
+      category: 'Balance Sheet-Asset',
+      description: 'Equipment',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'Investing' as any,
+    },
+    {
+      code: '2500',
+      name: 'Loan Payable',
+      category: 'Balance Sheet-Liability',
+      description: 'Loan',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'Financing' as any,
+    },
+    {
+      code: '3660',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: 'Retained Earnings',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const config: AccountingEngineConfig = {
@@ -62,11 +146,11 @@ beforeAll(async () => {
 
   // Register models
   const acctSchema = createAccountSchema(config);
-  if (mongoose.models['RptAccount']) delete mongoose.models['RptAccount'];
+  if (mongoose.models.RptAccount) delete mongoose.models.RptAccount;
   AccountModel = mongoose.model('RptAccount', acctSchema);
 
   const jeSchema = createJournalEntrySchema(config, 'RptAccount');
-  if (mongoose.models['RptJE']) delete mongoose.models['RptJE'];
+  if (mongoose.models.RptJE) delete mongoose.models.RptJE;
   JEModel = mongoose.model('RptJE', jeSchema);
 
   await AccountModel.createIndexes();
@@ -108,7 +192,10 @@ beforeEach(async () => {
 });
 
 /** Helper: create a posted journal entry */
-async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+async function postEntry(
+  date: string,
+  items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
+) {
   return JEModel.create({
     journalType: 'GENERAL',
     state: 'posted',
@@ -144,11 +231,11 @@ describe('Trial Balance', () => {
     expect(report.period.startDate.getMonth()).toBe(2); // March
 
     // Cash should have initial 100000 debit, current 50000 debit
-    const cashRow = report.rows.find(r => String((r.account as any)._id) === String(cashId));
+    const cashRow = report.rows.find((r) => String((r.account as any)._id) === String(cashId));
     expect(cashRow).toBeDefined();
-    expect(cashRow!.initial.debit).toBe(100000);
-    expect(cashRow!.current.debit).toBe(50000);
-    expect(cashRow!.ending.debit).toBe(150000);
+    expect(cashRow?.initial.debit).toBe(100000);
+    expect(cashRow?.current.debit).toBe(50000);
+    expect(cashRow?.ending.debit).toBe(150000);
   });
 
   it('returns empty rows when no posted entries exist', async () => {
@@ -422,8 +509,8 @@ describe('Multi-Tenant Report Isolation', () => {
   };
 
   beforeAll(async () => {
-    if (mongoose.models['MtAccount']) delete mongoose.models['MtAccount'];
-    if (mongoose.models['MtJE']) delete mongoose.models['MtJE'];
+    if (mongoose.models.MtAccount) delete mongoose.models.MtAccount;
+    if (mongoose.models.MtJE) delete mongoose.models.MtJE;
 
     const mtAcctSchema = createAccountSchema(mtConfig);
     MtAccountModel = mongoose.model('MtAccount', mtAcctSchema);
@@ -464,81 +551,121 @@ describe('Multi-Tenant Report Isolation', () => {
 
     // Post entries for org1: 100000 equity investment + 50000 revenue + 20000 expense
     await MtJEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'), business: org1,
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-01'),
+      business: org1,
       journalItems: [
         { account: org1Cash, debit: 100000, credit: 0 },
         { account: org1Equity, debit: 0, credit: 100000 },
       ],
-      totalDebit: 100000, totalCredit: 100000,
+      totalDebit: 100000,
+      totalCredit: 100000,
     });
     await MtJEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-03-05'), business: org1,
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-03-05'),
+      business: org1,
       journalItems: [
         { account: org1Cash, debit: 50000, credit: 0 },
         { account: org1Revenue, debit: 0, credit: 50000 },
       ],
-      totalDebit: 50000, totalCredit: 50000,
+      totalDebit: 50000,
+      totalCredit: 50000,
     });
     await MtJEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-03-10'), business: org1,
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-03-10'),
+      business: org1,
       journalItems: [
         { account: org1Rent, debit: 20000, credit: 0 },
         { account: org1Cash, debit: 0, credit: 20000 },
       ],
-      totalDebit: 20000, totalCredit: 20000,
+      totalDebit: 20000,
+      totalCredit: 20000,
     });
 
     // Post entries for org2: 300000 equity + 80000 revenue
     await MtJEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-01-01'), business: org2,
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-01-01'),
+      business: org2,
       journalItems: [
         { account: org2Cash, debit: 300000, credit: 0 },
         { account: org2Equity, debit: 0, credit: 300000 },
       ],
-      totalDebit: 300000, totalCredit: 300000,
+      totalDebit: 300000,
+      totalCredit: 300000,
     });
     await MtJEModel.create({
-      journalType: 'GENERAL', state: 'posted', date: new Date('2025-03-15'), business: org2,
+      journalType: 'GENERAL',
+      state: 'posted',
+      date: new Date('2025-03-15'),
+      business: org2,
       journalItems: [
         { account: org2Cash, debit: 80000, credit: 0 },
         { account: org2Revenue, debit: 0, credit: 80000 },
       ],
-      totalDebit: 80000, totalCredit: 80000,
+      totalDebit: 80000,
+      totalCredit: 80000,
     });
   });
 
   it('trial balance isolates data by organization', async () => {
     const report1 = await generateTrialBalance(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org1, dateOption: 'month', dateValue: '2025-03' },
     );
     const report2 = await generateTrialBalance(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org2, dateOption: 'month', dateValue: '2025-03' },
     );
 
     // Org1: Cash initial 100000
-    const cash1 = report1.rows.find(r => String((r.account as any)._id) === String(org1Cash));
+    const cash1 = report1.rows.find((r) => String((r.account as any)._id) === String(org1Cash));
     expect(cash1).toBeDefined();
-    expect(cash1!.initial.debit).toBe(100000);
+    expect(cash1?.initial.debit).toBe(100000);
 
     // Org2: Cash initial 300000
-    const cash2 = report2.rows.find(r => String((r.account as any)._id) === String(org2Cash));
+    const cash2 = report2.rows.find((r) => String((r.account as any)._id) === String(org2Cash));
     expect(cash2).toBeDefined();
-    expect(cash2!.initial.debit).toBe(300000);
+    expect(cash2?.initial.debit).toBe(300000);
 
     // Org1 should NOT see org2 accounts
-    const cross = report1.rows.find(r => String((r.account as any)._id) === String(org2Cash));
+    const cross = report1.rows.find((r) => String((r.account as any)._id) === String(org2Cash));
     expect(cross).toBeUndefined();
   });
 
   it('balance sheet isolates data by organization', async () => {
     const bs1 = await generateBalanceSheet(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org1, dateOption: 'month', dateValue: '2025-03' },
     );
     const bs2 = await generateBalanceSheet(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org2, dateOption: 'month', dateValue: '2025-03' },
     );
 
@@ -555,11 +682,21 @@ describe('Multi-Tenant Report Isolation', () => {
 
   it('income statement isolates data by organization', async () => {
     const is1 = await generateIncomeStatement(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org1, dateOption: 'month', dateValue: '2025-03' },
     );
     const is2 = await generateIncomeStatement(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org2, dateOption: 'month', dateValue: '2025-03' },
     );
 
@@ -574,12 +711,32 @@ describe('Multi-Tenant Report Isolation', () => {
 
   it('general ledger isolates data by organization', async () => {
     const gl1 = await generateGeneralLedger(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
-      { organizationId: org1, dateOption: 'month', dateValue: '2025-03', accountId: String(org1Cash) },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
+      {
+        organizationId: org1,
+        dateOption: 'month',
+        dateValue: '2025-03',
+        accountId: String(org1Cash),
+      },
     );
     const gl2 = await generateGeneralLedger(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
-      { organizationId: org2, dateOption: 'month', dateValue: '2025-03', accountId: String(org2Cash) },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
+      {
+        organizationId: org2,
+        dateOption: 'month',
+        dateValue: '2025-03',
+        accountId: String(org2Cash),
+      },
     );
 
     // Org1 cash: opening 100000, 2 entries, closing 130000
@@ -597,11 +754,21 @@ describe('Multi-Tenant Report Isolation', () => {
 
   it('cash flow isolates data by organization', async () => {
     const cf1 = await generateCashFlow(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org1, dateOption: 'month', dateValue: '2025-03' },
     );
     const cf2 = await generateCashFlow(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       { organizationId: org2, dateOption: 'month', dateValue: '2025-03' },
     );
 
@@ -616,7 +783,7 @@ describe('Fiscal Year Closing', () => {
   let FPModel: mongoose.Model<any>;
 
   beforeAll(async () => {
-    if (mongoose.models['RptFP']) delete mongoose.models['RptFP'];
+    if (mongoose.models.RptFP) delete mongoose.models.RptFP;
     const fpSchema = createFiscalPeriodSchema(config);
     FPModel = mongoose.model('RptFP', fpSchema);
     await FPModel.createIndexes();
@@ -658,11 +825,14 @@ describe('Fiscal Year Closing', () => {
     expect(result.closedAt).toBeInstanceOf(Date);
 
     // Verify period is marked closed
-    const updatedPeriod = await FPModel.findById(period._id).lean() as Record<string, unknown>;
+    const updatedPeriod = (await FPModel.findById(period._id).lean()) as Record<string, unknown>;
     expect(updatedPeriod.closed).toBe(true);
 
     // Verify closing journal entry was created
-    const closingEntry = await JEModel.findById(result.closingEntryId).lean() as Record<string, unknown>;
+    const closingEntry = (await JEModel.findById(result.closingEntryId).lean()) as Record<
+      string,
+      unknown
+    >;
     expect(closingEntry.journalType).toBe('YEAR_END');
     expect(closingEntry.state).toBe('posted');
 
@@ -671,9 +841,9 @@ describe('Fiscal Year Closing', () => {
 
     // Retained earnings should receive the net income
     const items = closingEntry.journalItems as Array<Record<string, unknown>>;
-    const reLine = items.find(i => String(i.account) === String(retainedId));
+    const reLine = items.find((i) => String(i.account) === String(retainedId));
     expect(reLine).toBeDefined();
-    expect(reLine!.credit).toBe(120000);
+    expect(reLine?.credit).toBe(120000);
   });
 
   it('throws when period is already closed', async () => {
@@ -701,7 +871,13 @@ describe('Fiscal Year Closing', () => {
 
     await expect(
       closeFiscalPeriod(
-        { AccountModel, JournalEntryModel: JEModel, FiscalPeriodModel: FPModel, country: testPack, retainedEarningsAccountCode: '9999' },
+        {
+          AccountModel,
+          JournalEntryModel: JEModel,
+          FiscalPeriodModel: FPModel,
+          country: testPack,
+          retainedEarningsAccountCode: '9999',
+        },
         { periodId: period._id },
       ),
     ).rejects.toThrow('Retained earnings account');
@@ -724,7 +900,7 @@ describe('Fiscal Year Closing', () => {
     expect(result.accountsClosed).toBe(0);
 
     // Period still gets marked closed
-    const updatedPeriod = await FPModel.findById(period._id).lean() as Record<string, unknown>;
+    const updatedPeriod = (await FPModel.findById(period._id).lean()) as Record<string, unknown>;
     expect(updatedPeriod.closed).toBe(true);
   });
 
@@ -745,7 +921,7 @@ describe('Fiscal Year Closing', () => {
       { periodId: period._id },
     );
 
-    const updatedPeriod = await FPModel.findById(period._id).lean() as Record<string, unknown>;
+    const updatedPeriod = (await FPModel.findById(period._id).lean()) as Record<string, unknown>;
     expect(String(updatedPeriod.closingEntryId)).toBe(String(result.closingEntryId));
   });
 });
@@ -756,7 +932,7 @@ describe('Fiscal Period Reopen', () => {
   let FPModel: mongoose.Model<any>;
 
   beforeAll(async () => {
-    FPModel = mongoose.models['RptFP']!;
+    FPModel = mongoose.models.RptFP!;
   });
 
   beforeEach(async () => {
@@ -799,7 +975,7 @@ describe('Fiscal Period Reopen', () => {
     expect(reopenResult.reopenedAt).toBeInstanceOf(Date);
 
     // Period is now open
-    const updatedPeriod = await FPModel.findById(period._id).lean() as Record<string, unknown>;
+    const updatedPeriod = (await FPModel.findById(period._id).lean()) as Record<string, unknown>;
     expect(updatedPeriod.closed).toBe(false);
     expect(updatedPeriod.closedAt).toBeNull();
     expect(updatedPeriod.closingEntryId).toBeNull();
@@ -874,7 +1050,7 @@ describe('Fiscal Period Reopen', () => {
     );
 
     expect(result.periodId).toEqual(q2._id);
-    const updatedQ2 = await FPModel.findById(q2._id).lean() as Record<string, unknown>;
+    const updatedQ2 = (await FPModel.findById(q2._id).lean()) as Record<string, unknown>;
     expect(updatedQ2.closed).toBe(false);
   });
 
@@ -899,7 +1075,7 @@ describe('Fiscal Period Reopen', () => {
     );
 
     expect(reopenResult.deletedEntryId).toBeNull();
-    const updatedPeriod = await FPModel.findById(period._id).lean() as Record<string, unknown>;
+    const updatedPeriod = (await FPModel.findById(period._id).lean()) as Record<string, unknown>;
     expect(updatedPeriod.closed).toBe(false);
   });
 

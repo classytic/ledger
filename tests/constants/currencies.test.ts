@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  CURRENCIES, getCurrency, isValidCurrency, getMinorUnit,
+  CURRENCIES,
+  getCurrency,
+  getMinorUnit,
+  isValidCurrency,
 } from '../../src/constants/currencies.js';
 
 describe('Currencies', () => {
@@ -41,9 +44,9 @@ describe('Currencies', () => {
     it('returns currency for valid code', () => {
       const cad = getCurrency('CAD');
       expect(cad).toBeDefined();
-      expect(cad!.code).toBe('CAD');
-      expect(cad!.name).toBe('Canadian Dollar');
-      expect(cad!.symbol).toBe('$');
+      expect(cad?.code).toBe('CAD');
+      expect(cad?.name).toBe('Canadian Dollar');
+      expect(cad?.symbol).toBe('$');
     });
 
     it('returns null for invalid code', () => {

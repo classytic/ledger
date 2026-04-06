@@ -5,9 +5,30 @@
  * single-tenant vs multi-tenant, currency, country pack, etc.
  */
 
+import type { PaginationConfig, PluginType } from '@classytic/mongokit';
 import type { Connection } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import type { Logger } from '../utils/logger.js';
+
+// ─── Plugin & Pagination Wiring ──────────────────────────────────────────────
+
+/** Mongokit plugins to install per repository (composes with engine built-ins). */
+export interface LedgerRepositoryPlugins {
+  account?: PluginType[];
+  journalEntry?: PluginType[];
+  fiscalPeriod?: PluginType[];
+  budget?: PluginType[];
+  reconciliation?: PluginType[];
+}
+
+/** Pagination caps per repository. Omit a key to use mongokit defaults. */
+export interface LedgerPaginationConfig {
+  account?: PaginationConfig;
+  journalEntry?: PaginationConfig;
+  fiscalPeriod?: PaginationConfig;
+  budget?: PaginationConfig;
+  reconciliation?: PaginationConfig;
+}
 
 // ─── Multi-Tenancy ───────────────────────────────────────────────────────────
 
@@ -107,11 +128,10 @@ export interface ModelNames {
 /** Main engine configuration */
 export interface AccountingEngineConfig {
   /**
-   * Mongoose connection. Required for `engine.models` and `engine.repositories`
-   * to be auto-populated. If omitted, you must use the low-level schema
-   * factories (`engine.createAccountSchema()`) and register models yourself.
+   * Mongoose connection. **Required** — the engine owns all models and
+   * creates them on this connection.
    */
-  mongoose?: Connection;
+  mongoose: Connection;
   /** Override default model names (e.g. 'Account' → 'GLAccount') */
   modelNames?: ModelNames;
   /** Extra fields / indexes per model */
@@ -149,4 +169,8 @@ export interface AccountingEngineConfig {
   idempotency?: boolean;
   /** Strictness rules for the ledger */
   strictness?: StrictnessConfig;
+  /** Mongokit plugins to install per repository. */
+  plugins?: LedgerRepositoryPlugins;
+  /** Pagination caps per repository. */
+  pagination?: LedgerPaginationConfig;
 }

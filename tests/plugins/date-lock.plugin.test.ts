@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { dateLockPlugin } from '../../src/plugins/date-lock.plugin.js';
 import { createMockRepository } from '../helpers/mock-repository.js';
 
@@ -27,9 +27,9 @@ describe('dateLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted', date: new Date('2025-03-15') };
-      await expect(
-        repo._emitHook('before:create', { data }),
-      ).rejects.toThrow('before lock date 2025-04-01');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
+        'before lock date 2025-04-01',
+      );
     });
 
     it('allows posting entry dated after lock date', async () => {
@@ -73,9 +73,7 @@ describe('dateLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted', date: new Date('2025-03-15') };
-      await expect(
-        repo._emitHook('before:create', { data }),
-      ).rejects.toThrow('2025-07-01');
+      await expect(repo._emitHook('before:create', { data })).rejects.toThrow('2025-07-01');
     });
   });
 
@@ -90,9 +88,9 @@ describe('dateLockPlugin', () => {
       }).apply(repo);
 
       const data = { state: 'posted' }; // no date in payload
-      await expect(
-        repo._emitHook('before:update', { id: 'abc', data }),
-      ).rejects.toThrow('before lock date 2025-04-01');
+      await expect(repo._emitHook('before:update', { id: 'abc', data })).rejects.toThrow(
+        'before lock date 2025-04-01',
+      );
     });
 
     it('allows partial update when persisted date is after lock date', async () => {

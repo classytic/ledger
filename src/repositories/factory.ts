@@ -8,12 +8,16 @@
  * Just uses `engine.repositories.accounts.seedAccounts(orgId)`.
  */
 
-import { type PaginationConfig, type PluginType, Repository } from '@classytic/mongokit';
+import { type PluginType, Repository } from '@classytic/mongokit';
 import type { LedgerModels } from '../models/factory.js';
 import { doubleEntryPlugin } from '../plugins/double-entry.plugin.js';
 import { fiscalLockPlugin } from '../plugins/fiscal-lock.plugin.js';
 import { idempotencyPlugin } from '../plugins/idempotency.plugin.js';
-import type { AccountingEngineConfig } from '../types/engine.js';
+import type {
+  AccountingEngineConfig,
+  LedgerPaginationConfig,
+  LedgerRepositoryPlugins,
+} from '../types/engine.js';
 import type {
   AccountRepository,
   JournalEntryRepository,
@@ -23,25 +27,7 @@ import { wireAccountMethods } from './account.repository.js';
 import { wireJournalEntryMethods } from './journal-entry.repository.js';
 import { wireReconciliationMethods } from './reconciliation.repository.js';
 
-export interface LedgerRepositoryPlugins {
-  account?: PluginType[];
-  journalEntry?: PluginType[];
-  fiscalPeriod?: PluginType[];
-  budget?: PluginType[];
-  reconciliation?: PluginType[];
-}
-
-/**
- * Pagination config per repository. Defaults to `{ maxLimit: 1000 }` for accounts
- * (typical chart of accounts size), 100 for everything else.
- */
-export interface LedgerPaginationConfig {
-  account?: PaginationConfig;
-  journalEntry?: PaginationConfig;
-  fiscalPeriod?: PaginationConfig;
-  budget?: PaginationConfig;
-  reconciliation?: PaginationConfig;
-}
+export type { LedgerPaginationConfig, LedgerRepositoryPlugins } from '../types/engine.js';
 
 export interface LedgerRepositories {
   accounts: AccountRepository<unknown>;
@@ -70,8 +56,9 @@ export function createRepositories(
   const strictness = config.strictness;
   const country = config.country;
 
-  // Default: accounts allow up to 1000 (typical chart of accounts size)
-  const accountPagination = pagination.account ?? { maxLimit: 1000 };
+  // No default cap on accounts — enterprise charts of accounts can exceed
+  // any fixed number. Pass `pagination: { account: { maxLimit: N } }` to cap.
+  const accountPagination = pagination.account ?? {};
   const jePagination = pagination.journalEntry ?? {};
   const fpPagination = pagination.fiscalPeriod ?? {};
   const budgetPagination = pagination.budget ?? {};

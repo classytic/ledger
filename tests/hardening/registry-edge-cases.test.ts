@@ -9,16 +9,16 @@
  * and proving that frozen state cannot be bypassed.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
-  JOURNAL_TYPES,
-  registerJournalType,
-  getCustomJournalTypes,
-  getJournalTypeCodes,
-  isValidJournalType,
-  getJournalType,
   _freezeJournalTypes,
   _resetCustomJournalTypes,
+  getCustomJournalTypes,
+  getJournalType,
+  getJournalTypeCodes,
+  isValidJournalType,
+  JOURNAL_TYPES,
+  registerJournalType,
 } from '../../src/constants/journals.js';
 
 afterEach(() => {
@@ -44,15 +44,15 @@ describe('Registry — registration validation', () => {
   });
 
   it('rejects empty name', () => {
-    expect(() =>
-      registerJournalType('POS', { code: 'POS', name: '', description: 'x' }),
-    ).toThrow('non-empty name and description');
+    expect(() => registerJournalType('POS', { code: 'POS', name: '', description: 'x' })).toThrow(
+      'non-empty name and description',
+    );
   });
 
   it('rejects empty description', () => {
-    expect(() =>
-      registerJournalType('POS', { code: 'POS', name: 'POS', description: '' }),
-    ).toThrow('non-empty name and description');
+    expect(() => registerJournalType('POS', { code: 'POS', name: 'POS', description: '' })).toThrow(
+      'non-empty name and description',
+    );
   });
 
   it('accepts valid custom type', () => {
@@ -77,7 +77,9 @@ describe('Registry — registration validation', () => {
 describe('Registry — freeze timing', () => {
   it('registration works before freeze', () => {
     registerJournalType('CUSTOM_A', {
-      code: 'CUSTOM_A', name: 'Custom A', description: 'Before freeze',
+      code: 'CUSTOM_A',
+      name: 'Custom A',
+      description: 'Before freeze',
     });
     _freezeJournalTypes();
     expect(isValidJournalType('CUSTOM_A')).toBe(true);
@@ -87,27 +89,31 @@ describe('Registry — freeze timing', () => {
     _freezeJournalTypes();
     expect(() =>
       registerJournalType('CUSTOM_B', {
-        code: 'CUSTOM_B', name: 'Custom B', description: 'After freeze',
+        code: 'CUSTOM_B',
+        name: 'Custom B',
+        description: 'After freeze',
       }),
     ).toThrow('after schema initialization');
   });
 
   it('frozen types are still queryable', () => {
     registerJournalType('CUSTOM_C', {
-      code: 'CUSTOM_C', name: 'Custom C', description: 'Queryable after freeze',
+      code: 'CUSTOM_C',
+      name: 'Custom C',
+      description: 'Queryable after freeze',
     });
     _freezeJournalTypes();
 
     expect(isValidJournalType('CUSTOM_C')).toBe(true);
-    expect(getJournalType('CUSTOM_C')!.name).toBe('Custom C');
+    expect(getJournalType('CUSTOM_C')?.name).toBe('Custom C');
     expect(getJournalTypeCodes()).toContain('CUSTOM_C');
   });
 
   it('reset unfreezes for subsequent registrations', () => {
     _freezeJournalTypes();
-    expect(() =>
-      registerJournalType('X', { code: 'X', name: 'X', description: 'X' }),
-    ).toThrow('after schema initialization');
+    expect(() => registerJournalType('X', { code: 'X', name: 'X', description: 'X' })).toThrow(
+      'after schema initialization',
+    );
 
     _resetCustomJournalTypes();
 
@@ -142,24 +148,28 @@ describe('Registry — lookup correctness', () => {
 
   it('getJournalType returns custom type by code', () => {
     registerJournalType('PAYROLL_MONTHLY', {
-      code: 'PAYROLL_MONTHLY', name: 'Monthly Payroll', description: 'Monthly payroll run',
+      code: 'PAYROLL_MONTHLY',
+      name: 'Monthly Payroll',
+      description: 'Monthly payroll run',
     });
     const jt = getJournalType('PAYROLL_MONTHLY');
     expect(jt).not.toBeNull();
-    expect(jt!.code).toBe('PAYROLL_MONTHLY');
-    expect(jt!.name).toBe('Monthly Payroll');
+    expect(jt?.code).toBe('PAYROLL_MONTHLY');
+    expect(jt?.name).toBe('Monthly Payroll');
   });
 
   it('getJournalType prefers built-in over custom (defense-in-depth)', () => {
     // Can't register SALES (throws), but verify the lookup order is correct
     // by checking that built-in types are served from JOURNAL_TYPES
     const jt = getJournalType('SALES');
-    expect(jt).toBe(JOURNAL_TYPES['SALES']);
+    expect(jt).toBe(JOURNAL_TYPES.SALES);
   });
 
   it('custom types are isolated from JOURNAL_TYPES object', () => {
     registerJournalType('ISOLATED', {
-      code: 'ISOLATED', name: 'Isolated', description: 'Should not appear in JOURNAL_TYPES',
+      code: 'ISOLATED',
+      name: 'Isolated',
+      description: 'Should not appear in JOURNAL_TYPES',
     });
     expect(JOURNAL_TYPES).not.toHaveProperty('ISOLATED');
     expect(Object.keys(JOURNAL_TYPES).length).toBe(15); // unchanged
@@ -178,7 +188,7 @@ describe('Registry — lookup correctness', () => {
 
     for (const def of customs) {
       expect(isValidJournalType(def.code)).toBe(true);
-      expect(getJournalType(def.code)!.name).toBe(def.name);
+      expect(getJournalType(def.code)?.name).toBe(def.name);
     }
   });
 });
@@ -196,23 +206,29 @@ describe('Registry — adversarial inputs', () => {
   it('handles code with special characters', () => {
     // Should work — codes are arbitrary strings
     registerJournalType('POS-SALES_V2', {
-      code: 'POS-SALES_V2', name: 'POS Sales V2', description: 'Versioned POS',
+      code: 'POS-SALES_V2',
+      name: 'POS Sales V2',
+      description: 'Versioned POS',
     });
     expect(isValidJournalType('POS-SALES_V2')).toBe(true);
   });
 
   it('handles unicode code', () => {
     registerJournalType('日本語', {
-      code: '日本語', name: 'Japanese', description: 'Unicode test',
+      code: '日本語',
+      name: 'Japanese',
+      description: 'Unicode test',
     });
     expect(isValidJournalType('日本語')).toBe(true);
-    expect(getJournalType('日本語')!.name).toBe('Japanese');
+    expect(getJournalType('日本語')?.name).toBe('Japanese');
   });
 
   it('handles very long code', () => {
     const longCode = 'A'.repeat(500);
     registerJournalType(longCode, {
-      code: longCode, name: 'Long', description: 'Very long code',
+      code: longCode,
+      name: 'Long',
+      description: 'Very long code',
     });
     expect(isValidJournalType(longCode)).toBe(true);
   });

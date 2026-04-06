@@ -8,16 +8,23 @@
  * DX: Each test section is a numbered chapter that reads like a story.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  setupScenario, teardownScenario, postEntry, assertConservation,
+  assertConservation,
+  postEntry,
   type ScenarioEngine,
+  setupScenario,
+  teardownScenario,
 } from '../helpers/scenario-setup.js';
 
 let s: ScenarioEngine;
 
-beforeAll(async () => { s = await setupScenario({}, 'Pipeline'); });
-afterAll(async () => { await teardownScenario(s); });
+beforeAll(async () => {
+  s = await setupScenario({}, 'Pipeline');
+});
+afterAll(async () => {
+  await teardownScenario(s);
+});
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Chapter 1: Opening — Owner invests $50,000 cash
@@ -25,10 +32,16 @@ afterAll(async () => { await teardownScenario(s); });
 
 describe('1. Opening Balance', () => {
   it('owner invests $50,000 cash into the business', async () => {
-    await postEntry(s, '2025-01-01', 'GENERAL', [
-      { account: '1001', debit: 5_000_000, credit: 0 },         // Cash +$50,000
-      { account: '3100', debit: 0, credit: 5_000_000 },         // Share Capital
-    ], 'Owner investment');
+    await postEntry(
+      s,
+      '2025-01-01',
+      'GENERAL',
+      [
+        { account: '1001', debit: 5_000_000, credit: 0 }, // Cash +$50,000
+        { account: '3100', debit: 0, credit: 5_000_000 }, // Share Capital
+      ],
+      'Owner investment',
+    );
 
     await assertConservation(s);
   });
@@ -40,24 +53,42 @@ describe('1. Opening Balance', () => {
 
 describe('2. January Operations', () => {
   it('earns $20,000 service revenue (cash)', async () => {
-    await postEntry(s, '2025-01-15', 'SALES', [
-      { account: '1001', debit: 2_000_000, credit: 0 },         // Cash
-      { account: '4010', debit: 0, credit: 2_000_000 },         // Service Revenue
-    ], 'Jan consulting revenue');
+    await postEntry(
+      s,
+      '2025-01-15',
+      'SALES',
+      [
+        { account: '1001', debit: 2_000_000, credit: 0 }, // Cash
+        { account: '4010', debit: 0, credit: 2_000_000 }, // Service Revenue
+      ],
+      'Jan consulting revenue',
+    );
   });
 
   it('pays $5,000 rent', async () => {
-    await postEntry(s, '2025-01-20', 'CASH_PAYMENTS', [
-      { account: '6010', debit: 500_000, credit: 0 },           // Rent
-      { account: '1001', debit: 0, credit: 500_000 },           // Cash
-    ], 'Jan rent');
+    await postEntry(
+      s,
+      '2025-01-20',
+      'CASH_PAYMENTS',
+      [
+        { account: '6010', debit: 500_000, credit: 0 }, // Rent
+        { account: '1001', debit: 0, credit: 500_000 }, // Cash
+      ],
+      'Jan rent',
+    );
   });
 
   it('pays $8,000 salaries', async () => {
-    await postEntry(s, '2025-01-31', 'PAYROLL', [
-      { account: '6020', debit: 800_000, credit: 0 },           // Salaries
-      { account: '1001', debit: 0, credit: 800_000 },           // Cash
-    ], 'Jan payroll');
+    await postEntry(
+      s,
+      '2025-01-31',
+      'PAYROLL',
+      [
+        { account: '6020', debit: 800_000, credit: 0 }, // Salaries
+        { account: '1001', debit: 0, credit: 800_000 }, // Cash
+      ],
+      'Jan payroll',
+    );
   });
 
   it('conservation holds after January', async () => {
@@ -71,32 +102,56 @@ describe('2. January Operations', () => {
 
 describe('3. February Operations', () => {
   it('invoices $15,000 on account', async () => {
-    await postEntry(s, '2025-02-10', 'SALES', [
-      { account: '1200', debit: 1_500_000, credit: 0 },         // AR
-      { account: '4010', debit: 0, credit: 1_500_000 },         // Service Revenue
-    ], 'Feb invoice');
+    await postEntry(
+      s,
+      '2025-02-10',
+      'SALES',
+      [
+        { account: '1200', debit: 1_500_000, credit: 0 }, // AR
+        { account: '4010', debit: 0, credit: 1_500_000 }, // Service Revenue
+      ],
+      'Feb invoice',
+    );
   });
 
   it('incurs $3,000 subcontractor cost', async () => {
-    await postEntry(s, '2025-02-15', 'PURCHASES', [
-      { account: '5010', debit: 300_000, credit: 0 },           // COGS
-      { account: '2001', debit: 0, credit: 300_000 },           // AP
-    ], 'Subcontractor cost');
+    await postEntry(
+      s,
+      '2025-02-15',
+      'PURCHASES',
+      [
+        { account: '5010', debit: 300_000, credit: 0 }, // COGS
+        { account: '2001', debit: 0, credit: 300_000 }, // AP
+      ],
+      'Subcontractor cost',
+    );
   });
 
   it('pays $5,000 rent and $400 utilities', async () => {
-    await postEntry(s, '2025-02-28', 'CASH_PAYMENTS', [
-      { account: '6010', debit: 500_000, credit: 0 },           // Rent
-      { account: '6030', debit: 40_000, credit: 0 },            // Utilities
-      { account: '1001', debit: 0, credit: 540_000 },           // Cash
-    ], 'Feb rent + utilities');
+    await postEntry(
+      s,
+      '2025-02-28',
+      'CASH_PAYMENTS',
+      [
+        { account: '6010', debit: 500_000, credit: 0 }, // Rent
+        { account: '6030', debit: 40_000, credit: 0 }, // Utilities
+        { account: '1001', debit: 0, credit: 540_000 }, // Cash
+      ],
+      'Feb rent + utilities',
+    );
   });
 
   it('collects $15,000 AR payment', async () => {
-    await postEntry(s, '2025-02-28', 'CASH_RECEIPTS', [
-      { account: '1001', debit: 1_500_000, credit: 0 },         // Cash
-      { account: '1200', debit: 0, credit: 1_500_000 },         // AR
-    ], 'AR collection');
+    await postEntry(
+      s,
+      '2025-02-28',
+      'CASH_RECEIPTS',
+      [
+        { account: '1001', debit: 1_500_000, credit: 0 }, // Cash
+        { account: '1200', debit: 0, credit: 1_500_000 }, // AR
+      ],
+      'AR collection',
+    );
   });
 
   it('conservation holds after February', async () => {
@@ -110,29 +165,53 @@ describe('3. February Operations', () => {
 
 describe('4. March Operations', () => {
   it('buys $10,000 equipment', async () => {
-    await postEntry(s, '2025-03-05', 'GENERAL', [
-      { account: '1500', debit: 1_000_000, credit: 0 },         // Equipment
-      { account: '1001', debit: 0, credit: 1_000_000 },         // Cash
-    ], 'Equipment purchase');
+    await postEntry(
+      s,
+      '2025-03-05',
+      'GENERAL',
+      [
+        { account: '1500', debit: 1_000_000, credit: 0 }, // Equipment
+        { account: '1001', debit: 0, credit: 1_000_000 }, // Cash
+      ],
+      'Equipment purchase',
+    );
   });
 
   it('earns $25,000 revenue', async () => {
-    await postEntry(s, '2025-03-15', 'SALES', [
-      { account: '1001', debit: 2_500_000, credit: 0 },         // Cash
-      { account: '4010', debit: 0, credit: 2_500_000 },         // Service Revenue
-    ], 'Mar revenue');
+    await postEntry(
+      s,
+      '2025-03-15',
+      'SALES',
+      [
+        { account: '1001', debit: 2_500_000, credit: 0 }, // Cash
+        { account: '4010', debit: 0, credit: 2_500_000 }, // Service Revenue
+      ],
+      'Mar revenue',
+    );
   });
 
   it('pays $8,000 salaries + $5,000 rent', async () => {
-    await postEntry(s, '2025-03-31', 'PAYROLL', [
-      { account: '6020', debit: 800_000, credit: 0 },           // Salaries
-      { account: '1001', debit: 0, credit: 800_000 },           // Cash
-    ], 'Mar payroll');
+    await postEntry(
+      s,
+      '2025-03-31',
+      'PAYROLL',
+      [
+        { account: '6020', debit: 800_000, credit: 0 }, // Salaries
+        { account: '1001', debit: 0, credit: 800_000 }, // Cash
+      ],
+      'Mar payroll',
+    );
 
-    await postEntry(s, '2025-03-31', 'CASH_PAYMENTS', [
-      { account: '6010', debit: 500_000, credit: 0 },           // Rent
-      { account: '1001', debit: 0, credit: 500_000 },           // Cash
-    ], 'Mar rent');
+    await postEntry(
+      s,
+      '2025-03-31',
+      'CASH_PAYMENTS',
+      [
+        { account: '6010', debit: 500_000, credit: 0 }, // Rent
+        { account: '1001', debit: 0, credit: 500_000 }, // Cash
+      ],
+      'Mar rent',
+    );
   });
 });
 

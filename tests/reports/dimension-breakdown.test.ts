@@ -1,26 +1,70 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose, { Schema } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { defineCountryPack } from '../../src/country/index.js';
+import { generateDimensionBreakdown } from '../../src/reports/dimension-breakdown.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { defineCountryPack } from '../../src/country/index.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { generateDimensionBreakdown } from '../../src/reports/dimension-breakdown.js';
 import { buildDimensionFields } from '../../src/utils/dimensions.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
 
 const testPack = defineCountryPack({
-  code: 'DIM', name: 'Dimension Test', defaultCurrency: 'TST',
+  code: 'DIM',
+  name: 'Dimension Test',
+  defaultCurrency: 'TST',
   retainedEarningsAccountCode: '3660',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash', parentCode: null, isTotal: false, cashFlowCategory: 'operating' },
-    { code: '4000', name: 'Sales Revenue', category: 'Income Statement-Income', description: 'Revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '5000', name: 'Cost of Sales', category: 'Income Statement-Expense', description: 'COGS', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '6000', name: 'Rent Expense', category: 'Income Statement-Expense', description: 'Rent', parentCode: null, isTotal: false, cashFlowCategory: null },
-    { code: '3660', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: 'RE', parentCode: null, isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash',
+      category: 'Balance Sheet-Asset',
+      description: 'Cash',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '4000',
+      name: 'Sales Revenue',
+      category: 'Income Statement-Income',
+      description: 'Revenue',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '5000',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: 'COGS',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '6000',
+      name: 'Rent Expense',
+      category: 'Income Statement-Expense',
+      description: 'Rent',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3660',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: 'RE',
+      parentCode: null,
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 // ── Setup ────────────────────────────────────────────────────────────────────
@@ -52,15 +96,13 @@ beforeAll(async () => {
   };
 
   const acctSchema = createAccountSchema(config);
-  if (mongoose.models['DimAccount']) delete mongoose.models['DimAccount'];
+  if (mongoose.models.DimAccount) delete mongoose.models.DimAccount;
   AccountModel = mongoose.model('DimAccount', acctSchema);
 
-  const jeSchema = createJournalEntrySchema(
-    config,
-    'DimAccount',
-    { extraItemFields: dimensionFields },
-  );
-  if (mongoose.models['DimJE']) delete mongoose.models['DimJE'];
+  const jeSchema = createJournalEntrySchema(config, 'DimAccount', {
+    extraItemFields: dimensionFields,
+  });
+  if (mongoose.models.DimJE) delete mongoose.models.DimJE;
   JEModel = mongoose.model('DimJE', jeSchema);
 
   await AccountModel.createIndexes();
@@ -90,7 +132,12 @@ beforeEach(async () => {
 /** Helper: create a posted journal entry with dimension fields */
 async function postEntry(
   date: string,
-  items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number; departmentId?: mongoose.Types.ObjectId | null }>,
+  items: Array<{
+    account: mongoose.Types.ObjectId;
+    debit: number;
+    credit: number;
+    departmentId?: mongoose.Types.ObjectId | null;
+  }>,
 ) {
   return JEModel.create({
     journalType: 'GENERAL',
@@ -135,7 +182,7 @@ describe('generateDimensionBreakdown', () => {
     expect(report.grandTotal).toBe(100000); // 50000 + 30000 + 20000
 
     // Find Dept A row
-    const rowA = report.rows.find(r => String(r.dimensionValue) === String(deptA))!;
+    const rowA = report.rows.find((r) => String(r.dimensionValue) === String(deptA))!;
     expect(rowA).toBeDefined();
     expect(rowA.total).toBe(80000); // 50000 + 30000
     expect(rowA.accounts).toHaveLength(2);
@@ -146,7 +193,7 @@ describe('generateDimensionBreakdown', () => {
     expect(rowA.accounts[1].balance).toBe(50000);
 
     // Find Dept B row
-    const rowB = report.rows.find(r => String(r.dimensionValue) === String(deptB))!;
+    const rowB = report.rows.find((r) => String(r.dimensionValue) === String(deptB))!;
     expect(rowB).toBeDefined();
     expect(rowB.total).toBe(20000);
     expect(rowB.accounts).toHaveLength(1);
@@ -255,15 +302,13 @@ describe('generateDimensionBreakdown', () => {
     ]);
 
     const mtAcctSchema = createAccountSchema(mtConfig);
-    if (mongoose.models['MtDimAccount']) delete mongoose.models['MtDimAccount'];
+    if (mongoose.models.MtDimAccount) delete mongoose.models.MtDimAccount;
     const MtAccountModel = mongoose.model('MtDimAccount', mtAcctSchema);
 
-    const mtJeSchema = createJournalEntrySchema(
-      mtConfig,
-      'MtDimAccount',
-      { extraItemFields: dimensionFields },
-    );
-    if (mongoose.models['MtDimJE']) delete mongoose.models['MtDimJE'];
+    const mtJeSchema = createJournalEntrySchema(mtConfig, 'MtDimAccount', {
+      extraItemFields: dimensionFields,
+    });
+    if (mongoose.models.MtDimJE) delete mongoose.models.MtDimJE;
     const MtJEModel = mongoose.model('MtDimJE', mtJeSchema);
 
     await MtAccountModel.createIndexes();
@@ -307,7 +352,12 @@ describe('generateDimensionBreakdown', () => {
 
     // Query org A only
     const report = await generateDimensionBreakdown(
-      { AccountModel: MtAccountModel, JournalEntryModel: MtJEModel, country: testPack, orgField: 'business' },
+      {
+        AccountModel: MtAccountModel,
+        JournalEntryModel: MtJEModel,
+        country: testPack,
+        orgField: 'business',
+      },
       {
         organizationId: orgA,
         dateOption: 'custom',

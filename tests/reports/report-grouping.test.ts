@@ -10,67 +10,344 @@
  * exactly as they would in production with @classytic/ledger-ca.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { defineCountryPack } from '../../src/country/index.js';
+import { generateBalanceSheet } from '../../src/reports/balance-sheet.js';
+import { generateIncomeStatement } from '../../src/reports/income-statement.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
-import { defineCountryPack } from '../../src/country/index.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
-import { generateIncomeStatement } from '../../src/reports/income-statement.js';
-import { generateBalanceSheet } from '../../src/reports/balance-sheet.js';
 
 // ── Realistic Canada-like pack with parentCode hierarchy ────────────────────
 
 const canadaLikePack = defineCountryPack({
-  code: 'CA', name: 'Canada Test', defaultCurrency: 'CAD',
+  code: 'CA',
+  name: 'Canada Test',
+  defaultCurrency: 'CAD',
   accountTypes: [
     // ── Group Labels (isGroup: true — for report section headings) ──────────
-    { code: 'Assets', name: 'Assets', category: 'Balance Sheet-Asset', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Liability', name: 'Liabilities', category: 'Balance Sheet-Liability', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Current Assets', name: 'Current Assets', category: 'Balance Sheet-Asset', description: '', parentCode: 'Assets', isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Capital Assets', name: 'Capital Assets', category: 'Balance Sheet-Asset', description: '', parentCode: 'Assets', isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'CurrentLiabilities', name: 'Current Liabilities', category: 'Balance Sheet-Liability', description: '', parentCode: 'Liability', isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Shareholder Equity', name: 'Shareholder Equity', category: 'Balance Sheet-Equity', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Revenue', name: 'Revenue', category: 'Income Statement-Income', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Cost of Sales', name: 'Cost of Sales', category: 'Income Statement-Expense', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
-    { code: 'Operating Expenses', name: 'Operating Expenses', category: 'Income Statement-Expense', description: '', parentCode: null, isTotal: false, isGroup: true, cashFlowCategory: null },
+    {
+      code: 'Assets',
+      name: 'Assets',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Liability',
+      name: 'Liabilities',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Current Assets',
+      name: 'Current Assets',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Assets',
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Capital Assets',
+      name: 'Capital Assets',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Assets',
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'CurrentLiabilities',
+      name: 'Current Liabilities',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: 'Liability',
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Shareholder Equity',
+      name: 'Shareholder Equity',
+      category: 'Balance Sheet-Equity',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Revenue',
+      name: 'Revenue',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Cost of Sales',
+      name: 'Cost of Sales',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Operating Expenses',
+      name: 'Operating Expenses',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: null,
+      isTotal: false,
+      isGroup: true,
+      cashFlowCategory: null,
+    },
 
     // ── Balance Sheet Posting Accounts ──────────────────────────────────────
-    { code: '1000', name: 'Cash and Deposits', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1060', name: 'Accounts Receivable', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1120', name: 'Inventories', category: 'Balance Sheet-Asset', description: '', parentCode: 'Current Assets', isTotal: false, cashFlowCategory: 'operating' },
-    { code: '1600', name: 'Land', category: 'Balance Sheet-Asset', description: '', parentCode: 'Capital Assets', isTotal: false, cashFlowCategory: 'Investing' as any },
-    { code: '1680', name: 'Equipment', category: 'Balance Sheet-Asset', description: '', parentCode: 'Capital Assets', isTotal: false, cashFlowCategory: 'Investing' as any },
-    { code: '2620', name: 'Accounts Payable', category: 'Balance Sheet-Liability', description: '', parentCode: 'CurrentLiabilities', isTotal: false, cashFlowCategory: 'operating' },
-    { code: '2680', name: 'Taxes Payable', category: 'Balance Sheet-Liability', description: '', parentCode: 'CurrentLiabilities', isTotal: false, cashFlowCategory: 'operating' },
-    { code: '3500', name: 'Common Shares', category: 'Balance Sheet-Equity', description: '', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
-    { code: '3600', name: 'Retained Earnings', category: 'Balance Sheet-Equity', description: '', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
-    { code: '3660', name: 'Retained Earnings – Start', category: 'Balance Sheet-Equity', description: '', parentCode: 'Shareholder Equity', isTotal: false, cashFlowCategory: null },
+    {
+      code: '1000',
+      name: 'Cash and Deposits',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Current Assets',
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1060',
+      name: 'Accounts Receivable',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Current Assets',
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1120',
+      name: 'Inventories',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Current Assets',
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '1600',
+      name: 'Land',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Capital Assets',
+      isTotal: false,
+      cashFlowCategory: 'Investing' as any,
+    },
+    {
+      code: '1680',
+      name: 'Equipment',
+      category: 'Balance Sheet-Asset',
+      description: '',
+      parentCode: 'Capital Assets',
+      isTotal: false,
+      cashFlowCategory: 'Investing' as any,
+    },
+    {
+      code: '2620',
+      name: 'Accounts Payable',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: 'CurrentLiabilities',
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '2680',
+      name: 'Taxes Payable',
+      category: 'Balance Sheet-Liability',
+      description: '',
+      parentCode: 'CurrentLiabilities',
+      isTotal: false,
+      cashFlowCategory: 'operating',
+    },
+    {
+      code: '3500',
+      name: 'Common Shares',
+      category: 'Balance Sheet-Equity',
+      description: '',
+      parentCode: 'Shareholder Equity',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3600',
+      name: 'Retained Earnings',
+      category: 'Balance Sheet-Equity',
+      description: '',
+      parentCode: 'Shareholder Equity',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '3660',
+      name: 'Retained Earnings – Start',
+      category: 'Balance Sheet-Equity',
+      description: '',
+      parentCode: 'Shareholder Equity',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
 
     // ── Revenue Posting Accounts ────────────────────────────────────────────
-    { code: '8000', name: 'Trade Sales of Goods and Services', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-    { code: '8090', name: 'Investment Revenue', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-    { code: '8120', name: 'Commission Revenue', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-    { code: '8230', name: 'Other Revenue', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
+    {
+      code: '8000',
+      name: 'Trade Sales of Goods and Services',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: 'Revenue',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8090',
+      name: 'Investment Revenue',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: 'Revenue',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8120',
+      name: 'Commission Revenue',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: 'Revenue',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8230',
+      name: 'Other Revenue',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: 'Revenue',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
 
     // ── Cost of Sales Posting Accounts ──────────────────────────────────────
-    { code: '8320', name: 'Purchases / Cost of Materials', category: 'Income Statement-Expense', description: '', parentCode: 'Cost of Sales', isTotal: false, cashFlowCategory: null },
-    { code: '8340', name: 'Direct Wages', category: 'Income Statement-Expense', description: '', parentCode: 'Cost of Sales', isTotal: false, cashFlowCategory: null },
-    { code: '8450', name: 'Other Direct Costs', category: 'Income Statement-Expense', description: '', parentCode: 'Cost of Sales', isTotal: false, cashFlowCategory: null },
+    {
+      code: '8320',
+      name: 'Purchases / Cost of Materials',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Cost of Sales',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8340',
+      name: 'Direct Wages',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Cost of Sales',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8450',
+      name: 'Other Direct Costs',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Cost of Sales',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
 
     // ── Operating Expense Posting Accounts ──────────────────────────────────
-    { code: '8710', name: 'Insurance', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-    { code: '8860', name: 'Professional Fees', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-    { code: '8910', name: 'Rent', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-    { code: '9060', name: 'Salaries and Wages', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
-    { code: '9220', name: 'Utilities', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
+    {
+      code: '8710',
+      name: 'Insurance',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Operating Expenses',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8860',
+      name: 'Professional Fees',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Operating Expenses',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '8910',
+      name: 'Rent',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Operating Expenses',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '9060',
+      name: 'Salaries and Wages',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Operating Expenses',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: '9220',
+      name: 'Utilities',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Operating Expenses',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
 
     // ── Uncategorized Catch-Alls ─────────────────────────────────────────────
-    { code: 'Uncategorized Income', name: 'Uncategorized Income', category: 'Income Statement-Income', description: '', parentCode: 'Revenue', isTotal: false, cashFlowCategory: null },
-    { code: 'Uncategorized Expense', name: 'Uncategorized Expense', category: 'Income Statement-Expense', description: '', parentCode: 'Operating Expenses', isTotal: false, cashFlowCategory: null },
+    {
+      code: 'Uncategorized Income',
+      name: 'Uncategorized Income',
+      category: 'Income Statement-Income',
+      description: '',
+      parentCode: 'Revenue',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
+    {
+      code: 'Uncategorized Expense',
+      name: 'Uncategorized Expense',
+      category: 'Income Statement-Expense',
+      description: '',
+      parentCode: 'Operating Expenses',
+      isTotal: false,
+      cashFlowCategory: null,
+    },
   ],
-  taxCodes: {}, taxCodesByRegion: {}, regions: [],
+  taxCodes: {},
+  taxCodesByRegion: {},
+  regions: [],
 });
 
 const config: AccountingEngineConfig = { country: canadaLikePack, currency: 'CAD' };
@@ -106,9 +383,14 @@ let utilitiesId: mongoose.Types.ObjectId;
 let uncatIncomeId: mongoose.Types.ObjectId;
 let uncatExpenseId: mongoose.Types.ObjectId;
 
-async function postEntry(date: string, items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>) {
+async function postEntry(
+  date: string,
+  items: Array<{ account: mongoose.Types.ObjectId; debit: number; credit: number }>,
+) {
   return JEModel.create({
-    journalType: 'GENERAL', state: 'posted', date: new Date(date),
+    journalType: 'GENERAL',
+    state: 'posted',
+    date: new Date(date),
     journalItems: items,
     totalDebit: items.reduce((s, i) => s + i.debit, 0),
     totalCredit: items.reduce((s, i) => s + i.credit, 0),
@@ -119,10 +401,10 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await mongoose.connect(mongod.getUri());
 
-  if (mongoose.models['GrpAccount']) delete mongoose.models['GrpAccount'];
+  if (mongoose.models.GrpAccount) delete mongoose.models.GrpAccount;
   AccountModel = mongoose.model('GrpAccount', createAccountSchema(config));
 
-  if (mongoose.models['GrpJE']) delete mongoose.models['GrpJE'];
+  if (mongoose.models.GrpJE) delete mongoose.models.GrpJE;
   JEModel = mongoose.model('GrpJE', createJournalEntrySchema(config, 'GrpAccount'));
 
   await AccountModel.createIndexes();
@@ -166,13 +448,11 @@ beforeEach(async () => {
   uncatExpenseId = await seed('Uncategorized Expense');
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // INCOME STATEMENT — GROUP STRUCTURE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('Income Statement — Group Structure & Layout', () => {
-
   /**
    * Post a realistic month of business activity:
    *
@@ -290,7 +570,7 @@ describe('Income Statement — Group Structure & Layout', () => {
     );
 
     const revenueGroup = report.revenue.groups[0];
-    const codes = revenueGroup.accounts.map(a => a.code);
+    const codes = revenueGroup.accounts.map((a) => a.code);
 
     expect(codes).toContain('8000'); // Trade Sales
     expect(codes).toContain('8090'); // Investment Revenue
@@ -298,10 +578,10 @@ describe('Income Statement — Group Structure & Layout', () => {
     expect(codes).toContain('Uncategorized Income');
 
     // Verify individual balances
-    const findAcct = (code: string) => revenueGroup.accounts.find(a => a.code === code)!;
-    expect(findAcct('8000').balance).toBe(5000000);   // $50,000
-    expect(findAcct('8090').balance).toBe(200000);     // $2,000
-    expect(findAcct('8120').balance).toBe(300000);     // $3,000
+    const findAcct = (code: string) => revenueGroup.accounts.find((a) => a.code === code)!;
+    expect(findAcct('8000').balance).toBe(5000000); // $50,000
+    expect(findAcct('8090').balance).toBe(200000); // $2,000
+    expect(findAcct('8120').balance).toBe(300000); // $3,000
     expect(findAcct('Uncategorized Income').balance).toBe(100000); // $1,000
   });
 
@@ -326,11 +606,11 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const cogsGroup = report.expenses.groups.find(g => g.name === 'Cost of Sales');
+    const cogsGroup = report.expenses.groups.find((g) => g.name === 'Cost of Sales');
     expect(cogsGroup).toBeDefined();
-    expect(cogsGroup!.accounts).toHaveLength(3);
+    expect(cogsGroup?.accounts).toHaveLength(3);
 
-    const codes = cogsGroup!.accounts.map(a => a.code);
+    const codes = cogsGroup?.accounts.map((a) => a.code);
     expect(codes).toContain('8320'); // Purchases
     expect(codes).toContain('8340'); // Direct Wages
     expect(codes).toContain('8450'); // Other Direct Costs
@@ -368,11 +648,11 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const opexGroup = report.expenses.groups.find(g => g.name === 'Operating Expenses');
+    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses');
     expect(opexGroup).toBeDefined();
-    expect(opexGroup!.accounts).toHaveLength(6); // 5 standard + 1 uncategorized
+    expect(opexGroup?.accounts).toHaveLength(6); // 5 standard + 1 uncategorized
 
-    const codes = opexGroup!.accounts.map(a => a.code);
+    const codes = opexGroup?.accounts.map((a) => a.code);
     expect(codes).toContain('9060'); // Salaries
     expect(codes).toContain('8910'); // Rent
     expect(codes).toContain('8710'); // Insurance
@@ -389,14 +669,14 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const opexGroup = report.expenses.groups.find(g => g.name === 'Operating Expenses')!;
-    const findAcct = (code: string) => opexGroup.accounts.find(a => a.code === code)!;
+    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses')!;
+    const findAcct = (code: string) => opexGroup.accounts.find((a) => a.code === code)!;
 
-    expect(findAcct('9060').balance).toBe(1200000);  // Salaries $12,000
-    expect(findAcct('8910').balance).toBe(500000);   // Rent $5,000
-    expect(findAcct('8710').balance).toBe(150000);   // Insurance $1,500
-    expect(findAcct('8860').balance).toBe(200000);   // Professional Fees $2,000
-    expect(findAcct('9220').balance).toBe(100000);   // Utilities $1,000
+    expect(findAcct('9060').balance).toBe(1200000); // Salaries $12,000
+    expect(findAcct('8910').balance).toBe(500000); // Rent $5,000
+    expect(findAcct('8710').balance).toBe(150000); // Insurance $1,500
+    expect(findAcct('8860').balance).toBe(200000); // Professional Fees $2,000
+    expect(findAcct('9220').balance).toBe(100000); // Utilities $1,000
     expect(findAcct('Uncategorized Expense').balance).toBe(50000); // $500
   });
 
@@ -445,16 +725,16 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const cogsGroup = report.expenses.groups.find(g => g.name === 'Cost of Sales')!;
-    const opexGroup = report.expenses.groups.find(g => g.name === 'Operating Expenses')!;
+    const cogsGroup = report.expenses.groups.find((g) => g.name === 'Cost of Sales')!;
+    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses')!;
 
     // COGS should only have 8xxx codes in the 8300-8500 range
-    const cogsCodes = cogsGroup.accounts.map(a => a.code);
-    expect(cogsCodes.every(c => ['8320', '8340', '8450'].includes(c))).toBe(true);
+    const cogsCodes = cogsGroup.accounts.map((a) => a.code);
+    expect(cogsCodes.every((c) => ['8320', '8340', '8450'].includes(c))).toBe(true);
 
     // OpEx should not have any COGS codes
-    const opexCodes = opexGroup.accounts.map(a => a.code);
-    expect(opexCodes.every(c => !['8320', '8340', '8450'].includes(c))).toBe(true);
+    const opexCodes = opexGroup.accounts.map((a) => a.code);
+    expect(opexCodes.every((c) => !['8320', '8340', '8450'].includes(c))).toBe(true);
   });
 
   it('revenue accounts never appear in expense groups', async () => {
@@ -465,11 +745,11 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const allExpenseCodes = report.expenses.groups.flatMap(g => g.accounts.map(a => a.code));
-    const allRevenueCodes = report.revenue.groups.flatMap(g => g.accounts.map(a => a.code));
+    const allExpenseCodes = report.expenses.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const allRevenueCodes = report.revenue.groups.flatMap((g) => g.accounts.map((a) => a.code));
 
     // No overlap
-    const overlap = allExpenseCodes.filter(c => allRevenueCodes.includes(c));
+    const overlap = allExpenseCodes.filter((c) => allRevenueCodes.includes(c));
     expect(overlap).toEqual([]);
   });
 
@@ -482,8 +762,8 @@ describe('Income Statement — Group Structure & Layout', () => {
     );
 
     const allAccounts = [
-      ...report.revenue.groups.flatMap(g => g.accounts.map(a => a.code)),
-      ...report.expenses.groups.flatMap(g => g.accounts.map(a => a.code)),
+      ...report.revenue.groups.flatMap((g) => g.accounts.map((a) => a.code)),
+      ...report.expenses.groups.flatMap((g) => g.accounts.map((a) => a.code)),
     ];
 
     // No duplicates
@@ -513,12 +793,15 @@ describe('Income Statement — Group Structure & Layout', () => {
 
     // Add a DRAFT entry that should not appear
     await JEModel.create({
-      journalType: 'GENERAL', state: 'draft', date: new Date('2025-03-28'),
+      journalType: 'GENERAL',
+      state: 'draft',
+      date: new Date('2025-03-28'),
       journalItems: [
         { account: cashId, debit: 9999999, credit: 0 },
         { account: salesId, debit: 0, credit: 9999999 },
       ],
-      totalDebit: 9999999, totalCredit: 9999999,
+      totalDebit: 9999999,
+      totalCredit: 9999999,
     });
 
     const report = await generateIncomeStatement(
@@ -531,13 +814,11 @@ describe('Income Statement — Group Structure & Layout', () => {
   });
 });
 
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // BALANCE SHEET — GROUP STRUCTURE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('Balance Sheet — Group Structure & Layout', () => {
-
   async function postBalanceSheetData() {
     // Equity investment: $100,000
     await postEntry('2025-01-01', [
@@ -584,7 +865,7 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const groupNames = report.assets.groups.map(g => g.name);
+    const groupNames = report.assets.groups.map((g) => g.name);
     expect(groupNames).toContain('Current Assets');
     expect(groupNames).toContain('Capital Assets');
   });
@@ -597,8 +878,8 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const currentAssets = report.assets.groups.find(g => g.name === 'Current Assets')!;
-    const codes = currentAssets.accounts.map(a => a.code);
+    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets')!;
+    const codes = currentAssets.accounts.map((a) => a.code);
     expect(codes).toContain('1000'); // Cash
     expect(codes).toContain('1060'); // AR
     expect(codes).toContain('1120'); // Inventory
@@ -612,8 +893,8 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const capitalAssets = report.assets.groups.find(g => g.name === 'Capital Assets')!;
-    const codes = capitalAssets.accounts.map(a => a.code);
+    const capitalAssets = report.assets.groups.find((g) => g.name === 'Capital Assets')!;
+    const codes = capitalAssets.accounts.map((a) => a.code);
     expect(codes).toContain('1600'); // Land
     expect(codes).toContain('1680'); // Equipment
   });
@@ -626,9 +907,9 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const currentLiab = report.liabilities.groups.find(g => g.name === 'Current Liabilities')!;
+    const currentLiab = report.liabilities.groups.find((g) => g.name === 'Current Liabilities')!;
     expect(currentLiab).toBeDefined();
-    const codes = currentLiab.accounts.map(a => a.code);
+    const codes = currentLiab.accounts.map((a) => a.code);
     expect(codes).toContain('2620'); // AP
   });
 
@@ -655,8 +936,8 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const currentAssets = report.assets.groups.find(g => g.name === 'Current Assets')!;
-    const capitalAssets = report.assets.groups.find(g => g.name === 'Capital Assets')!;
+    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets')!;
+    const capitalAssets = report.assets.groups.find((g) => g.name === 'Capital Assets')!;
 
     const findAcct = (group: any, code: string) => group.accounts.find((a: any) => a.code === code);
 
@@ -680,14 +961,14 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const assetCodes = report.assets.groups.flatMap(g => g.accounts.map(a => a.code));
-    const liabCodes = report.liabilities.groups.flatMap(g => g.accounts.map(a => a.code));
-    const eqCodes = report.equity.groups.flatMap(g => g.accounts.map(a => a.code));
+    const assetCodes = report.assets.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const liabCodes = report.liabilities.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const eqCodes = report.equity.groups.flatMap((g) => g.accounts.map((a) => a.code));
 
     // No overlap
-    expect(assetCodes.filter(c => liabCodes.includes(c))).toEqual([]);
-    expect(assetCodes.filter(c => eqCodes.includes(c))).toEqual([]);
-    expect(liabCodes.filter(c => eqCodes.includes(c))).toEqual([]);
+    expect(assetCodes.filter((c) => liabCodes.includes(c))).toEqual([]);
+    expect(assetCodes.filter((c) => eqCodes.includes(c))).toEqual([]);
+    expect(liabCodes.filter((c) => eqCodes.includes(c))).toEqual([]);
   });
 
   it('net income flows into equity', async () => {

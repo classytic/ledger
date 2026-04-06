@@ -1,0 +1,672 @@
+/**
+ * Semantic Record API — high-level accounting operations.
+ *
+ * Instead of assembling journal items manually (which requires knowing
+ * debit/credit rules and account ObjectIds), consumers call domain verbs:
+ *
+ *   await engine.record.sale(orgId, { amount: 10500, receivableAccount: '1001', revenueAccount: '4010' });
+ *   await engine.record.expense(orgId, { amount: 5000, expenseAccount: '6010', paidFromAccount: '1001' });
+ *   await engine.record.transfer(orgId, { amount: 10000, fromAccount: '1001', toAccount: '1002' });
+ *   await engine.record.payment(orgId, { amount: 5000, fromReceivableAccount: '1200', toCashAccount: '1001' });
+ *   await engine.record.adjustment(orgId, { lines: [{ account: '6010', debit: 500 }, { account: '1001', credit: 500 }] });
+ *
+ * All amounts are **integer cents**. All accounts are referenced by
+ * their country-pack account type code (e.g. '1001', not an ObjectId).
+ * The engine resolves codes to ObjectIds automatically, scoped by org.
+ *
+ * Every operation creates a **posted** journal entry and returns it.
+ * All plugins (double-entry, fiscal-lock, idempotency) fire as usual.
+ */
+
+import type { ClientSession, Model, Types } from 'mongoose';
+import type { CountryPack } from '../country/index.js';
+import type { LedgerModels } from '../models/factory.js';
+import { splitTaxExclusive, splitTaxInclusive } from '../money.js';
+import type { LedgerRepositories } from '../repositories/factory.js';
+import type { AccountingEngineConfig } from '../types/engine.js';
+import { Errors } from '../utils/errors.js';
+
+/**
+ * A lightweight shape matching mongokit's UserContext — the actor that
+ * performs an operation. Passed through to repository hooks as `context.user`,
+ * where the audit-trail plugin picks up `user._id` automatically.
+ */
+export interface ActorContext {
+  readonly _id?: string;
+  readonly id?: string;
+  readonly roles?: string | readonly string[];
+  readonly [key: string]: unknown;
+}
+
+// ── Shared Input Types ────────────────────────────────────────────────────
+
+export type AccountCode = string;
+
+/** Integer-cents amount. */
+export type Cents = number;
+
+export interface TaxInput {
+  /** Tax code from the country pack (e.g. 'HST', 'GST', 'VAT') */
+  readonly code: string;
+  /**
+   * Account type code where the tax amount posts.
+   * For sales: the tax-payable account (e.g. '2300' HST Collected).
+   * For expenses: the tax-recoverable (ITC) account (e.g. '2400' HST Paid).
+   */
+  readonly account: AccountCode;
+  /**
+   * If true, `amount` is tax-inclusive and will be split into base + tax.
+   * If false (default), `amount` is the tax-exclusive base and tax is added.
+   */
+  readonly inclusive?: boolean;
+}
+
+/**
+ * Options passed to every record.* operation. Matches mongokit's
+ * RepositoryContext shape so audit/observability plugins pick them up
+ * with zero glue code.
+ *
+ * - `user` → surfaced on context.user (audit-trail reads user._id)
+ * - `session` → surfaced on context.session (participates in transactions)
+ * - `idempotencyKey` → sets journalEntry.idempotencyKey (requires idempotency: true in engine config)
+ * - any extra field → spread into context for custom plugins
+ */
+export interface RecordOptions {
+  readonly session?: ClientSession | null;
+  /** The actor performing the operation — flows to hook `context.user`. */
+  readonly user?: ActorContext;
+  /** Short-hand: sets createdBy/postedBy on the journal entry directly. */
+  readonly actorId?: string;
+  /** Deterministic idempotency key (for at-most-once posting). */
+  readonly idempotencyKey?: string;
+  /** Extra context fields — picked up by custom plugins via context[key]. */
+  readonly [key: string]: unknown;
+}
+
+// ── Per-Operation Inputs ──────────────────────────────────────────────────
+
+export interface RecordSaleInput {
+  /** Transaction date */
+  readonly date: Date;
+  /** Tax-exclusive sale amount in integer cents (unless `tax.inclusive` is true) */
+  readonly amount: Cents;
+  /** Account that receives the money — either Cash or Accounts Receivable */
+  readonly receivableAccount: AccountCode;
+  /** Revenue account */
+  readonly revenueAccount: AccountCode;
+  /** Tax info — optional */
+  readonly tax?: TaxInput;
+  /** Free-text label / memo */
+  readonly label?: string;
+  /** Optional reference number override (otherwise auto-generated) */
+  readonly reference?: string;
+  /** Extra fields to attach to journal items (e.g. departmentId, projectId) */
+  readonly dimensions?: Record<string, unknown>;
+  /** Journal type (defaults to 'SALES') */
+  readonly journalType?: string;
+}
+
+export interface RecordExpenseInput {
+  readonly date: Date;
+  /** Tax-exclusive expense amount in cents (unless `tax.inclusive` is true) */
+  readonly amount: Cents;
+  /** Expense category account (e.g. '6010' Rent) */
+  readonly expenseAccount: AccountCode;
+  /** Where the money came from — either Cash or Accounts Payable */
+  readonly paidFromAccount: AccountCode;
+  /** Tax info (recoverable input tax credit) */
+  readonly tax?: TaxInput;
+  readonly label?: string;
+  readonly reference?: string;
+  readonly dimensions?: Record<string, unknown>;
+  readonly journalType?: string;
+}
+
+export interface RecordTransferInput {
+  readonly date: Date;
+  readonly amount: Cents;
+  readonly fromAccount: AccountCode;
+  readonly toAccount: AccountCode;
+  readonly label?: string;
+  readonly reference?: string;
+  readonly dimensions?: Record<string, unknown>;
+  readonly journalType?: string;
+}
+
+export interface RecordPaymentInput {
+  readonly date: Date;
+  readonly amount: Cents;
+  /** Customer receivable account being cleared (e.g. '1200' AR) */
+  readonly fromReceivableAccount: AccountCode;
+  /** Cash account receiving the payment (e.g. '1001' Cash) */
+  readonly toCashAccount: AccountCode;
+  readonly label?: string;
+  readonly reference?: string;
+  readonly dimensions?: Record<string, unknown>;
+  readonly journalType?: string;
+}
+
+export interface RecordAdjustmentLine {
+  /** Account type code */
+  readonly account: AccountCode;
+  readonly debit?: Cents;
+  readonly credit?: Cents;
+  readonly label?: string;
+}
+
+export interface RecordAdjustmentInput {
+  readonly date: Date;
+  readonly lines: readonly RecordAdjustmentLine[];
+  readonly label?: string;
+  readonly reference?: string;
+  readonly dimensions?: Record<string, unknown>;
+  readonly journalType?: string;
+}
+
+// ── Record API Shape ──────────────────────────────────────────────────────
+
+export interface RecordAPI {
+  /**
+   * Record a sale. Debits cash/AR, credits revenue, splits tax if provided.
+   *
+   * @example
+   * ```typescript
+   * await engine.record.sale(orgId, {
+   *   date: new Date('2025-04-01'),
+   *   amount: 10000,                    // $100.00 base
+   *   receivableAccount: '1001',        // Cash
+   *   revenueAccount: '4010',           // Service Revenue
+   *   tax: { code: 'HST', account: '2300' },  // 13% HST Collected
+   *   label: 'Invoice #INV-001',
+   * });
+   * ```
+   */
+  sale(organizationId: unknown, input: RecordSaleInput, options?: RecordOptions): Promise<unknown>;
+
+  /**
+   * Record an expense. Debits expense, credits cash/AP, splits input tax credit if provided.
+   */
+  expense(
+    organizationId: unknown,
+    input: RecordExpenseInput,
+    options?: RecordOptions,
+  ): Promise<unknown>;
+
+  /**
+   * Record a transfer between two balance-sheet accounts (e.g. cash → bank).
+   */
+  transfer(
+    organizationId: unknown,
+    input: RecordTransferInput,
+    options?: RecordOptions,
+  ): Promise<unknown>;
+
+  /**
+   * Record a customer payment (AR → Cash). Clears the receivable.
+   */
+  payment(
+    organizationId: unknown,
+    input: RecordPaymentInput,
+    options?: RecordOptions,
+  ): Promise<unknown>;
+
+  /**
+   * Record a general adjustment with arbitrary line items.
+   * Use for corrections, accruals, depreciation — anything that doesn't fit
+   * the other verbs. Amounts must balance (debits = credits).
+   */
+  adjustment(
+    organizationId: unknown,
+    input: RecordAdjustmentInput,
+    options?: RecordOptions,
+  ): Promise<unknown>;
+}
+
+// ── Implementation ────────────────────────────────────────────────────────
+
+interface BuildDeps {
+  models: LedgerModels;
+  repositories: LedgerRepositories;
+  country: CountryPack;
+  config: AccountingEngineConfig;
+}
+
+export function buildRecordAPI({ models, repositories, country, config }: BuildDeps): RecordAPI {
+  const AccountModel = models.Account as Model<unknown>;
+  const orgField = config.multiTenant?.orgField;
+
+  // ── Tax code lookup ──
+  const lookupTaxRate = (taxCode: string): number => {
+    const tc = country.taxCodes[taxCode];
+    if (!tc) {
+      throw Errors.notFound(`Tax code '${taxCode}' not found in country pack.`, [
+        { path: 'tax.code', issue: 'unknown tax code', value: taxCode },
+      ]);
+    }
+    return tc.rate;
+  };
+
+  // ── Account resolver (code → ObjectId, scoped by org) ──
+  const resolveAccounts = async (
+    organizationId: unknown,
+    codes: readonly AccountCode[],
+    path: string,
+    session?: ClientSession | null,
+  ): Promise<Map<AccountCode, Types.ObjectId>> => {
+    const unique = Array.from(new Set(codes));
+    const filter: Record<string, unknown> = { accountTypeCode: { $in: unique } };
+    if (orgField && organizationId != null) {
+      filter[orgField] = organizationId;
+    }
+
+    const docs = (await AccountModel.find(filter)
+      .select(`_id accountTypeCode`)
+      .session(session ?? null)
+      .lean()) as unknown as Array<{ _id: Types.ObjectId; accountTypeCode: string }>;
+
+    const map = new Map<AccountCode, Types.ObjectId>();
+    for (const d of docs) {
+      // First-seen wins (duplicate protection — unique index should prevent this)
+      if (!map.has(d.accountTypeCode)) map.set(d.accountTypeCode, d._id);
+    }
+
+    const missing: AccountCode[] = unique.filter((c) => !map.has(c));
+    if (missing.length > 0) {
+      throw Errors.notFound(
+        `Account(s) not found in ${orgField && organizationId ? 'org' : 'default'} ` +
+          `chart of accounts: ${missing.join(', ')}. ` +
+          `Seed them first via engine.repositories.accounts.seedAccounts().`,
+        missing.map((code) => ({
+          path,
+          issue: 'account type code not found in chart of accounts',
+          value: code,
+        })),
+      );
+    }
+
+    return map;
+  };
+
+  // ── Shared: validate amount + post entry ──
+  const validateAmount = (amount: Cents, path = 'amount'): void => {
+    if (!Number.isInteger(amount)) {
+      throw Errors.validation(`Amount must be an integer (cents), got ${amount}.`, [
+        { path, issue: 'must be an integer', value: amount },
+      ]);
+    }
+    if (amount <= 0) {
+      throw Errors.validation(`Amount must be positive, got ${amount}.`, [
+        { path, issue: 'must be positive', value: amount },
+      ]);
+    }
+  };
+
+  const postEntry = async (
+    organizationId: unknown,
+    payload: Record<string, unknown>,
+    options?: RecordOptions,
+  ): Promise<unknown> => {
+    if (orgField && organizationId != null) {
+      payload[orgField] = organizationId;
+    }
+
+    // Resolve actorId: prefer explicit options.actorId, otherwise derive from user._id/id
+    const actorId =
+      options?.actorId ??
+      (options?.user ? (options.user._id?.toString() ?? options.user.id?.toString()) : undefined);
+    if (actorId) {
+      payload.createdBy = actorId;
+      payload.postedBy = actorId;
+    }
+    if (options?.idempotencyKey) {
+      payload.idempotencyKey = options.idempotencyKey;
+    }
+
+    payload.state = 'posted';
+
+    // Build mongokit context — spread any extra options fields (e.g. custom
+    // metadata) so audit-trail and observability plugins can read them.
+    const ctx: Record<string, unknown> = {
+      session: options?.session ?? undefined,
+    };
+    if (options?.user) ctx.user = options.user;
+    if (orgField && organizationId != null) ctx.organizationId = organizationId;
+
+    // Forward any unknown keys (e.g. ctx.req, ctx.sourceSubledger) to mongokit.
+    if (options) {
+      for (const key of Object.keys(options)) {
+        if (key !== 'session' && key !== 'user' && key !== 'actorId' && key !== 'idempotencyKey') {
+          ctx[key] = options[key];
+        }
+      }
+    }
+
+    return repositories.journalEntries.create(payload, ctx);
+  };
+
+  // ── Build a journal item with optional dimensions ──
+  const buildItem = (
+    account: Types.ObjectId,
+    debit: Cents,
+    credit: Cents,
+    label?: string,
+    dimensions?: Record<string, unknown>,
+  ): Record<string, unknown> => ({
+    account,
+    debit,
+    credit,
+    ...(label ? { label } : {}),
+    ...(dimensions ?? {}),
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // sale
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const sale: RecordAPI['sale'] = async (organizationId, input, options) => {
+    validateAmount(input.amount, 'amount');
+
+    let baseAmount = input.amount;
+    let taxAmount = 0;
+
+    if (input.tax) {
+      const rate = lookupTaxRate(input.tax.code);
+      if (input.tax.inclusive) {
+        const split = splitTaxInclusive(input.amount, rate);
+        baseAmount = split.base;
+        taxAmount = split.tax;
+      } else {
+        const split = splitTaxExclusive(input.amount, rate);
+        baseAmount = split.base;
+        taxAmount = split.tax;
+      }
+    }
+
+    const totalCharge = baseAmount + taxAmount;
+    const codes: AccountCode[] = [input.receivableAccount, input.revenueAccount];
+    if (input.tax) codes.push(input.tax.account);
+
+    const acctMap = await resolveAccounts(
+      organizationId,
+      codes,
+      'receivableAccount',
+      options?.session ?? null,
+    );
+
+    const items: Record<string, unknown>[] = [
+      buildItem(
+        acctMap.get(input.receivableAccount)!,
+        totalCharge,
+        0,
+        input.label,
+        input.dimensions,
+      ),
+      buildItem(acctMap.get(input.revenueAccount)!, 0, baseAmount, input.label, input.dimensions),
+    ];
+    if (input.tax) {
+      items.push(
+        buildItem(
+          acctMap.get(input.tax.account)!,
+          0,
+          taxAmount,
+          `${input.label ?? 'Sale'} — ${input.tax.code}`,
+          input.dimensions,
+        ),
+      );
+    }
+
+    return postEntry(
+      organizationId,
+      {
+        journalType: input.journalType ?? 'SALES',
+        date: input.date,
+        label: input.label,
+        referenceNumber: input.reference,
+        journalItems: items,
+      },
+      options,
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // expense
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const expense: RecordAPI['expense'] = async (organizationId, input, options) => {
+    validateAmount(input.amount, 'amount');
+
+    let baseAmount = input.amount;
+    let taxAmount = 0;
+
+    if (input.tax) {
+      const rate = lookupTaxRate(input.tax.code);
+      if (input.tax.inclusive) {
+        const split = splitTaxInclusive(input.amount, rate);
+        baseAmount = split.base;
+        taxAmount = split.tax;
+      } else {
+        const split = splitTaxExclusive(input.amount, rate);
+        baseAmount = split.base;
+        taxAmount = split.tax;
+      }
+    }
+
+    const totalPaid = baseAmount + taxAmount;
+    const codes: AccountCode[] = [input.expenseAccount, input.paidFromAccount];
+    if (input.tax) codes.push(input.tax.account);
+
+    const acctMap = await resolveAccounts(
+      organizationId,
+      codes,
+      'expenseAccount',
+      options?.session ?? null,
+    );
+
+    const items: Record<string, unknown>[] = [
+      buildItem(acctMap.get(input.expenseAccount)!, baseAmount, 0, input.label, input.dimensions),
+    ];
+    if (input.tax) {
+      items.push(
+        buildItem(
+          acctMap.get(input.tax.account)!,
+          taxAmount,
+          0,
+          `${input.label ?? 'Expense'} — ${input.tax.code} ITC`,
+          input.dimensions,
+        ),
+      );
+    }
+    items.push(
+      buildItem(acctMap.get(input.paidFromAccount)!, 0, totalPaid, input.label, input.dimensions),
+    );
+
+    return postEntry(
+      organizationId,
+      {
+        journalType: input.journalType ?? 'PURCHASES',
+        date: input.date,
+        label: input.label,
+        referenceNumber: input.reference,
+        journalItems: items,
+      },
+      options,
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // transfer
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const transfer: RecordAPI['transfer'] = async (organizationId, input, options) => {
+    validateAmount(input.amount, 'amount');
+    if (input.fromAccount === input.toAccount) {
+      throw Errors.validation('Transfer source and destination accounts must be different.', [
+        {
+          path: 'fromAccount',
+          issue: 'must differ from toAccount',
+          value: { from: input.fromAccount, to: input.toAccount },
+        },
+      ]);
+    }
+
+    const acctMap = await resolveAccounts(
+      organizationId,
+      [input.fromAccount, input.toAccount],
+      'fromAccount',
+      options?.session ?? null,
+    );
+
+    const items = [
+      buildItem(acctMap.get(input.toAccount)!, input.amount, 0, input.label, input.dimensions),
+      buildItem(acctMap.get(input.fromAccount)!, 0, input.amount, input.label, input.dimensions),
+    ];
+
+    return postEntry(
+      organizationId,
+      {
+        journalType: input.journalType ?? 'GENERAL',
+        date: input.date,
+        label: input.label,
+        referenceNumber: input.reference,
+        journalItems: items,
+      },
+      options,
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // payment
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const payment: RecordAPI['payment'] = async (organizationId, input, options) => {
+    validateAmount(input.amount, 'amount');
+
+    const acctMap = await resolveAccounts(
+      organizationId,
+      [input.fromReceivableAccount, input.toCashAccount],
+      'fromReceivableAccount',
+      options?.session ?? null,
+    );
+
+    const items = [
+      buildItem(acctMap.get(input.toCashAccount)!, input.amount, 0, input.label, input.dimensions),
+      buildItem(
+        acctMap.get(input.fromReceivableAccount)!,
+        0,
+        input.amount,
+        input.label,
+        input.dimensions,
+      ),
+    ];
+
+    return postEntry(
+      organizationId,
+      {
+        journalType: input.journalType ?? 'CASH_RECEIPTS',
+        date: input.date,
+        label: input.label,
+        referenceNumber: input.reference,
+        journalItems: items,
+      },
+      options,
+    );
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // adjustment
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const adjustment: RecordAPI['adjustment'] = async (organizationId, input, options) => {
+    if (!input.lines || input.lines.length < 2) {
+      throw Errors.validation('Adjustment requires at least 2 lines.', [
+        { path: 'lines', issue: 'must contain at least 2 entries', value: input.lines?.length },
+      ]);
+    }
+
+    const lineErrors: Array<{ path: string; issue: string; value?: unknown }> = [];
+    let totalDebit = 0;
+    let totalCredit = 0;
+
+    input.lines.forEach((line, idx) => {
+      const d = line.debit ?? 0;
+      const c = line.credit ?? 0;
+      if (!Number.isInteger(d) || d < 0) {
+        lineErrors.push({
+          path: `lines.${idx}.debit`,
+          issue: 'must be a non-negative integer',
+          value: d,
+        });
+      }
+      if (!Number.isInteger(c) || c < 0) {
+        lineErrors.push({
+          path: `lines.${idx}.credit`,
+          issue: 'must be a non-negative integer',
+          value: c,
+        });
+      }
+      if (d > 0 && c > 0) {
+        lineErrors.push({
+          path: `lines.${idx}`,
+          issue: 'line cannot have both debit and credit',
+          value: { debit: d, credit: c },
+        });
+      }
+      if (d === 0 && c === 0) {
+        lineErrors.push({
+          path: `lines.${idx}`,
+          issue: 'line must have a non-zero debit or credit',
+          value: { debit: 0, credit: 0 },
+        });
+      }
+      totalDebit += d;
+      totalCredit += c;
+    });
+
+    if (lineErrors.length > 0) {
+      throw Errors.validation(
+        `Invalid adjustment lines: ${lineErrors.length} issue(s).`,
+        lineErrors,
+      );
+    }
+
+    if (totalDebit !== totalCredit) {
+      throw Errors.validation(
+        `Adjustment not balanced: debits (${totalDebit}) ≠ credits (${totalCredit}).`,
+        [
+          {
+            path: 'lines',
+            issue: 'debits must equal credits',
+            value: { totalDebit, totalCredit, difference: totalDebit - totalCredit },
+          },
+        ],
+      );
+    }
+
+    const codes = input.lines.map((l) => l.account);
+    const acctMap = await resolveAccounts(organizationId, codes, 'lines', options?.session ?? null);
+
+    const items = input.lines.map((line) =>
+      buildItem(
+        acctMap.get(line.account)!,
+        line.debit ?? 0,
+        line.credit ?? 0,
+        line.label ?? input.label,
+        input.dimensions,
+      ),
+    );
+
+    return postEntry(
+      organizationId,
+      {
+        journalType: input.journalType ?? 'GENERAL',
+        date: input.date,
+        label: input.label,
+        referenceNumber: input.reference,
+        journalItems: items,
+      },
+      options,
+    );
+  };
+
+  return { sale, expense, transfer, payment, adjustment };
+}
