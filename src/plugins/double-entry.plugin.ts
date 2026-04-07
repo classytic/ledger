@@ -9,6 +9,9 @@
 
 import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
 import type { ClientSession, Model } from 'mongoose';
+// Side-effect import: activates the `_ledgerInternal` typing on
+// RepositoryContext so this plugin can read the flag without casts.
+import '../types/mongokit-augmentation.js';
 import { Errors } from '../utils/errors.js';
 
 export interface DoubleEntryPluginOptions {
@@ -194,10 +197,14 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         if (!data) return;
 
         // ── Immutability guard: block modifications to posted entries ──────
-        // Allow: idempotent state re-set (state: 'posted')
-        // Block: everything else — including reversed/reversedBy (only settable via
-        //        reverse() which uses entry.save() directly, bypassing this hook)
-        if (JournalEntryModel) {
+        // Repository state-transition methods (post, unpost, archive) tag the
+        // update context with `_ledgerInternal` so this guard can distinguish
+        // legitimate transitions from arbitrary edits. External callers using
+        // repository.update() directly cannot set this flag — the contract is
+        // preserved for them.
+        const internalOp = context._ledgerInternal;
+
+        if (JournalEntryModel && !internalOp) {
           const id = context.id;
           if (id) {
             // Check if target entry is already posted
@@ -215,9 +222,6 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
               }
 
               // Only allow idempotent state re-set on posted entries.
-              // reversed/reversedBy are NOT allowed through repository.update() —
-              // reverse() uses entry.save() directly to bypass the plugin, so any
-              // attempt to set these flags through the generic update path is illegitimate.
               const allowedKeys = new Set(['state']);
               const dataKeys = Object.keys(data);
               const hasDisallowedKeys = dataKeys.some((k) => !allowedKeys.has(k));

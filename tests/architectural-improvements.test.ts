@@ -243,9 +243,11 @@ describe('Improvement 1: Immutability Guard', () => {
     );
   });
 
-  it('reverse() bypasses immutability guard because it uses entry.save() directly', async () => {
-    // Verify that reverse() sets reversed/reversedBy via entry.save(),
-    // NOT via repository.update() — so the plugin never sees these fields
+  it('reverse() marks the original via repository.update() with _ledgerInternal=reverseMark', async () => {
+    // As of 0.5.1 reverse() routes the mark-as-reversed step through
+    // repository.update() so plugins (audit, observability) observe the
+    // reversal event. The double-entry immutability guard honours the
+    // internal flag so the legitimate mutation is permitted.
     const { wireJournalEntryMethods } = await import(
       '../src/repositories/journal-entry.repository.js'
     );
@@ -272,13 +274,15 @@ describe('Improvement 1: Immutability Guard', () => {
     });
     wireJournalEntryMethods(repo, mockModel);
 
-    const result = await repo.reverse('entry-1');
+    await repo.reverse('entry-1');
 
-    // reverse() uses entry.save() — verify it was called with the reversal flags
-    expect(mockEntry.save).toHaveBeenCalled();
-    expect(mockEntry.reversed).toBe(true);
-    expect(mockEntry.reversedBy).toBe('reversal-1');
-    expect(result.original).toBe(mockEntry);
+    // The reverse-mark step went through update(), not entry.save().
+    expect(mockEntry.save).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith(
+      'entry-1',
+      expect.objectContaining({ reversed: true, reversedBy: 'reversal-1' }),
+      expect.objectContaining({ _ledgerInternal: 'reverseMark' }),
+    );
   });
 
   it('allows idempotent state:posted alone on posted entries', async () => {
@@ -493,13 +497,18 @@ describe('Improvement 1: reverse()', () => {
     expect(reversalData.state).toBe('posted');
     expect(reversalData.label).toContain('Reversal of');
 
-    // Verify original was marked as reversed
-    expect(mockEntry.reversed).toBe(true);
-    expect(mockEntry.reversedBy).toBe('reversal-1');
-    expect(mockEntry.save).toHaveBeenCalled();
+    // Verify the original was marked as reversed via repository.update()
+    // (the plugin pipeline runs on the mark step, not a silent entry.save()).
+    expect(mockEntry.save).not.toHaveBeenCalled();
+    expect(repo.update).toHaveBeenCalledWith(
+      'entry-1',
+      expect.objectContaining({ reversed: true, reversedBy: 'reversal-1' }),
+      expect.objectContaining({ _ledgerInternal: 'reverseMark' }),
+    );
 
-    // Verify return value
-    expect(result.original).toBe(mockEntry);
+    // Verify return value — the reversal doc is unchanged, `original` is the
+    // echoed updated doc from the mocked update() call.
+    expect(result.original).toMatchObject({ reversed: true, reversedBy: 'reversal-1' });
     expect(result.reversal).toBe(reversalDoc);
   });
 
@@ -1521,7 +1530,14 @@ describe('archive() method', () => {
     const result = await repo.archive('entry-1');
     expect(result.state).toBe('archived');
     expect(result.stateChangedAt).toBeInstanceOf(Date);
-    expect(mockEntry.save).toHaveBeenCalled();
+    // archive() now routes through repository.update() so the plugin pipeline
+    // (date-lock, audit, observability) fires on the state transition. The
+    // mock echoes the patch back, so we assert update — not save — was called.
+    expect(repo.update).toHaveBeenCalledWith(
+      'entry-1',
+      expect.objectContaining({ state: 'archived' }),
+      expect.objectContaining({ _ledgerInternal: 'archive' }),
+    );
   });
 
   it('rejects archiving a posted entry', async () => {

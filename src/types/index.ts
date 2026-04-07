@@ -2,6 +2,11 @@
  * @classytic/ledger — Type Definitions
  */
 
+// Side-effect import: activates the mongokit module augmentation that types
+// the `_ledgerInternal` flag on RepositoryContext and SessionOptions so
+// plugin authors can observe it without casts.
+import './mongokit-augmentation.js';
+
 export type {
   PostingContract,
   PostingResult,
@@ -54,6 +59,7 @@ export type {
   SchemaOptions,
   StrictnessConfig,
 } from './engine.js';
+export type { LedgerInternalOp } from './mongokit-augmentation.js';
 
 export type {
   BalanceSheetParams,

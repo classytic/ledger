@@ -2,6 +2,8 @@
 
 Embeddable double-entry accounting engine for MongoDB. Integer-cents arithmetic, plugin-based, country-agnostic, multi-tenant at every layer. Framework-agnostic — works with Express, Fastify, Nest, Arc, or any plain Mongoose app.
 
+> **0.5.1** — Critical plugin-pipeline fixes. `post()`, `unpost()`, `archive()`, and the `reverse()` mark-as-reversed step now route through `repository.update()` so `before:update` / `after:update` hooks fire on every state transition (period locks, audit, observability are no longer silently bypassed). `reverse()` and `duplicate()` propagate every consumer-defined top-level field (`departmentId`, `projectId`, `sourceRef`, `branchTag`, `organizationId`, …). New typed `_ledgerInternal` flag on `RepositoryContext` lets plugin authors observe internal transitions without casts. See [CHANGELOG.md](CHANGELOG.md).
+
 ## Install
 
 ```bash

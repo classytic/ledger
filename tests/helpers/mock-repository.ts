@@ -49,7 +49,14 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
       hasNext: false,
       hasPrev: false,
     }),
-    update: vi.fn().mockResolvedValue({}),
+    // Echo back the patched doc so journal-entry post/unpost/archive helpers
+    // (which route through repository.update so plugins fire) return a value
+    // that callers can assert against. Tests overriding `update` keep their
+    // own behaviour.
+    update: vi.fn().mockImplementation(async (_id: unknown, patch: Record<string, unknown>) => ({
+      _id,
+      ...patch,
+    })),
     delete: vi.fn().mockResolvedValue({ success: true, message: 'deleted' }),
     count: vi.fn().mockResolvedValue(0),
     exists: vi.fn().mockResolvedValue(null),
