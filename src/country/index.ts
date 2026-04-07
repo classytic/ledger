@@ -1,89 +1,37 @@
 /**
- * Country Pack Interface
+ * Country Pack Interface (0.7.0)
  *
- * A country pack provides everything country-specific:
- * account types (chart of accounts template), tax codes,
- * and optionally a tax report generator.
+ * A country pack ships the **chart of accounts** and accounting conventions
+ * for a jurisdiction. It intentionally does NOT own tax codes, tax rate
+ * tables, tax return templates, or any tax calculation logic — those
+ * belong in separate, jurisdiction-specific tax engines (e.g.
+ * `@classytic/bd-tax`, `@classytic/ca-tax`) that the consumer wires in
+ * independently when they need tax functionality.
  *
- * Example:
- *   import { canadaPack } from '@classytic/ledger-ca';
- *   const engine = createAccountingEngine({ country: canadaPack, currency: 'CAD' });
+ * This mirrors how Odoo (`account/` vs `l10n_*`), QuickBooks (Ledger vs
+ * TaxService), and Xero (accounting vs Xero Tax) separate the two
+ * concerns. A pure accounting consumer never needs to know tax exists.
+ *
+ * @example
+ * ```typescript
+ * import { createAccountingEngine } from '@classytic/ledger';
+ * import { canadaPack } from '@classytic/ledger-ca';
+ *
+ * const engine = createAccountingEngine({
+ *   mongoose,
+ *   country: canadaPack,
+ *   currency: 'CAD',
+ * });
+ *
+ * // If you ALSO need Canadian tax (GST/HST/PST, CRA forms, etc.):
+ * // import { canadaTax, wireTax } from '@classytic/ca-tax';
+ * // wireTax(engine, canadaTax);
+ * ```
  */
 
 import type { AccountType } from '../types/core.js';
 
-// ─── Tax Repartition (Odoo-style multi-account splits) ──────────────────────
-
-/**
- * A single destination for a fraction of a tax amount. A `TaxCode` can declare
- * multiple repartition lines so that one tax percentage produces multiple
- * journal items (e.g. reverse-charge VAT books +100% to payable AND -100% to
- * recoverable in the same entry). Factors sum across lines and the engine
- * enforces balance inside the existing double-entry plugin.
- *
- * `accountRole` is a logical name looked up against the consumer's chart of
- * accounts via the country pack's `resolveRepartitionAccount` helper — NOT a
- * direct ObjectId, so the same country pack can drive any consumer's accounts.
- * `gridCode` flows through to `taxDetails` for regulatory reporting (CRA
- * schedule lines, HMRC VAT boxes, NBR Mushak grid, etc.).
- */
-export interface TaxRepartitionLine {
-  /**
-   * Signed multiplier applied to the base tax amount. Use `1` for the
-   * "normal" line, `-1` for a mirror (e.g. recoverable reverse-charge).
-   * Fractions (e.g. `0.5`) are allowed for split-destination taxes.
-   */
-  readonly factor: number;
-  /**
-   * Logical role resolved against the country pack. Standard roles:
-   *   - `'collected'` — tax collected from customer (liability)
-   *   - `'recoverable'` — tax paid to supplier, recoverable (asset)
-   *   - `'expense'` — tax paid, non-recoverable (expense)
-   *   - `'transition'` — temporary holding account for cash-basis exigibility
-   * Consumers can define custom roles and wire them in their country pack.
-   */
-  readonly accountRole: string;
-  /** Optional reporting grid code — propagated to `taxDetails` on the item. */
-  readonly gridCode?: string | number;
-  /** Optional human label surfaced in UI and audit trails. */
-  readonly label?: string;
-  /** Optional: only apply on these document types. Default: all. */
-  readonly documentTypes?: readonly ('invoice' | 'refund' | 'payment')[];
-}
-
-/**
- * When a tax is realized into the books:
- *   - `'accrual'` (default) — books at entry time (what 0.5.x did for everything)
- *   - `'cash'` — books into a transition account at entry time, moves to the
- *     real tax account when the invoice is reconciled against a payment
- */
-export type TaxExigibility = 'accrual' | 'cash';
-
-export interface TaxCode {
-  readonly code: string;
-  readonly name: string;
-  readonly taxType: string;
-  readonly rate: number;
-  readonly direction: 'collected' | 'recoverable' | 'paid';
-  readonly province?: string;
-  readonly reportLines?: readonly number[];
-  readonly description: string;
-  readonly active: boolean;
-  /**
-   * Multi-line repartition — when present, `createRepartitionTaxGenerator`
-   * produces one journal item per line. When absent, the tax behaves as a
-   * single-line tax routed to the `direction`-implied account.
-   */
-  readonly repartition?: readonly TaxRepartitionLine[];
-  /**
-   * Accrual (default) or cash-basis exigibility. When `'cash'`, requires
-   * a `transition` repartition role in `repartition` OR a country-pack
-   * default transition account.
-   */
-  readonly exigibility?: TaxExigibility;
-}
-
-// ─── Journal Templates (Odoo-style first-class Journal resource) ────────────
+// ─── Journal Templates (first-class Journal resource) ──────────────────────
 
 /**
  * Declarative template that tells the engine which journals to seed for a
@@ -121,31 +69,6 @@ export interface JournalTemplate {
   readonly defaultCreditAccountRole?: string;
 }
 
-export interface TaxCodesByRegion {
-  readonly [region: string]: readonly string[];
-}
-
-// ─── Tax Report Generator ────────────────────────────────────────────────────
-
-export interface TaxReportLine {
-  readonly line: number | string;
-  readonly name: string;
-  readonly description: string;
-  readonly type: 'input' | 'calculated' | 'manual';
-  readonly calculate?: (data: Record<string | number, number>) => number;
-  readonly section: string;
-}
-
-export interface TaxReportTemplate {
-  readonly name: string;
-  readonly lines: Readonly<Record<string | number, TaxReportLine>>;
-  calculate(
-    inputData: Record<string | number, number>,
-    manualData?: Record<string | number, number>,
-  ): Record<string | number, number>;
-  summarize(calculated: Record<string | number, number>): Record<string, unknown>;
-}
-
 // ─── Country Pack ────────────────────────────────────────────────────────────
 
 export interface CountryPack {
@@ -158,21 +81,9 @@ export interface CountryPack {
 
   /**
    * Full chart of accounts template — flat array of account type definitions.
-   * Includes both regular accounts and virtual tax sub-accounts.
+   * Includes both posting accounts and grouping / total rows.
    */
   readonly accountTypes: readonly AccountType[];
-
-  /** Tax codes indexed by code string */
-  readonly taxCodes: Readonly<Record<string, TaxCode>>;
-
-  /** Tax codes grouped by region/province/state */
-  readonly taxCodesByRegion: TaxCodesByRegion;
-
-  /** Available regions (provinces/states) */
-  readonly regions: readonly string[];
-
-  /** Tax report template (e.g., CRA GST/HST return) */
-  readonly taxReport?: TaxReportTemplate;
 
   /**
    * Optional journal templates seeded per organization. When a consumer
@@ -180,21 +91,6 @@ export interface CountryPack {
    * creates one Journal document per template. See `JournalTemplate`.
    */
   readonly journalTemplates?: readonly JournalTemplate[];
-
-  /**
-   * Map a logical `accountRole` string (e.g. `'collected'`, `'recoverable'`,
-   * `'transition'`) to the actual account-type code for this country. The
-   * repartition tax generator calls this for each repartition line so the
-   * same tax definition can resolve different account codes in BD vs CA.
-   *
-   * Default behavior when omitted: maps `'collected'` → account with
-   * direction='collected' in `taxCodes`, `'recoverable'` →
-   * direction='recoverable', etc. Consumers override for custom roles.
-   */
-  readonly resolveTaxRepartitionAccountCode?: (
-    role: string,
-    taxCode: TaxCode,
-  ) => string | undefined;
 
   // ── Country-specific report defaults ──
 
@@ -241,9 +137,6 @@ export interface CountryPack {
   /** Check if an account type can receive postings */
   isPostingAccount(code: string): boolean;
 
-  /** Get tax codes for a specific region */
-  getTaxCodesForRegion(region: string): TaxCode[];
-
   /** Flatten hierarchical accounts (if needed) */
   flattenAccountTypes(): readonly AccountType[];
 }
@@ -255,12 +148,7 @@ export interface CountryPackInput {
   name: string;
   defaultCurrency: string;
   accountTypes: readonly AccountType[];
-  taxCodes: Readonly<Record<string, TaxCode>>;
-  taxCodesByRegion: TaxCodesByRegion;
-  regions: readonly string[];
-  taxReport?: TaxReportTemplate;
   journalTemplates?: readonly JournalTemplate[];
-  resolveTaxRepartitionAccountCode?: (role: string, taxCode: TaxCode) => string | undefined;
   retainedEarningsAccountCode?: string;
   retainedEarningsDisplayCode?: string;
   currentYearEarningsCode?: string;
@@ -298,11 +186,6 @@ export function defineCountryPack(input: CountryPackInput): CountryPack {
     isPostingAccount: (code: string) => {
       const at = accountMap.get(code);
       return at !== undefined && !at.isTotal && !at.isGroup;
-    },
-
-    getTaxCodesForRegion: (region: string) => {
-      const codes = input.taxCodesByRegion[region] ?? [];
-      return codes.map((c) => input.taxCodes[c]).filter(Boolean) as TaxCode[];
     },
 
     flattenAccountTypes: () => input.accountTypes,

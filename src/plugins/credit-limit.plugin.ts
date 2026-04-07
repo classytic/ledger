@@ -19,10 +19,9 @@
  * A/R; this is the canonical use.
  *
  * Lock exemptions:
- *   - `_ledgerInternal === 'reverseMark'`  → reversal of an existing
+ *   - `_ledgerInternal === 'reverseMark'` → reversal of an existing
  *     overdue invoice should not be blocked
- *   - `_ledgerInternal === 'fxRealize'`    → FX revaluation entries
- *   - `_ledgerInternal === 'cashBasisRealize'` → tax exigibility moves
+ *   - `_ledgerInternal === 'fxRealize'`   → FX revaluation entries
  *
  * The plugin reads `journalItems[].partnerId` (or whatever
  * `partnerField` you configure) — the same field the partner ledger

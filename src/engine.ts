@@ -86,7 +86,6 @@ export class AccountingEngine {
     this.record = buildRecordAPI({
       models: this.models,
       repositories: this.repositories,
-      country: this.country,
       config: this.config,
     });
     this.introspect = buildIntrospectAPI({
@@ -122,11 +121,6 @@ export class AccountingEngine {
   /** Get account type definition by code */
   getAccountType(code: string) {
     return this.country.getAccountType(code);
-  }
-
-  /** Get tax codes for a region */
-  getTaxCodesForRegion(region: string) {
-    return this.country.getTaxCodesForRegion(region);
   }
 
   // ── Reports Builder (uses owned models) ────────────────────────────────────

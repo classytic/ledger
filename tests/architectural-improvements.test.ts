@@ -1210,7 +1210,7 @@ describe('Engine: createReports() pipes retainedEarningsAccountCode/currentYearE
       isPostingAccount: () => true,
       getAccountType: () => null,
       getPostingAccountTypes: () => [],
-      getTaxCodesForRegion: () => [],
+
       name: 'Test',
       code: 'TST',
       defaultCurrency: 'TST',
@@ -1239,7 +1239,7 @@ describe('Engine: createReports() pipes retainedEarningsAccountCode/currentYearE
       isPostingAccount: () => true,
       getAccountType: () => null,
       getPostingAccountTypes: () => [],
-      getTaxCodesForRegion: () => [],
+
       name: 'Test',
       code: 'TST',
       defaultCurrency: 'TST',

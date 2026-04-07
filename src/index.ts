@@ -57,7 +57,6 @@ export type {
   RecordPaymentInput,
   RecordSaleInput,
   RecordTransferInput,
-  TaxInput,
 } from './semantic/record.js';
 
 // ── Money ──────────────────────────────────────────────────────────────────
@@ -95,7 +94,6 @@ export type {
   LockResolver,
   LockResolverContext,
   PeriodResolverOptions,
-  TaxLockPluginOptions,
   WatermarkResolverOptions,
 } from './plugins/lock/index.js';
 export {
@@ -103,17 +101,8 @@ export {
   dailyLockPlugin,
   fiscalLockPlugin,
   periodResolver,
-  taxLockPlugin,
   watermarkResolver,
 } from './plugins/lock/index.js';
-export type {
-  RepartitionAccountResolver,
-  RepartitionGeneratorOptions,
-} from './utils/repartition-tax.js';
-export {
-  createRepartitionTaxGenerator,
-  defaultResolveTaxRepartitionAccountCode,
-} from './utils/repartition-tax.js';
 
 // ── Reports ────────────────────────────────────────────────────────────────
 
@@ -187,17 +176,7 @@ export {
 
 // ── Country Pack ───────────────────────────────────────────────────────────
 
-export type {
-  CountryPack,
-  CountryPackInput,
-  JournalTemplate,
-  TaxCode,
-  TaxCodesByRegion,
-  TaxExigibility,
-  TaxRepartitionLine,
-  TaxReportLine,
-  TaxReportTemplate,
-} from './country/index.js';
+export type { CountryPack, CountryPackInput, JournalTemplate } from './country/index.js';
 export { defineCountryPack } from './country/index.js';
 
 // ── Repository Types ──────────────────────────────────────────────────────
@@ -290,8 +269,6 @@ export type {
   SubledgerPostingInput,
   TaxDetail,
   TaxMetadata,
-  TaxReport,
-  TaxReturnSummary,
   TotalAccountOp,
   // Reports
   TrialBalanceReport,

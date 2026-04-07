@@ -15,15 +15,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import { dailyLockPlugin } from '../../src/plugins/lock/index.js';
-import { taxHookPlugin } from '../../src/plugins/tax-hook.plugin.js';
 import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 import { buildDimensionFields } from '../../src/utils/dimensions.js';
-import type {
-  GeneratedTaxLine,
-  TaxLineGenerator,
-  TaxLineInput,
-} from '../../src/utils/tax-hooks.js';
 
 // ── Country Pack: TechVenture Labs ──────────────────────────────────────────
 
@@ -129,50 +123,11 @@ const techVenturePack = defineCountryPack({
       cashFlowCategory: null,
     },
   ],
-  taxCodes: {},
-  taxCodesByRegion: {},
-  regions: [],
 });
 
 // ── Dimension Fields ────────────────────────────────────────────────────────
 
 const dimFields = buildDimensionFields([{ field: 'departmentId', label: 'Department' }]);
-
-// ── Tax Line Generator: 13% HST ────────────────────────────────────────────
-
-let hstPayableAccountId: mongoose.Types.ObjectId;
-
-const hstGenerator: TaxLineGenerator = {
-  generateTaxLines(input: TaxLineInput): GeneratedTaxLine[] {
-    if (input.taxCode !== 'HST') return [];
-    const taxAmount = Math.round(input.amount * 0.13);
-    if (taxAmount === 0) return [];
-
-    // Tax on credit (revenue): debit the receivable/cash, credit HST payable
-    // Tax on debit (expense): debit HST payable (recoverable), credit cash
-    if (input.side === 'credit') {
-      return [
-        {
-          account: hstPayableAccountId,
-          debit: 0,
-          credit: taxAmount,
-          label: 'HST 13% collected',
-          taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
-        },
-      ];
-    } else {
-      return [
-        {
-          account: hstPayableAccountId,
-          debit: taxAmount,
-          credit: 0,
-          label: 'HST 13% recoverable',
-          taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
-        },
-      ];
-    }
-  },
-};
 
 // ── Date Lock: In-Memory ────────────────────────────────────────────────────
 
@@ -303,9 +258,6 @@ beforeAll(async () => {
   cloudId = accounts[7]._id;
   travelId = accounts[8]._id;
   officeId = accounts[9]._id;
-
-  // Wire the HST account ID into the tax generator
-  hstPayableAccountId = hstId;
 
   // Create department dimension IDs
   engDeptId = new mongoose.Types.ObjectId();
@@ -848,179 +800,6 @@ describe('Daily Lock Plugin', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// 6. TAX HOOK PLUGIN
-// ═══════════════════════════════════════════════════════════════════════════════
-
-describe('Tax Hook Plugin', () => {
-  it('auto-generates HST tax lines on posted entries', () => {
-    const plugin = taxHookPlugin({ generator: hstGenerator });
-
-    const listeners: Record<string, Function> = {};
-    const fakeRepo = {
-      on(event: string, listener: Function) {
-        listeners[event] = listener;
-      },
-    };
-    plugin.apply(fakeRepo);
-
-    // Revenue of $10,000 with HST
-    const context = {
-      data: {
-        state: 'posted',
-        journalItems: [
-          { account: cashId, debit: 1_000_000, credit: 0 },
-          {
-            account: revenueId,
-            debit: 0,
-            credit: 1_000_000,
-            taxDetails: [{ taxCode: 'HST', taxName: 'Harmonized Sales Tax' }],
-          },
-        ],
-      },
-    };
-
-    listeners['before:create'](context);
-
-    const items = (context.data as any).journalItems;
-    // Original 2 items + 1 tax line = 3
-    expect(items.length).toBe(3);
-  });
-
-  it('calculates 13% HST correctly', () => {
-    const plugin = taxHookPlugin({ generator: hstGenerator });
-
-    const listeners: Record<string, Function> = {};
-    const fakeRepo = {
-      on(event: string, listener: Function) {
-        listeners[event] = listener;
-      },
-    };
-    plugin.apply(fakeRepo);
-
-    const context = {
-      data: {
-        state: 'posted',
-        journalItems: [
-          { account: cashId, debit: 1_000_000, credit: 0 },
-          {
-            account: revenueId,
-            debit: 0,
-            credit: 1_000_000,
-            taxDetails: [{ taxCode: 'HST' }],
-          },
-        ],
-      },
-    };
-
-    listeners['before:create'](context);
-
-    const items = (context.data as any).journalItems;
-    const taxLine = items[2];
-    // 13% of 1,000,000 = 130,000 cents
-    expect(taxLine.credit).toBe(130_000);
-    expect(taxLine.debit).toBe(0);
-    expect(String(taxLine.account)).toBe(String(hstId));
-  });
-
-  it('maintains debit = credit balance with tax lines', () => {
-    const plugin = taxHookPlugin({ generator: hstGenerator });
-
-    const listeners: Record<string, Function> = {};
-    const fakeRepo = {
-      on(event: string, listener: Function) {
-        listeners[event] = listener;
-      },
-    };
-    plugin.apply(fakeRepo);
-
-    // To keep balanced: Cash debit 1,130,000 / Revenue credit 1,000,000 + HST credit 130,000
-    // But the tax hook only adds lines, the caller must account for the total.
-    // Let's verify the tax hook output and manually balance.
-    const context = {
-      data: {
-        state: 'posted',
-        journalItems: [
-          { account: cashId, debit: 1_130_000, credit: 0 },
-          {
-            account: revenueId,
-            debit: 0,
-            credit: 1_000_000,
-            taxDetails: [{ taxCode: 'HST' }],
-          },
-        ],
-      },
-    };
-
-    listeners['before:create'](context);
-
-    const items = (context.data as any).journalItems;
-    const totalDebits = items.reduce((s: number, i: any) => s + (i.debit ?? 0), 0);
-    const totalCredits = items.reduce((s: number, i: any) => s + (i.credit ?? 0), 0);
-
-    // 1,130,000 debit = 1,000,000 credit + 130,000 credit
-    expect(totalDebits).toBe(totalCredits);
-  });
-
-  it('skips tax generation for draft entries', () => {
-    const plugin = taxHookPlugin({ generator: hstGenerator });
-
-    const listeners: Record<string, Function> = {};
-    const fakeRepo = {
-      on(event: string, listener: Function) {
-        listeners[event] = listener;
-      },
-    };
-    plugin.apply(fakeRepo);
-
-    const context = {
-      data: {
-        state: 'draft',
-        journalItems: [
-          { account: cashId, debit: 1_000_000, credit: 0 },
-          {
-            account: revenueId,
-            debit: 0,
-            credit: 1_000_000,
-            taxDetails: [{ taxCode: 'HST' }],
-          },
-        ],
-      },
-    };
-
-    listeners['before:create'](context);
-
-    // Items should remain unchanged (no tax line added)
-    expect((context.data as any).journalItems.length).toBe(2);
-  });
-
-  it('skips items without a taxCode', () => {
-    const plugin = taxHookPlugin({ generator: hstGenerator });
-
-    const listeners: Record<string, Function> = {};
-    const fakeRepo = {
-      on(event: string, listener: Function) {
-        listeners[event] = listener;
-      },
-    };
-    plugin.apply(fakeRepo);
-
-    const context = {
-      data: {
-        state: 'posted',
-        journalItems: [
-          { account: cashId, debit: 500_000, credit: 0 },
-          { account: revenueId, debit: 0, credit: 500_000 },
-        ],
-      },
-    };
-
-    listeners['before:create'](context);
-
-    // No tax lines added
-    expect((context.data as any).journalItems.length).toBe(2);
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 7. CROSS-FEATURE INTEGRATION

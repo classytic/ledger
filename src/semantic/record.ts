@@ -19,9 +19,7 @@
  */
 
 import type { ClientSession, Model, Types } from 'mongoose';
-import type { CountryPack } from '../country/index.js';
 import type { LedgerModels } from '../models/factory.js';
-import { splitTaxExclusive, splitTaxInclusive } from '../money.js';
 import type { LedgerRepositories } from '../repositories/factory.js';
 import type { AccountingEngineConfig } from '../types/engine.js';
 import { Errors } from '../utils/errors.js';
@@ -44,22 +42,6 @@ export type AccountCode = string;
 
 /** Integer-cents amount. */
 export type Cents = number;
-
-export interface TaxInput {
-  /** Tax code from the country pack (e.g. 'HST', 'GST', 'VAT') */
-  readonly code: string;
-  /**
-   * Account type code where the tax amount posts.
-   * For sales: the tax-payable account (e.g. '2300' HST Collected).
-   * For expenses: the tax-recoverable (ITC) account (e.g. '2400' HST Paid).
-   */
-  readonly account: AccountCode;
-  /**
-   * If true, `amount` is tax-inclusive and will be split into base + tax.
-   * If false (default), `amount` is the tax-exclusive base and tax is added.
-   */
-  readonly inclusive?: boolean;
-}
 
 /**
  * Options passed to every record.* operation. Matches mongokit's
@@ -88,14 +70,16 @@ export interface RecordOptions {
 export interface RecordSaleInput {
   /** Transaction date */
   readonly date: Date;
-  /** Tax-exclusive sale amount in integer cents (unless `tax.inclusive` is true) */
+  /** Sale amount in integer cents. Tax, if any, is the caller's responsibility
+   *  — compute it with your tax engine (e.g. `@classytic/bd-tax`,
+   *  `@classytic/ca-tax`) and either pre-add it to `amount` + include a
+   *  tax journal item via `record.adjustment`, or post the entry directly
+   *  via `engine.repositories.journalEntries.create`. */
   readonly amount: Cents;
   /** Account that receives the money — either Cash or Accounts Receivable */
   readonly receivableAccount: AccountCode;
   /** Revenue account */
   readonly revenueAccount: AccountCode;
-  /** Tax info — optional */
-  readonly tax?: TaxInput;
   /** Free-text label / memo */
   readonly label?: string;
   /** Optional reference number override (otherwise auto-generated) */
@@ -108,14 +92,13 @@ export interface RecordSaleInput {
 
 export interface RecordExpenseInput {
   readonly date: Date;
-  /** Tax-exclusive expense amount in cents (unless `tax.inclusive` is true) */
+  /** Expense amount in integer cents. Tax is caller's responsibility — see
+   *  `RecordSaleInput.amount` comment. */
   readonly amount: Cents;
   /** Expense category account (e.g. '6010' Rent) */
   readonly expenseAccount: AccountCode;
   /** Where the money came from — either Cash or Accounts Payable */
   readonly paidFromAccount: AccountCode;
-  /** Tax info (recoverable input tax credit) */
-  readonly tax?: TaxInput;
   readonly label?: string;
   readonly reference?: string;
   readonly dimensions?: Record<string, unknown>;
@@ -167,16 +150,17 @@ export interface RecordAdjustmentInput {
 
 export interface RecordAPI {
   /**
-   * Record a sale. Debits cash/AR, credits revenue, splits tax if provided.
+   * Record a sale. Debits cash/AR, credits revenue. Tax lines — if needed —
+   * are the consumer's responsibility (compute via your tax engine and
+   * either add to `amount` or use `record.adjustment`).
    *
    * @example
    * ```typescript
    * await engine.record.sale(orgId, {
    *   date: new Date('2025-04-01'),
-   *   amount: 10000,                    // $100.00 base
+   *   amount: 10000,                    // $100.00 total
    *   receivableAccount: '1001',        // Cash
    *   revenueAccount: '4010',           // Service Revenue
-   *   tax: { code: 'HST', account: '2300' },  // 13% HST Collected
    *   label: 'Invoice #INV-001',
    * });
    * ```
@@ -184,7 +168,8 @@ export interface RecordAPI {
   sale(organizationId: unknown, input: RecordSaleInput, options?: RecordOptions): Promise<unknown>;
 
   /**
-   * Record an expense. Debits expense, credits cash/AP, splits input tax credit if provided.
+   * Record an expense. Debits expense, credits cash/AP. Tax is caller's
+   * responsibility — see `sale()`.
    */
   expense(
     organizationId: unknown,
@@ -227,24 +212,12 @@ export interface RecordAPI {
 interface BuildDeps {
   models: LedgerModels;
   repositories: LedgerRepositories;
-  country: CountryPack;
   config: AccountingEngineConfig;
 }
 
-export function buildRecordAPI({ models, repositories, country, config }: BuildDeps): RecordAPI {
+export function buildRecordAPI({ models, repositories, config }: BuildDeps): RecordAPI {
   const AccountModel = models.Account as Model<unknown>;
   const orgField = config.multiTenant?.orgField;
-
-  // ── Tax code lookup ──
-  const lookupTaxRate = (taxCode: string): number => {
-    const tc = country.taxCodes[taxCode];
-    if (!tc) {
-      throw Errors.notFound(`Tax code '${taxCode}' not found in country pack.`, [
-        { path: 'tax.code', issue: 'unknown tax code', value: taxCode },
-      ]);
-    }
-    return tc.rate;
-  };
 
   // ── Account resolver (code → ObjectId, scoped by org) ──
   const resolveAccounts = async (
@@ -366,25 +339,7 @@ export function buildRecordAPI({ models, repositories, country, config }: BuildD
   const sale: RecordAPI['sale'] = async (organizationId, input, options) => {
     validateAmount(input.amount, 'amount');
 
-    let baseAmount = input.amount;
-    let taxAmount = 0;
-
-    if (input.tax) {
-      const rate = lookupTaxRate(input.tax.code);
-      if (input.tax.inclusive) {
-        const split = splitTaxInclusive(input.amount, rate);
-        baseAmount = split.base;
-        taxAmount = split.tax;
-      } else {
-        const split = splitTaxExclusive(input.amount, rate);
-        baseAmount = split.base;
-        taxAmount = split.tax;
-      }
-    }
-
-    const totalCharge = baseAmount + taxAmount;
     const codes: AccountCode[] = [input.receivableAccount, input.revenueAccount];
-    if (input.tax) codes.push(input.tax.account);
 
     const acctMap = await resolveAccounts(
       organizationId,
@@ -396,24 +351,13 @@ export function buildRecordAPI({ models, repositories, country, config }: BuildD
     const items: Record<string, unknown>[] = [
       buildItem(
         acctMap.get(input.receivableAccount)!,
-        totalCharge,
+        input.amount,
         0,
         input.label,
         input.dimensions,
       ),
-      buildItem(acctMap.get(input.revenueAccount)!, 0, baseAmount, input.label, input.dimensions),
+      buildItem(acctMap.get(input.revenueAccount)!, 0, input.amount, input.label, input.dimensions),
     ];
-    if (input.tax) {
-      items.push(
-        buildItem(
-          acctMap.get(input.tax.account)!,
-          0,
-          taxAmount,
-          `${input.label ?? 'Sale'} — ${input.tax.code}`,
-          input.dimensions,
-        ),
-      );
-    }
 
     return postEntry(
       organizationId,
@@ -435,25 +379,7 @@ export function buildRecordAPI({ models, repositories, country, config }: BuildD
   const expense: RecordAPI['expense'] = async (organizationId, input, options) => {
     validateAmount(input.amount, 'amount');
 
-    let baseAmount = input.amount;
-    let taxAmount = 0;
-
-    if (input.tax) {
-      const rate = lookupTaxRate(input.tax.code);
-      if (input.tax.inclusive) {
-        const split = splitTaxInclusive(input.amount, rate);
-        baseAmount = split.base;
-        taxAmount = split.tax;
-      } else {
-        const split = splitTaxExclusive(input.amount, rate);
-        baseAmount = split.base;
-        taxAmount = split.tax;
-      }
-    }
-
-    const totalPaid = baseAmount + taxAmount;
     const codes: AccountCode[] = [input.expenseAccount, input.paidFromAccount];
-    if (input.tax) codes.push(input.tax.account);
 
     const acctMap = await resolveAccounts(
       organizationId,
@@ -463,22 +389,15 @@ export function buildRecordAPI({ models, repositories, country, config }: BuildD
     );
 
     const items: Record<string, unknown>[] = [
-      buildItem(acctMap.get(input.expenseAccount)!, baseAmount, 0, input.label, input.dimensions),
+      buildItem(acctMap.get(input.expenseAccount)!, input.amount, 0, input.label, input.dimensions),
+      buildItem(
+        acctMap.get(input.paidFromAccount)!,
+        0,
+        input.amount,
+        input.label,
+        input.dimensions,
+      ),
     ];
-    if (input.tax) {
-      items.push(
-        buildItem(
-          acctMap.get(input.tax.account)!,
-          taxAmount,
-          0,
-          `${input.label ?? 'Expense'} — ${input.tax.code} ITC`,
-          input.dimensions,
-        ),
-      );
-    }
-    items.push(
-      buildItem(acctMap.get(input.paidFromAccount)!, 0, totalPaid, input.label, input.dimensions),
-    );
 
     return postEntry(
       organizationId,

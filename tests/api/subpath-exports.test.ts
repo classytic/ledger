@@ -79,8 +79,6 @@ import type {
   IdempotencyPluginOptions,
   LockHit,
   LockResolver,
-  TaxHookPluginOptions,
-  TaxLockPluginOptions,
 } from '../../src/plugins/index.js';
 import {
   createLockPlugin,
@@ -89,14 +87,12 @@ import {
   fiscalLockPlugin,
   idempotencyPlugin,
   periodResolver,
-  taxHookPlugin,
-  taxLockPlugin,
   watermarkResolver,
 } from '../../src/plugins/index.js';
 
 // ── @classytic/ledger/country ─────────────────────────────────────────────
 
-import type { CountryPack, CountryPackInput, TaxCode } from '../../src/country/index.js';
+import type { CountryPack, CountryPackInput } from '../../src/country/index.js';
 import { defineCountryPack } from '../../src/country/index.js';
 
 // ── @classytic/ledger/exports ─────────────────────────────────────────────
@@ -193,14 +189,12 @@ describe('Subpath: reports', () => {
 });
 
 describe('Subpath: plugins', () => {
-  it('exports the plugin factory surface (double-entry, idempotency, tax-hook, lock primitive + presets)', () => {
+  it('exports the plugin factory surface (double-entry, idempotency, lock primitive + presets)', () => {
     const factories = [
       doubleEntryPlugin,
       idempotencyPlugin,
-      taxHookPlugin,
       createLockPlugin,
       fiscalLockPlugin,
-      taxLockPlugin,
       dailyLockPlugin,
       periodResolver,
       watermarkResolver,
@@ -214,10 +208,8 @@ describe('Subpath: plugins', () => {
   it('plugin option types compile', () => {
     expectTypeOf<DoubleEntryPluginOptions>().toBeObject();
     expectTypeOf<IdempotencyPluginOptions>().toBeObject();
-    expectTypeOf<TaxHookPluginOptions>().toBeObject();
     expectTypeOf<CreateLockPluginOptions>().toBeObject();
     expectTypeOf<FiscalLockPluginOptions>().toBeObject();
-    expectTypeOf<TaxLockPluginOptions>().toBeObject();
     expectTypeOf<DailyLockPluginOptions>().toBeObject();
     expectTypeOf<LockHit>().toBeObject();
     expectTypeOf<LockResolver>().toBeFunction();
@@ -232,7 +224,6 @@ describe('Subpath: country', () => {
   it('country types compile', () => {
     expectTypeOf<CountryPack>().toHaveProperty('code').toBeString();
     expectTypeOf<CountryPackInput>().toBeObject();
-    expectTypeOf<TaxCode>().toBeObject();
   });
 });
 

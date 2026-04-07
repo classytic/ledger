@@ -78,10 +78,6 @@ export type {
   ReportGroup,
   // Reports
   ReportMetadata,
-  TaxAccountBalance,
-  TaxReport,
-  TaxReportParams,
-  TaxReturnSummary,
   TrialBalanceParams,
   TrialBalanceReport,
   TrialBalanceRow,

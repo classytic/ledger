@@ -9,14 +9,13 @@
  * const accounts = await engine.introspect.accounts(orgId);
  * const journals = engine.introspect.journalTypes();
  * const reports = engine.introspect.reports();
- * const taxes = engine.introspect.taxCodes('ON');
  * const periods = await engine.introspect.fiscalPeriods(orgId);
  * ```
  */
 
 import type { ClientSession, Model } from 'mongoose';
 import { getCustomJournalTypes, JOURNAL_TYPES } from '../constants/journals.js';
-import type { CountryPack, TaxCode } from '../country/index.js';
+import type { CountryPack } from '../country/index.js';
 import type { LedgerModels } from '../models/factory.js';
 import type { JournalType } from '../types/core.js';
 import type { AccountingEngineConfig } from '../types/engine.js';
@@ -91,11 +90,6 @@ export interface IntrospectAPI {
   reports(): ReadonlyArray<ReportDescriptor>;
 
   /**
-   * List tax codes — all of them, or filtered by region.
-   */
-  taxCodes(region?: string): ReadonlyArray<TaxCode>;
-
-  /**
    * List fiscal periods for an organization.
    */
   fiscalPeriods(
@@ -105,13 +99,12 @@ export interface IntrospectAPI {
 
   /**
    * A one-shot snapshot of everything an agent needs to start working:
-   * accounts, journal types, reports, tax codes, fiscal periods.
+   * accounts, journal types, reports, fiscal periods.
    */
   catalog(organizationId?: unknown): Promise<{
     accounts: AccountSummary[];
     journalTypes: ReadonlyArray<JournalType>;
     reports: ReadonlyArray<ReportDescriptor>;
-    taxCodes: ReadonlyArray<TaxCode>;
     fiscalPeriods: FiscalPeriodSummary[];
   }>;
 }
@@ -315,11 +308,6 @@ export function buildIntrospectAPI({ models, country, config }: BuildDeps): Intr
 
   const reports: IntrospectAPI['reports'] = () => REPORT_CATALOG;
 
-  const taxCodes: IntrospectAPI['taxCodes'] = (region) => {
-    if (region) return Object.freeze(country.getTaxCodesForRegion(region));
-    return Object.freeze(Object.values(country.taxCodes));
-  };
-
   const fiscalPeriods: IntrospectAPI['fiscalPeriods'] = async (organizationId, session = null) => {
     const filter: Record<string, unknown> = {};
     if (orgField && organizationId != null) filter[orgField] = organizationId;
@@ -344,9 +332,8 @@ export function buildIntrospectAPI({ models, country, config }: BuildDeps): Intr
     accounts: await accounts(organizationId),
     journalTypes: journalTypes(),
     reports: reports(),
-    taxCodes: taxCodes(),
     fiscalPeriods: await fiscalPeriods(organizationId),
   });
 
-  return { accounts, journalTypes, reports, taxCodes, fiscalPeriods, catalog };
+  return { accounts, journalTypes, reports, fiscalPeriods, catalog };
 }

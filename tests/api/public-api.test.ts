@@ -70,7 +70,6 @@ import {
   getMinorUnit,
   getNormalBalance,
   idempotencyPlugin,
-  taxLockPlugin,
   isBalanceSheet,
   isIncomeStatement,
   isValidCategory,
@@ -169,7 +168,6 @@ describe('Public API — runtime exports', () => {
     it('exports the unified lock primitive + presets', () => {
       expect(createLockPlugin).toBeDefined();
       expect(fiscalLockPlugin).toBeDefined();
-      expect(taxLockPlugin).toBeDefined();
       expect(dailyLockPlugin).toBeDefined();
       expect(doubleEntryPlugin).toBeDefined();
       expect(idempotencyPlugin).toBeDefined();
