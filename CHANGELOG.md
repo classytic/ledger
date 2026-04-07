@@ -1,5 +1,105 @@
 # Changelog
 
+## 0.7.0 — "Tax Out, Accounting Stays" (BREAKING)
+
+`@classytic/ledger` is a **double-entry accounting engine** — not a tax
+engine. 0.6.x leaked tax concepts into the core (`TaxCode` interface,
+`TaxReportTemplate`, `taxHookPlugin`, `taxLockPlugin` preset,
+`createRepartitionTaxGenerator`, `resolveTaxRepartitionAccountCode` on
+`CountryPack`, `cashBasisRealize` internal op, `engine.introspect.taxCodes`,
+the `tax` parameter on `record.sale()` / `record.expense()`). 0.7.0 strips
+all of it. This mirrors how Odoo (`account/` vs `l10n_*`), QuickBooks
+(Ledger vs TaxService), and Xero (accounting vs Xero Tax) actually
+separate the two concerns — and aligns with our existing dedicated tax
+package `@classytic/bd-tax`.
+
+### Removed (no shims, intentional clean break)
+
+**Country pack contract** (`@classytic/ledger/country`):
+- `TaxCode`, `TaxCodesByRegion`, `TaxRepartitionLine`, `TaxExigibility`,
+  `TaxReportLine`, `TaxReportTemplate` interfaces
+- `taxCodes`, `taxCodesByRegion`, `regions`, `taxReport`,
+  `resolveTaxRepartitionAccountCode` fields on `CountryPack` /
+  `CountryPackInput`
+- `getTaxCodesForRegion()` helper method on `CountryPack`
+
+**Plugins** (`@classytic/ledger/plugins`):
+- `taxHookPlugin` + `TaxHookPluginOptions`
+- `taxLockPlugin` preset + `TaxLockPluginOptions` (the underlying
+  `createLockPlugin` factory + `periodResolver` are kept — tax engines
+  can compose them themselves)
+
+**Utilities** (`@classytic/ledger`):
+- `createRepartitionTaxGenerator`, `defaultResolveTaxRepartitionAccountCode`
+- `RepartitionAccountResolver`, `RepartitionGeneratorOptions` types
+- `TaxLineGenerator`, `TaxLineInput`, `GeneratedTaxLine`, `applyTaxHook`
+
+**Reports** (`@classytic/ledger/types/report`):
+- `TaxReport`, `TaxAccountBalance`, `TaxReturnSummary`, `TaxReportParams`
+  (these were never wired to a generator — orphaned types from earlier work)
+
+**Engine + semantic API**:
+- `engine.getTaxCodesForRegion(region)` method
+- `engine.introspect.taxCodes(region?)` method
+- `tax: TaxInput` parameter on `RecordSaleInput` / `RecordExpenseInput`
+- `TaxInput` interface
+
+**Internal op tags**:
+- `cashBasisRealize` removed from `LedgerInternalOp`. The remaining tags
+  are `'post' | 'unpost' | 'archive' | 'reverseMark' | 'fxRealize'` —
+  all accounting concerns.
+
+### Kept (unchanged, deliberate)
+
+- `TaxDetail` and `TaxMetadata` interfaces in `core.ts` — these are pure
+  metadata shapes (no logic), used as opaque pass-through tags on
+  journal items and account types. Country packs and tax engines can
+  populate them as they see fit.
+- `taxDetails: Array<{taxCode?, taxName?}>` field on the journal-item
+  schema — same reason: opaque audit metadata, not tax compute.
+
+### Migration
+
+Consumers using the removed tax APIs should:
+
+1. Pin to `@classytic/ledger@^0.6.0` until they're ready to refactor, OR
+2. Move tax concerns into a dedicated tax package
+   (`@classytic/bd-tax` already exists; `@classytic/ca-tax` and others
+   will follow the same pattern). Tax engines:
+   - Own their own tax code tables
+   - Compute returns / repartition / exigibility internally
+   - Optionally expose a thin "post-to-ledger" adapter that calls
+     `engine.repositories.journalEntries.create({...})`
+3. For lock-period filing windows that used to need `taxLockPlugin`,
+   compose `createLockPlugin({scope: 'tax', resolve: periodResolver({...})})`
+   inside your tax package — the building blocks are unchanged.
+
+Country packs `@classytic/ledger-bd` and `@classytic/ledger-ca` are
+slimmed in their own 0.3.0 releases — same shape (chart of accounts +
+journal templates) without the tax wiring. The raw BD/CA tax data
+tables still ship as named exports (`TAX_CODES`, `TAX_CODES_BY_DIVISION`,
+`mushakReturnTemplate`, etc.) so the future tax packages can lift them.
+
+### Test + smoke updates
+
+- Deleted `tests/utils/repartition-tax.test.ts`,
+  `tests/utils/tax-hooks.test.ts`, `tests/plugins/tax-hook.plugin.test.ts`
+- Deleted `tests/scenarios/semantic-quarterly-cycle.test.ts` (was tightly
+  coupled to tax helpers; can be reborn in `@classytic/ca-tax` later)
+- Stripped tax assertions from `tests/api/public-api.test.ts`,
+  `tests/api/subpath-exports.test.ts`, `tests/country/country.test.ts`,
+  `tests/engine.test.ts`, `tests/semantic/introspect.test.ts`,
+  `tests/semantic/record.test.ts`, `tests/e2e/lock-scopes.test.ts`,
+  `tests/e2e/plugins-fiscal-dimensions.test.ts`,
+  `tests/architectural-improvements.test.ts`
+- Smoke CLI dropped tax sections (5 — taxLockPlugin, 11 — repartition
+  generator) and country pack assertions now confirm tax fields are
+  **absent** from the country pack contract
+- Final state: **1246 / 1247 tests** passing (1 unrelated skip),
+  smoke green against the published shape
+
+---
+
 ## 0.6.0 — "Open Items & Enterprise Primitives"
 
 ### Update notes (post-initial)

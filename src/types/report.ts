@@ -120,38 +120,6 @@ export interface CashFlowReport {
   netCashFlow: number;
 }
 
-// ─── Tax Report ──────────────────────────────────────────────────────────────
-
-export interface TaxAccountBalance {
-  code: string;
-  name: string;
-  balance: number;
-  taxMetadata?: unknown;
-}
-
-export interface TaxReturnSummary {
-  totalSales: number;
-  gstHstCollected: number;
-  inputTaxCredits: number;
-  netTax: number;
-  finalAmount: number;
-  isRefund: boolean;
-  refundAmount: number;
-  paymentAmount: number;
-}
-
-export interface TaxReport {
-  period: { startDate: string; endDate: string; province: string };
-  accountBalances: {
-    collected: Record<string, TaxAccountBalance>;
-    itc: Record<string, TaxAccountBalance>;
-    instalments: Record<string, TaxAccountBalance>;
-  };
-  craLines: Record<string | number, number>;
-  summary: TaxReturnSummary;
-  calculatedAt: string;
-}
-
 // ─── Report Query Params ─────────────────────────────────────────────────────
 
 export interface PeriodParams {
@@ -181,12 +149,4 @@ export interface TrialBalanceParams extends PeriodParams {
 export interface GeneralLedgerParams extends PeriodParams {
   organizationId?: string;
   accountId?: string;
-}
-
-export interface TaxReportParams {
-  organizationId?: string;
-  startDate: Date;
-  endDate: Date;
-  province: string;
-  adjustments?: Record<string, number>;
 }

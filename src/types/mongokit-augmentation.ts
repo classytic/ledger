@@ -12,13 +12,22 @@
  * enough to activate the augmentation. `src/types/index.ts` re-exports it.
  */
 
-export type LedgerInternalOp =
-  | 'post'
-  | 'unpost'
-  | 'archive'
-  | 'reverseMark'
-  | 'fxRealize'
-  | 'cashBasisRealize';
+/**
+ * Internal op tags attached to `repository.update()` / `repository.create()`
+ * calls that the ledger itself initiates. Plugins observing the
+ * `before:update` / `before:create` hooks can read `context._ledgerInternal`
+ * to identify legitimate engine operations and skip guards accordingly.
+ *
+ * - `post` / `unpost` / `archive`  — state transitions on an entry
+ * - `reverseMark`                  — marking an original as reversed
+ *                                    (exempt from fiscal/daily locks)
+ * - `fxRealize`                    — FX realization plugin balancing entry
+ *                                    (exempt from all locks and credit-limit)
+ *
+ * Tax-specific internal ops (e.g. cash-basis exigibility realization) live
+ * in their respective tax packages and are not part of the ledger core.
+ */
+export type LedgerInternalOp = 'post' | 'unpost' | 'archive' | 'reverseMark' | 'fxRealize';
 
 declare module '@classytic/mongokit' {
   interface RepositoryContext {

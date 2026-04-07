@@ -63,32 +63,6 @@ const mockInput: CountryPackInput = {
   name: 'Testland',
   defaultCurrency: 'TST',
   accountTypes: mockAccountTypes,
-  taxCodes: {
-    GST: {
-      code: 'GST',
-      name: 'Goods & Services Tax',
-      taxType: 'GST',
-      rate: 0.05,
-      direction: 'collected',
-      description: '5% GST',
-      active: true,
-    },
-    PST: {
-      code: 'PST',
-      name: 'Provincial Sales Tax',
-      taxType: 'PST',
-      rate: 0.07,
-      direction: 'collected',
-      province: 'BC',
-      description: '7% PST',
-      active: true,
-    },
-  },
-  taxCodesByRegion: {
-    BC: ['GST', 'PST'],
-    AB: ['GST'],
-  },
-  regions: ['BC', 'AB'],
 };
 
 describe('defineCountryPack', () => {
@@ -98,7 +72,6 @@ describe('defineCountryPack', () => {
     expect(pack.code).toBe('TS');
     expect(pack.name).toBe('Testland');
     expect(pack.defaultCurrency).toBe('TST');
-    expect(pack.regions).toEqual(['BC', 'AB']);
   });
 
   describe('getPostingAccountTypes', () => {
@@ -168,24 +141,6 @@ describe('defineCountryPack', () => {
 
     it('returns false for unknown codes', () => {
       expect(pack.isPostingAccount('9999')).toBe(false);
-    });
-  });
-
-  describe('getTaxCodesForRegion', () => {
-    it('returns tax codes for known region', () => {
-      const bcTaxes = pack.getTaxCodesForRegion('BC');
-      expect(bcTaxes).toHaveLength(2);
-      expect(bcTaxes.map((t) => t.code)).toEqual(['GST', 'PST']);
-    });
-
-    it('returns single tax code for region with one', () => {
-      const abTaxes = pack.getTaxCodesForRegion('AB');
-      expect(abTaxes).toHaveLength(1);
-      expect(abTaxes[0].code).toBe('GST');
-    });
-
-    it('returns empty array for unknown region', () => {
-      expect(pack.getTaxCodesForRegion('XX')).toEqual([]);
     });
   });
 

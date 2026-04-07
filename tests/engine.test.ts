@@ -96,19 +96,6 @@ const testPack = defineCountryPack({
   name: 'Testland',
   defaultCurrency: 'TST',
   accountTypes: testAccountTypes,
-  taxCodes: {
-    GST: {
-      code: 'GST',
-      name: 'GST',
-      taxType: 'GST',
-      rate: 0.05,
-      direction: 'collected',
-      description: '',
-      active: true,
-    },
-  },
-  taxCodesByRegion: { DEFAULT: ['GST'] },
-  regions: ['DEFAULT'],
 });
 
 describe('AccountingEngine', () => {
@@ -196,16 +183,6 @@ describe('AccountingEngine', () => {
 
     it('getAccountType returns undefined for unknown code', () => {
       expect(engine.getAccountType('9999')).toBeUndefined();
-    });
-
-    it('getTaxCodesForRegion returns tax codes', () => {
-      const codes = engine.getTaxCodesForRegion('DEFAULT');
-      expect(codes).toHaveLength(1);
-      expect(codes[0].code).toBe('GST');
-    });
-
-    it('getTaxCodesForRegion returns empty for unknown region', () => {
-      expect(engine.getTaxCodesForRegion('UNKNOWN')).toEqual([]);
     });
   });
 

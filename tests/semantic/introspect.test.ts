@@ -9,7 +9,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { _resetCustomJournalTypes, registerJournalType } from '../../src/constants/journals.js';
-import { defineCountryPack, type TaxCode } from '../../src/country/index.js';
+import { defineCountryPack } from '../../src/country/index.js';
 import { type AccountingEngine, createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
 
@@ -61,48 +61,11 @@ const accountTypes: readonly AccountType[] = [
   },
 ];
 
-const taxCodes: Record<string, TaxCode> = {
-  HST: {
-    code: 'HST',
-    name: 'HST 13%',
-    taxType: 'HST',
-    rate: 0.13,
-    direction: 'collected',
-    description: '',
-    active: true,
-  },
-  GST: {
-    code: 'GST',
-    name: 'GST 5%',
-    taxType: 'GST',
-    rate: 0.05,
-    direction: 'collected',
-    description: '',
-    active: true,
-  },
-  PST: {
-    code: 'PST',
-    name: 'PST BC 7%',
-    taxType: 'PST',
-    rate: 0.07,
-    direction: 'collected',
-    description: '',
-    active: true,
-    province: 'BC',
-  },
-};
-
 const pack = defineCountryPack({
   code: 'TS',
   name: 'Test',
   defaultCurrency: 'USD',
   accountTypes,
-  taxCodes,
-  taxCodesByRegion: {
-    ON: ['HST'],
-    BC: ['GST', 'PST'],
-  },
-  regions: ['ON', 'BC'],
 });
 
 let mongod: MongoMemoryServer;
@@ -256,33 +219,6 @@ describe('introspect.reports', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// taxCodes()
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('introspect.taxCodes', () => {
-  it('returns all tax codes when no region is provided', () => {
-    const list = engine.introspect.taxCodes();
-    expect(list.length).toBe(3);
-    expect(list.some((t) => t.code === 'HST')).toBe(true);
-  });
-
-  it('filters by region', () => {
-    const on = engine.introspect.taxCodes('ON');
-    expect(on.length).toBe(1);
-    expect(on[0].code).toBe('HST');
-
-    const bc = engine.introspect.taxCodes('BC');
-    expect(bc.length).toBe(2);
-    expect(bc.map((t) => t.code).sort()).toEqual(['GST', 'PST']);
-  });
-
-  it('returns empty for unknown region', () => {
-    const list = engine.introspect.taxCodes('XX');
-    expect(list).toEqual([]);
-  });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
 // fiscalPeriods()
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -330,7 +266,6 @@ describe('introspect.catalog', () => {
     expect(cat.accounts.length).toBeGreaterThan(0);
     expect(cat.journalTypes.length).toBeGreaterThanOrEqual(15);
     expect(cat.reports.length).toBeGreaterThanOrEqual(9);
-    expect(cat.taxCodes.length).toBe(3);
     expect(cat.fiscalPeriods.length).toBe(1);
   });
 });

@@ -11,7 +11,6 @@
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { TaxCode } from '../../src/country/index.js';
 import { defineCountryPack } from '../../src/country/index.js';
 import { type AccountingEngine, createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
@@ -119,35 +118,11 @@ const accountTypes: readonly AccountType[] = [
   },
 ];
 
-const taxCodes: Record<string, TaxCode> = {
-  HST: {
-    code: 'HST',
-    name: 'Harmonized Sales Tax',
-    taxType: 'HST',
-    rate: 0.13,
-    direction: 'collected',
-    description: '13% HST',
-    active: true,
-  },
-  HST_ITC: {
-    code: 'HST_ITC',
-    name: 'HST Input Tax Credit',
-    taxType: 'HST',
-    rate: 0.13,
-    direction: 'recoverable',
-    description: '13% recoverable',
-    active: true,
-  },
-};
-
 const pack = defineCountryPack({
   code: 'TS',
   name: 'Test',
   defaultCurrency: 'USD',
   accountTypes,
-  taxCodes,
-  taxCodesByRegion: { ON: ['HST', 'HST_ITC'] },
-  regions: ['ON'],
   retainedEarningsAccountCode: '3600',
 });
 
@@ -221,50 +196,6 @@ describe('record.sale', () => {
     expect((entry as any).journalItems).toHaveLength(2);
   });
 
-  it('records a sale with HST (tax-exclusive)', async () => {
-    const entry = await engine.record.sale(undefined, {
-      date: new Date('2025-01-15'),
-      amount: 10000, // $100.00 base
-      receivableAccount: '1200',
-      revenueAccount: '4010',
-      tax: { code: 'HST', account: '2300' },
-      label: 'INV-002',
-    });
-
-    // 13% HST → $13.00 tax → $113.00 total
-    expect((entry as any).totalDebit).toBe(11300);
-    expect((entry as any).totalCredit).toBe(11300);
-    expect((entry as any).journalItems).toHaveLength(3);
-
-    const items = (entry as any).journalItems as Array<{
-      debit: number;
-      credit: number;
-    }>;
-    // AR debit 11300, revenue credit 10000, HST credit 1300
-    expect(items.find((i) => i.debit === 11300)).toBeDefined();
-    expect(items.find((i) => i.credit === 10000)).toBeDefined();
-    expect(items.find((i) => i.credit === 1300)).toBeDefined();
-  });
-
-  it('records a sale with HST (tax-inclusive)', async () => {
-    const entry = await engine.record.sale(undefined, {
-      date: new Date('2025-01-15'),
-      amount: 11300, // $113.00 total
-      receivableAccount: '1001',
-      revenueAccount: '4010',
-      tax: { code: 'HST', account: '2300', inclusive: true },
-    });
-
-    // Split 11300 inclusive → base 10000, tax 1300
-    expect((entry as any).totalDebit).toBe(11300);
-    const items = (entry as any).journalItems as Array<{
-      debit: number;
-      credit: number;
-    }>;
-    expect(items.find((i) => i.credit === 10000)).toBeDefined();
-    expect(items.find((i) => i.credit === 1300)).toBeDefined();
-  });
-
   it('throws with field errors when receivable account is not seeded', async () => {
     await engine.models.Account.deleteOne({ accountTypeCode: '1001' });
 
@@ -282,22 +213,6 @@ describe('record.sale', () => {
     expect(ae.code).toBe('NOT_FOUND');
     expect(ae.fields).toBeDefined();
     expect(ae.fields?.some((f) => f.value === '1001')).toBe(true);
-  });
-
-  it('throws with field error when tax code is not registered', async () => {
-    const err = await engine.record
-      .sale(undefined, {
-        date: new Date(),
-        amount: 10000,
-        receivableAccount: '1001',
-        revenueAccount: '4010',
-        tax: { code: 'UNKNOWN_TAX', account: '2300' },
-      })
-      .catch((e: unknown) => e);
-
-    expect(err).toBeInstanceOf(AccountingError);
-    expect((err as AccountingError).code).toBe('NOT_FOUND');
-    expect((err as AccountingError).fields?.[0].path).toBe('tax.code');
   });
 
   it('rejects zero and negative amounts with field errors', async () => {
@@ -347,25 +262,6 @@ describe('record.expense', () => {
     expect((entry as any).journalType).toBe('PURCHASES');
     expect((entry as any).totalDebit).toBe(5000);
     expect((entry as any).totalCredit).toBe(5000);
-  });
-
-  it('records an expense with recoverable HST (ITC)', async () => {
-    const entry = await engine.record.expense(undefined, {
-      date: new Date('2025-01-20'),
-      amount: 5000,
-      expenseAccount: '6010',
-      paidFromAccount: '2001',
-      tax: { code: 'HST_ITC', account: '2400' },
-      label: 'Rent + HST',
-    });
-
-    // Base 5000 + HST 650 = 5650 total
-    expect((entry as any).totalDebit).toBe(5650);
-    expect((entry as any).totalCredit).toBe(5650);
-    const items = (entry as any).journalItems as Array<{ debit: number; credit: number }>;
-    expect(items.find((i) => i.debit === 5000)).toBeDefined(); // expense
-    expect(items.find((i) => i.debit === 650)).toBeDefined(); // ITC
-    expect(items.find((i) => i.credit === 5650)).toBeDefined(); // AP
   });
 
   it('records an on-account expense (credit to AP)', async () => {

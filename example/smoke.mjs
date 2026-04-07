@@ -35,12 +35,10 @@ import {
   createAccountingEngine,
   defineCountryPack,
   AccountingError,
-  createRepartitionTaxGenerator,
   generatePartnerLedger,
 } from '@classytic/ledger';
 import {
   fiscalLockPlugin,
-  taxLockPlugin,
   dailyLockPlugin,
   createLockPlugin,
   periodResolver,
@@ -267,100 +265,6 @@ try {
     assert.equal(reversal.state, 'posted');
     // ReverseResult<TEntry> is generic now — consumer should get typed `_id`.
     assert.ok(reversal._id);
-  });
-
-  // ── 5. taxLockPlugin (bespoke scope via preset) ───────────────────────
-
-  section('5. taxLockPlugin (account-scoped narrowing)');
-
-  const TaxPeriodModel = mongoose.model(
-    'SmokeTaxPeriod',
-    new mongoose.Schema({
-      jurisdiction: String,
-      taxType: String,
-      periodStart: Date,
-      periodEnd: Date,
-      status: String,
-      returnRef: String,
-    }),
-  );
-
-  // Attach a fresh engine with taxLockPlugin wired manually, so we observe
-  // the preset end-to-end without re-wiring the persistent fiscal lock.
-  const taxEngine = createAccountingEngine({
-    mongoose: mongoose.connection,
-    country: pack,
-    currency: 'USD',
-    modelNames: {
-      account: 'TaxAccount',
-      journalEntry: 'TaxJE',
-      fiscalPeriod: 'TaxFP',
-      budget: 'TaxBudget',
-      reconciliation: 'TaxRecon',
-    },
-  });
-
-  const taxAccounts = await taxEngine.repositories.accounts.bulkCreate([
-    { accountTypeCode: '1000' },
-    { accountTypeCode: '2100' },
-    { accountTypeCode: '4000' },
-  ]);
-  const taxCashId = taxAccounts.created[0]._id;
-  const taxVatId = taxAccounts.created[1]._id;
-  const taxRevId = taxAccounts.created[2]._id;
-
-  taxLockPlugin({
-    TaxPeriodModel,
-    AccountModel: taxEngine.models.Account,
-    JournalEntryModel: taxEngine.models.JournalEntry,
-    // Bridge to our minimal AccountType — real consumers either stamp
-    // `taxMetadata` on the account schema or resolve via the country pack.
-    isTaxAffecting: (acc) => acc.accountTypeCode === '2100',
-  }).apply(taxEngine.repositories.journalEntries);
-
-  await TaxPeriodModel.create({
-    jurisdiction: 'SMK-A',
-    taxType: 'VAT',
-    periodStart: new Date('2026-01-01'),
-    periodEnd: new Date('2026-01-31'),
-    status: 'filed',
-    returnRef: 'SMK-VAT-2026-01',
-  });
-
-  await step('blocks posts touching VAT account in filed period', async () => {
-    const draft = await taxEngine.repositories.journalEntries.create({
-      journalType: 'SALES',
-      state: 'draft',
-      date: new Date('2026-01-20'),
-      journalItems: [
-        { account: taxCashId, debit: 1_150, credit: 0 },
-        { account: taxRevId, debit: 0, credit: 1_000 },
-        { account: taxVatId, debit: 0, credit: 150 },
-      ],
-    });
-
-    try {
-      await taxEngine.repositories.journalEntries.post(draft._id);
-      throw new Error('expected tax lock to fire');
-    } catch (err) {
-      assert.ok(err instanceof AccountingError);
-      assert.equal(err.code, 'PERIOD_LOCKED_TAX');
-      assert.match(err.message, /SMK-VAT-2026-01/);
-    }
-  });
-
-  await step('allows posts that do NOT touch a tax account in filed period', async () => {
-    const draft = await taxEngine.repositories.journalEntries.create({
-      journalType: 'GENERAL',
-      state: 'draft',
-      date: new Date('2026-01-21'),
-      journalItems: [
-        { account: taxCashId, debit: 500, credit: 0 },
-        { account: taxRevId, debit: 0, credit: 500 },
-      ],
-    });
-    const posted = await taxEngine.repositories.journalEntries.post(draft._id);
-    assert.equal(posted.state, 'posted');
   });
 
   // ── 6. dailyLockPlugin ───────────────────────────────────────────────
@@ -754,50 +658,6 @@ try {
     assert.equal(fxEntry.totalCredit, 50_00);
   });
 
-  // ── 11. Repartition tax generator (0.6.0) ──────────────────────────
-
-  section('11. Repartition tax generator');
-
-  await step('single-line HST 13% repartition expands to one credit line', async () => {
-    const hstPack = defineCountryPack({
-      code: 'HST',
-      name: 'HST Test',
-      defaultCurrency: 'CAD',
-      accountTypes: [
-        { code: '2680', name: 'HST Collected', category: 'Balance Sheet-Liability', description: '', parentCode: null, isTotal: false, cashFlowCategory: null },
-      ],
-      taxCodes: {
-        HST13: {
-          code: 'HST13',
-          name: 'HST 13%',
-          taxType: 'HST',
-          rate: 13,
-          direction: 'collected',
-          description: '',
-          active: true,
-          repartition: [{ factor: 1, accountRole: 'collected', gridCode: 103 }],
-        },
-      },
-      taxCodesByRegion: {},
-      regions: [],
-    });
-
-    const gen = createRepartitionTaxGenerator({
-      country: hstPack,
-      resolveAccount: (role) => `hst-${role}`,
-    });
-
-    const lines = gen.generateTaxLines({
-      account: 'rev',
-      amount: 100_00,
-      side: 'credit',
-      taxCode: 'HST13',
-    });
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0].credit, 13_00);
-    assert.equal(lines[0].taxDetails[0].gridCode, '103');
-  });
-
   // ═══════════════════════════════════════════════════════════════════
   // 12. Scenario — Full ERP A/P + A/R cycle (the integration story)
   // ═══════════════════════════════════════════════════════════════════
@@ -1137,34 +997,34 @@ try {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // 13. @classytic/ledger-bd — country pack integration
+  // 13. @classytic/ledger-bd — country pack integration (0.7+)
   // ═══════════════════════════════════════════════════════════════════
   //
   // Imports the REAL `bangladeshPack` from the freshly built
-  // `@classytic/ledger-bd@0.2.0` dist via a `file:..` link in
-  // example/package.json. If the BD pack ships with a broken
-  // `journalTemplates`, `repartition`, or `peer ">=0.6.0"` field, this
-  // step blows up and the publish gate stops the release.
+  // `@classytic/ledger-bd` dist via a `file:..` link in
+  // example/package.json. If the BD pack ships a chart-of-accounts
+  // mismatch or a broken journalTemplates field, this step blows up
+  // and the publish gate stops the release.
   //
   // The cycle exercises BFRS A/P (2111) + A/R (1141) + Mushak journals.
+  // Tax (Mushak return / VAT compute) lives in @classytic/bd-tax — NOT
+  // tested here because it is a separate package.
 
   section('13. @classytic/ledger-bd integration (real pack via file: link)');
 
   const { bangladeshPack } = await import('@classytic/ledger-bd');
 
-  await step('bangladeshPack imports cleanly + carries journalTemplates + tax repartition mapping', async () => {
+  await step('bangladeshPack imports cleanly + carries journalTemplates (NO tax fields in 0.7)', async () => {
     assert.equal(bangladeshPack.code, 'BD');
     assert.equal(bangladeshPack.defaultCurrency, 'BDT');
     assert.ok(Array.isArray(bangladeshPack.journalTemplates), 'BD pack should ship journalTemplates');
     assert.ok(bangladeshPack.journalTemplates.length >= 5, 'BD pack should ship at least 5 default journals');
-    assert.equal(typeof bangladeshPack.resolveTaxRepartitionAccountCode, 'function');
-    // BD VAT Output Payable: 2132 (note: 2131 is Income Tax Payable, NOT VAT).
-    // VAT Input Receivable: 1150. VAT Cash-Basis Transition: 1157 (added 0.2.1).
-    assert.equal(bangladeshPack.resolveTaxRepartitionAccountCode('collected'), '2132');
-    assert.equal(bangladeshPack.resolveTaxRepartitionAccountCode('recoverable'), '1150');
-    assert.equal(bangladeshPack.resolveTaxRepartitionAccountCode('transition'), '1157');
-    assert.equal(bangladeshPack.resolveTaxRepartitionAccountCode('tds'), '2135');
-    assert.equal(bangladeshPack.resolveTaxRepartitionAccountCode('vds'), '2136');
+    // Tax interfaces have moved to @classytic/bd-tax — the country pack
+    // is now PURE chart-of-accounts. Confirm none of them leak through.
+    assert.equal(bangladeshPack.resolveTaxRepartitionAccountCode, undefined);
+    assert.equal(bangladeshPack.taxCodes, undefined);
+    assert.equal(bangladeshPack.taxReport, undefined);
+    assert.equal(bangladeshPack.regions, undefined);
   });
 
   const bdEngine = createAccountingEngine({
@@ -1283,14 +1143,15 @@ try {
 
   const { canadaPack } = await import('@classytic/ledger-ca');
 
-  await step('canadaPack imports cleanly + carries journalTemplates + GIFI codes', async () => {
+  await step('canadaPack imports cleanly + carries journalTemplates + GIFI codes (NO tax in 0.7)', async () => {
     assert.equal(canadaPack.code, 'CA');
     assert.equal(canadaPack.defaultCurrency, 'CAD');
     assert.ok(Array.isArray(canadaPack.journalTemplates));
     assert.ok(canadaPack.journalTemplates.length >= 5);
-    assert.equal(typeof canadaPack.resolveTaxRepartitionAccountCode, 'function');
-    // CA collected → GIFI 2680 GST/HST collected
-    assert.equal(canadaPack.resolveTaxRepartitionAccountCode('collected'), '2680');
+    // Tax interfaces have moved to @classytic/ca-tax (forthcoming).
+    assert.equal(canadaPack.resolveTaxRepartitionAccountCode, undefined);
+    assert.equal(canadaPack.taxCodes, undefined);
+    assert.equal(canadaPack.taxReport, undefined);
   });
 
   const caEngine = createAccountingEngine({

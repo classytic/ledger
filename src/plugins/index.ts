@@ -19,17 +19,14 @@ export type {
   LockResolver,
   LockResolverContext,
   PeriodResolverOptions,
-  TaxLockPluginOptions,
   WatermarkResolverOptions,
 } from './lock/index.js';
-// Unified lock primitive — fiscal, tax, daily, and custom scopes.
+// Unified lock primitive — fiscal, daily, and custom scopes.
+// Tax-period locks live in tax packages (e.g. @classytic/bd-tax).
 export {
   createLockPlugin,
   dailyLockPlugin,
   fiscalLockPlugin,
   periodResolver,
-  taxLockPlugin,
   watermarkResolver,
 } from './lock/index.js';
-export type { TaxHookPluginOptions } from './tax-hook.plugin.js';
-export { taxHookPlugin } from './tax-hook.plugin.js';
