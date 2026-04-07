@@ -72,18 +72,26 @@ import {
 // ── @classytic/ledger/plugins ─────────────────────────────────────────────
 
 import type {
-  DateLockPluginOptions,
+  CreateLockPluginOptions,
+  DailyLockPluginOptions,
   DoubleEntryPluginOptions,
   FiscalLockPluginOptions,
   IdempotencyPluginOptions,
+  LockHit,
+  LockResolver,
   TaxHookPluginOptions,
+  TaxLockPluginOptions,
 } from '../../src/plugins/index.js';
 import {
-  dateLockPlugin,
+  createLockPlugin,
+  dailyLockPlugin,
   doubleEntryPlugin,
   fiscalLockPlugin,
   idempotencyPlugin,
+  periodResolver,
   taxHookPlugin,
+  taxLockPlugin,
+  watermarkResolver,
 } from '../../src/plugins/index.js';
 
 // ── @classytic/ledger/country ─────────────────────────────────────────────
@@ -185,27 +193,34 @@ describe('Subpath: reports', () => {
 });
 
 describe('Subpath: plugins', () => {
-  it('exports all 5 plugins', () => {
-    const plugins = [
+  it('exports the plugin factory surface (double-entry, idempotency, tax-hook, lock primitive + presets)', () => {
+    const factories = [
       doubleEntryPlugin,
-      fiscalLockPlugin,
-      dateLockPlugin,
       idempotencyPlugin,
       taxHookPlugin,
+      createLockPlugin,
+      fiscalLockPlugin,
+      taxLockPlugin,
+      dailyLockPlugin,
+      periodResolver,
+      watermarkResolver,
     ];
-    for (const p of plugins) {
-      expect(p).toBeDefined();
-      expect(p).toHaveProperty('name');
-      expect(p).toHaveProperty('apply');
+    for (const f of factories) {
+      expect(f).toBeDefined();
+      expect(typeof f).toBe('function');
     }
   });
 
   it('plugin option types compile', () => {
     expectTypeOf<DoubleEntryPluginOptions>().toBeObject();
-    expectTypeOf<FiscalLockPluginOptions>().toBeObject();
-    expectTypeOf<DateLockPluginOptions>().toBeObject();
     expectTypeOf<IdempotencyPluginOptions>().toBeObject();
     expectTypeOf<TaxHookPluginOptions>().toBeObject();
+    expectTypeOf<CreateLockPluginOptions>().toBeObject();
+    expectTypeOf<FiscalLockPluginOptions>().toBeObject();
+    expectTypeOf<TaxLockPluginOptions>().toBeObject();
+    expectTypeOf<DailyLockPluginOptions>().toBeObject();
+    expectTypeOf<LockHit>().toBeObject();
+    expectTypeOf<LockResolver>().toBeFunction();
   });
 });
 

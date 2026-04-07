@@ -80,10 +80,40 @@ export {
 
 // ── Plugins ────────────────────────────────────────────────────────────────
 
-export { dateLockPlugin } from './plugins/date-lock.plugin.js';
+export type { CreditLimitPluginOptions } from './plugins/credit-limit.plugin.js';
+export { creditLimitPlugin } from './plugins/credit-limit.plugin.js';
 export { doubleEntryPlugin } from './plugins/double-entry.plugin.js';
-export { fiscalLockPlugin } from './plugins/fiscal-lock.plugin.js';
+export type { FxRealizationPluginOptions } from './plugins/fx-realization.plugin.js';
+export { fxRealizationPlugin } from './plugins/fx-realization.plugin.js';
 export { idempotencyPlugin } from './plugins/idempotency.plugin.js';
+export type {
+  CreateLockPluginOptions,
+  DailyLockPluginOptions,
+  FiscalLockPluginOptions,
+  LockAccountSelector,
+  LockHit,
+  LockResolver,
+  LockResolverContext,
+  PeriodResolverOptions,
+  TaxLockPluginOptions,
+  WatermarkResolverOptions,
+} from './plugins/lock/index.js';
+export {
+  createLockPlugin,
+  dailyLockPlugin,
+  fiscalLockPlugin,
+  periodResolver,
+  taxLockPlugin,
+  watermarkResolver,
+} from './plugins/lock/index.js';
+export type {
+  RepartitionAccountResolver,
+  RepartitionGeneratorOptions,
+} from './utils/repartition-tax.js';
+export {
+  createRepartitionTaxGenerator,
+  defaultResolveTaxRepartitionAccountCode,
+} from './utils/repartition-tax.js';
 
 // ── Reports ────────────────────────────────────────────────────────────────
 
@@ -108,6 +138,13 @@ export { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
 export { closeFiscalPeriod, reopenFiscalPeriod } from './reports/fiscal-close.js';
 export { generateGeneralLedger } from './reports/general-ledger.js';
 export { generateIncomeStatement } from './reports/income-statement.js';
+export type {
+  PartnerLedgerLine,
+  PartnerLedgerOptions,
+  PartnerLedgerParams,
+  PartnerLedgerReport,
+} from './reports/partner-ledger.js';
+export { generatePartnerLedger } from './reports/partner-ledger.js';
 export type {
   RevaluationOptions,
   RevaluationParams,
@@ -153,8 +190,11 @@ export {
 export type {
   CountryPack,
   CountryPackInput,
+  JournalTemplate,
   TaxCode,
   TaxCodesByRegion,
+  TaxExigibility,
+  TaxRepartitionLine,
   TaxReportLine,
   TaxReportTemplate,
 } from './country/index.js';
@@ -167,8 +207,11 @@ export type {
   BulkCreateInput,
   BulkCreateResult,
   JournalEntryRepository,
+  JournalItemRef,
+  JournalRepository,
+  MatchInput,
+  OpenItem,
   PostOptions,
-  ReconcileParams,
   ReconciliationRepository,
   ReverseOptions,
   ReverseResult,

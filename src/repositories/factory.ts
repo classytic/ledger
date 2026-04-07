@@ -11,8 +11,8 @@
 import { type PluginType, Repository } from '@classytic/mongokit';
 import type { LedgerModels } from '../models/factory.js';
 import { doubleEntryPlugin } from '../plugins/double-entry.plugin.js';
-import { fiscalLockPlugin } from '../plugins/fiscal-lock.plugin.js';
 import { idempotencyPlugin } from '../plugins/idempotency.plugin.js';
+import { fiscalLockPlugin } from '../plugins/lock/index.js';
 import type {
   AccountingEngineConfig,
   LedgerPaginationConfig,
@@ -21,9 +21,11 @@ import type {
 import type {
   AccountRepository,
   JournalEntryRepository,
+  JournalRepository,
   ReconciliationRepository,
 } from '../types/repositories.js';
 import { wireAccountMethods } from './account.repository.js';
+import { wireJournalMethods } from './journal.repository.js';
 import { wireJournalEntryMethods } from './journal-entry.repository.js';
 import { wireReconciliationMethods } from './reconciliation.repository.js';
 
@@ -35,6 +37,7 @@ export interface LedgerRepositories {
   fiscalPeriods: Repository<unknown>;
   budgets: Repository<unknown>;
   reconciliations: ReconciliationRepository<unknown>;
+  journals: JournalRepository<unknown>;
 }
 
 /**
@@ -112,11 +115,17 @@ export function createRepositories(
     orgField,
   );
 
+  // ── Journal repository (0.6.0) ──────────────────────────────────────────
+  const journalPagination = pagination.journal ?? {};
+  const journalBase = new Repository(models.Journal, plugins.journal ?? [], journalPagination);
+  const journals = wireJournalMethods(journalBase, country, orgField);
+
   return {
     accounts,
     journalEntries,
     fiscalPeriods,
     budgets,
     reconciliations,
+    journals,
   };
 }

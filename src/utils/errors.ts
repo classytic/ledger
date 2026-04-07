@@ -69,6 +69,11 @@ export const Errors = {
     new AccountingError(msg, 409, 'CONFLICT', fields),
   immutable: (msg: string, fields?: ReadonlyArray<FieldError>) =>
     new AccountingError(msg, 403, 'IMMUTABLE_ENTRY', fields),
-  fiscal: (msg: string, fields?: ReadonlyArray<FieldError>) =>
-    new AccountingError(msg, 400, 'FISCAL_ERROR', fields),
+  /**
+   * Period/scope lock violation. Replaces the old `fiscal` factory — use the
+   * `scope` argument to distinguish fiscal / tax / daily / bank / etc. The
+   * resulting error code is `PERIOD_LOCKED_{SCOPE}` (e.g. `PERIOD_LOCKED_FISCAL`).
+   */
+  locked: (scope: string, msg: string, fields?: ReadonlyArray<FieldError>) =>
+    new AccountingError(msg, 409, `PERIOD_LOCKED_${scope.toUpperCase()}`, fields),
 } as const;

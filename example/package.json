@@ -1,0 +1,18 @@
+{
+  "name": "@classytic/ledger-smoke-example",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smoke-test CLI that installs @classytic/ledger + the country packs via file: links and exercises the published API against a real MongoDB instance. Run via `npm run smoke` from the package root.",
+  "scripts": {
+    "start": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@classytic/ledger": "file:..",
+    "@classytic/ledger-bd": "file:../../ledger-bd",
+    "@classytic/ledger-ca": "file:../../ledger-ca",
+    "@classytic/mongokit": "^3.5.5",
+    "mongodb-memory-server": "^10.2.3",
+    "mongoose": "^9.4.1"
+  }
+}

@@ -139,12 +139,18 @@ describe('Errors factory (all variants accept fields)', () => {
     ['notFound', 404, 'NOT_FOUND'],
     ['conflict', 409, 'CONFLICT'],
     ['immutable', 403, 'IMMUTABLE_ENTRY'],
-    ['fiscal', 400, 'FISCAL_ERROR'],
   ] as const)('%s produces status=%i code=%s with fields', (name, status, code) => {
     const fn = Errors[name];
     const err = fn('msg', [{ path: 'x', issue: 'y' }]);
     expect(err.status).toBe(status);
     expect(err.code).toBe(code);
+    expect(err.fields?.[0].path).toBe('x');
+  });
+
+  it('locked(scope, ...) produces status=409 code=PERIOD_LOCKED_{SCOPE} with fields', () => {
+    const err = Errors.locked('fiscal', 'msg', [{ path: 'x', issue: 'y' }]);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('PERIOD_LOCKED_FISCAL');
     expect(err.fields?.[0].path).toBe('x');
   });
 });

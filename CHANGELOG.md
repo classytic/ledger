@@ -1,5 +1,381 @@
 # Changelog
 
+## 0.6.0 — "Open Items & Enterprise Primitives"
+
+### Update notes (post-initial)
+
+Added during the 0.6.0 development window after a real-world ERP review
+identified gaps consumers were hitting when building A/P + A/R workflows:
+
+- **`getOpenItems` gains `filter` + `asOfDate`** — partner-scoped subsidiary
+  ledger queries now collapse to a single repository call:
+  `getOpenItems({ accountId: apId, filter: { partnerId: 'sup-1' }, asOfDate })`.
+  The projection now also surfaces the full item via `item: {...}` so
+  consumers see every dimension they declared in `extraItemFields`.
+
+- **`generatePartnerLedger` report** — supplier/customer statement with
+  opening balance, running balance via `$setWindowFields`, per-line
+  `daysPastDue`, `matchingNumber`, `isMatched`, and aged buckets at
+  end-of-period. One aggregation pipeline, no consumer-side joins, no
+  extra collections. Companion to `generateAgedBalance` (which gives the
+  cross-partner summary). Located at `src/reports/partner-ledger.ts`.
+
+- **`creditLimitPlugin`** — `before:create` enforcement of per-partner
+  outstanding A/R caps. Walks `journalItems`, finds debits to the A/R
+  control account, sums existing open exposure for each partner via the
+  same aggregation `getOpenItems` uses, and throws
+  `AccountingError(402, 'CREDIT_LIMIT_EXCEEDED')` with structured fields
+  (`partnerId`, `limit`, `currentOutstanding`, `newExposure`) when the
+  cap is breached. Exempt under `_ledgerInternal` (`reverseMark`,
+  `fxRealize`, `cashBasisRealize`) so reversals + system entries always
+  post. Demands a `partnerId` on every credit-sale line — fail-fast
+  validation prevents untagged A/R items from polluting the subsidiary
+  ledger.
+
+- **mongokit peer bumped to `>=3.5.5`** — picks up schema-aware QueryParser
+  coercion, geo query support, search-resolver plugin contract, and the
+  full set of new query primitives shipped in mongokit 3.5.5. Fully
+  backward compatible — no consumer changes required.
+
+- **A/P + A/R integration recipe in SKILL.md** — a dedicated section
+  walking through the canonical ERP workflow consumers can now build on
+  top of these primitives. 8 numbered steps from "wire `partnerId` once"
+  through to "credit notes & debit notes", with side-by-side comparison
+  to Odoo showing how every concept they encode as a separate
+  model/table maps to a single primitive in our package.
+
+- **Scenario-based smoke section** added to `example/smoke.mjs` — a 10-
+  step end-to-end ERP cycle (Acme Trading) covering bill receipt,
+  partner ledger, credit-limit enforcement, partial settlement, full
+  multi-cheque settlement, aged-balance reporting, and audit chain. Runs
+  against the published `dist/` shape via `file:..` link, so any
+  packaging regression that breaks A/P + A/R surfaces immediately during
+  `npm run smoke` (which is gated into `prepublishOnly`). 28 / 28
+  smoke assertions across all 12 sections.
+
+### What it means for consumers
+
+A consumer building an ERP A/P + A/R subsystem on `@classytic/ledger`
+0.6.0 needs **one schema field** (`partnerId` extraItemField) plus
+calls to **5 primitives** (`journalEntries.create`, `reconciliations.match`,
+`reconciliations.getOpenItems`, `generatePartnerLedger`,
+`generateAgedBalance`) — and an optional **one-line plugin install**
+(`creditLimitPlugin`). No `Bill` model, no `Invoice` model, no
+`AccountPayment` model, no partial/full reconciliation discriminator,
+no separate credit-memo workflow. Every Odoo concept folds into a
+journal entry + matching number.
+
+
+
+A major release bringing item-level open-item matching, first-class
+journal resources, tax repartition, realized FX, and a unified lock
+primitive. No backcompat shims — this is an aggressive refactor toward
+an enterprise-grade shape. Consumers on 0.5.x should migrate deliberately.
+
+### Headline features
+
+- **Item-level open-item matching** — `reconciliationRepository.match()`
+  stamps a shared `matchingNumber` onto individual journal items so you
+  can represent "one cheque settles two invoices" and "one invoice paid
+  by three cheques" — the AR/AP canonical case. `getOpenItems()` surfaces
+  unmatched items cheaply via a dedicated sparse index. `unmatch()`
+  reverses the stamp atomically. Replaces the old 0.5.x entry-level
+  `reconcile()` which could not represent these flows.
+
+- **First-class `Journal` resource** — `engine.repositories.journals`
+  exposes a catalogue of organization-owned posting channels with
+  per-journal sequence prefixes, atomic `nextSequenceNumber()`, kinds
+  (`sale` / `purchase` / `bank` / `cash` / `general`), default accounts,
+  and source strings. Optional — existing consumers that never call
+  `seedDefaults()` keep working with the `journalType` enum. Country
+  packs can declare `journalTemplates` to seed organization-specific
+  defaults (BD: Mushak Sales/Purchase/VDS/TDS, CA: standard 6-journal set).
+
+- **Tax repartition** — `TaxCode.repartition` is a declarative array of
+  `{factor, accountRole, gridCode?, documentTypes?}` lines. A single tax
+  code can now emit multiple journal items (Odoo-style): reverse-charge
+  VAT booking +100% collected / +100% recoverable, self-assessed sales
+  tax, multi-destination splits. The new
+  `createRepartitionTaxGenerator({country, resolveAccount})` expands the
+  declarative config at posting time through the existing `taxHookPlugin`.
+
+- **Cash-basis exigibility** — `TaxCode.exigibility: 'cash'` marks a tax
+  whose recognition waits for payment. Combined with a `transition`
+  repartition role and the open-item matching pipeline, consumers can
+  park tax in a holding account at invoice time and move it to the real
+  liability account on payment. Wiring is declarative in the country
+  pack, zero application code.
+
+- **Realized FX on reconciliation** — `fxRealizationPlugin` listens on
+  `after:match`. When the matched items share a single foreign currency
+  but were posted at different exchange rates, the plugin computes the
+  base-currency delta and books a balancing journal entry tagged
+  `_ledgerInternal: 'fxRealize'` to a configured realized-gain or
+  realized-loss account. The reconciliation gets a `fxRealizationEntry`
+  audit ref. Reverses cleanly via `unmatch()` → `reverse()`.
+
+- **Unified lock primitive** — `createLockPlugin({scope, resolve, ...})`
+  is the factory behind every lock scope. Scope-specific logic lives in
+  a `LockResolver`; the factory owns all the shared pipeline plumbing
+  (date resolution, multi-tenant org lookup, persisted-doc fallback on
+  partial updates, `_ledgerInternal` exemption). Three built-in presets:
+  - `fiscalLockPlugin`  — fiscal close (unchanged semantics vs 0.5.x)
+  - `taxLockPlugin`     — tax filings, narrowed by per-item account selector
+  - `dailyLockPlugin`   — per-branch watermark ("lastClosedDate")
+  Two builtin resolvers (`periodResolver`, `watermarkResolver`) for
+  composing bespoke scopes (bank-reconciliation, payroll, etc.).
+
+- **Typed error channel** — all lock violations throw `AccountingError`
+  with **HTTP 409** and the code `PERIOD_LOCKED_{SCOPE}`. The old
+  `Errors.fiscal()` factory is removed in favor of
+  `Errors.locked(scope, msg, fields?)`.
+
+- **`_ledgerInternal` policy clarified** — only `reverseMark` and
+  `fxRealize` are exempt from locks. `post` and `unpost` remain fully
+  subject — you cannot post into or unpost out of a closed period.
+
+- **Generic result types** — `ReverseResult<TEntry>` and
+  `BulkCreateResult<TAccount>` are now generic over the document type.
+  Callers no longer need casts.
+
+- **Smoke test infrastructure** — `example/` is a standalone CLI that
+  imports `@classytic/ledger` via a `file:..` link and exercises every
+  major primitive against real MongoDB. Wired into `prepublishOnly` so
+  `npm publish` cannot ship a broken dist/. See `scripts/smoke.mjs`.
+
+### Data-model changes
+
+| Change | Breaking? |
+|---|---|
+| New `journal` ref on `JournalItem` and `JournalEntry` (optional) | No |
+| New `matchingNumber`, `maturityDate` on `JournalItem` | No |
+| New `matchingNumber`, `items[{entry,itemIndex,...}]`, `isFullReconcile`, `currency`, `fxRealizationEntry` on `Reconciliation` | **Yes** — the entry-level schema is gone |
+| New optional `repartition`, `exigibility` on `TaxCode` | No |
+| New optional `journalTemplates`, `resolveTaxRepartitionAccountCode` on `CountryPack` | No |
+| New `Journal` model/collection (opt-in via `seedDefaults`) | No |
+| Removed `Errors.fiscal()` factory and `FISCAL_ERROR` code | **Yes** |
+| `LedgerInternalOp` gains `'fxRealize'` and `'cashBasisRealize'` | No |
+
+### Country packs
+
+- **`@classytic/ledger-bd` 0.2.0** — peer bumped to `>=0.6.0`. Adds
+  `journalTemplates` (Mushak Sales/Purchase/VDS/TDS/Bank/Cash/Misc),
+  `resolveTaxRepartitionAccountCode` mapping (collected→2131,
+  recoverable→1150, transition→1155, tds→2135, vds→2136). BD-VAT-15 now
+  carries a single-line `repartition` with NBR grid box 1.
+
+- **`@classytic/ledger-ca` 0.2.0** — peer bumped to `>=0.6.0`. Adds
+  `journalTemplates` (Sales/Purchase/Bank/Cash/Payroll/Misc),
+  `resolveTaxRepartitionAccountCode` mapping to GIFI codes
+  (collected→2680, recoverable→1900, transition→2685). HST13 carries
+  a single-line repartition with CRA box 103.
+
+- **`@classytic/ledger-assets` 0.2.0** — peer bumped to `>=0.6.0` (no
+  other changes; the asset engine is orthogonal to these primitives).
+
+### Removed (no shims)
+
+- `src/plugins/fiscal-lock.plugin.ts`
+- `src/plugins/date-lock.plugin.ts`
+- Old entry-level `reconciliationRepository.reconcile()` /
+  `unreconcile()` / `getUnreconciled()` methods — replaced by
+  `match()` / `unmatch()` / `getOpenItems()`
+- `Errors.fiscal()` factory
+- `FISCAL_ERROR` code
+- `ReconcileParams` type
+
+### Migration
+
+See the old entry below for the lock-plugin renames. Additionally:
+
+```ts
+// 0.5.x — entry-level reconciliation
+await engine.repositories.reconciliations.reconcile({
+  account: arId,
+  journalEntryIds: [invEntry._id, payEntry._id],
+});
+
+// 0.6.0 — item-level matching
+await engine.repositories.reconciliations.match({
+  account: arId,
+  items: [
+    { entry: invEntry._id, itemIndex: 0 }, // AR debit on the invoice
+    { entry: payEntry._id, itemIndex: 1 }, // AR credit on the payment
+  ],
+});
+```
+
+```ts
+// 0.5.x — no journal resource
+await engine.repositories.journalEntries.create({
+  journalType: 'SALES', // enum only
+  ...
+});
+
+// 0.6.0 — opt-in journal resource
+await engine.repositories.journals.seedDefaults(orgId);
+const journals = await engine.repositories.journals.getAll();
+const sales = journals.docs.find(j => j.code === 'SALES');
+const refNo = await engine.repositories.journals.nextSequenceNumber(sales._id);
+await engine.repositories.journalEntries.create({
+  journalType: 'SALES',
+  journal: sales._id,     // optional ref
+  referenceNumber: refNo, // optional — overrides auto-gen
+  ...
+});
+```
+
+```ts
+// 0.6.0 — FX realization
+import { fxRealizationPlugin } from '@classytic/ledger/plugins';
+
+fxRealizationPlugin({
+  journalEntries: engine.repositories.journalEntries,
+  realizedGainAccount: gainAcctId,
+  realizedLossAccount: lossAcctId,
+  baseCurrency: 'USD',
+}).apply(engine.repositories.reconciliations);
+
+// Now every match on multi-currency items auto-books realized FX.
+```
+
+---
+
+## 0.6.0-pre (lock primitive refactor notes, rolled into 0.6.0 final)
+
+Breaking — no compatibility shims. Every consumer using the old
+`fiscalLockPlugin` / `dateLockPlugin` symbols must update imports, but the
+new surface is a strict superset and the fiscal-lock preset is wire-level
+drop-in.
+
+### Highlights
+
+- **Unified lock primitive.** `fiscalLockPlugin`, `dateLockPlugin`, and the
+  informally-hand-rolled daily-close / tax-period guards that consumers were
+  writing in route handlers have collapsed into a single composable
+  factory: `createLockPlugin({ scope, resolve, accountSelector?, ... })`.
+  Scope-specific logic lives in a `LockResolver`; the factory owns all the
+  shared pipeline plumbing (date resolution, multi-tenant org lookup,
+  persisted-doc fallback on partial updates, `_ledgerInternal` exemption).
+
+- **Three builtin presets** cover the common cases:
+    - `fiscalLockPlugin`  — fiscal close (unchanged semantics vs 0.5.x)
+    - `taxLockPlugin`     — tax filings, narrowed by per-item account selector
+    - `dailyLockPlugin`   — per-branch watermark ("lastClosedDate") semantics
+
+- **Two builtin resolvers** for composing your own scopes (bank-reconciliation
+  lock, payroll-run lock, per-journal-type lock, …) without reimplementing
+  any plumbing:
+    - `periodResolver`    — range-based `FindOne` against a period-table
+    - `watermarkResolver` — single-date cutoff from a sync or async callback
+
+- **Typed error channel.** All lock violations now throw
+  `AccountingError` with **HTTP 409** and the code
+  `PERIOD_LOCKED_{SCOPE}` (e.g. `PERIOD_LOCKED_FISCAL`,
+  `PERIOD_LOCKED_TAX`, `PERIOD_LOCKED_DAILY`). Previously only fiscal
+  lock produced a dedicated code (`FISCAL_ERROR`, 400) and that factory
+  has been removed.
+
+- **`_ledgerInternal` exemption narrowed to `reverseMark` only.** In 0.5.1
+  this flag let every internal state transition bypass the double-entry
+  immutability guard. In 0.6.0 the lock factory is more precise:
+    - `post` / `unpost` are **still subject** to locks — you cannot post
+      into, or unpost out of, a closed period.
+    - `reverseMark` is exempt so that `reverse()` can mark an original
+      entry (sitting inside a closed period) as reversed while the
+      counter-entry posts into the currently-open period via the normal
+      pipeline.
+
+- **Generic result types.** `ReverseResult<TEntry>` and
+  `BulkCreateResult<TAccount>` are now generic over the document type
+  (default `Record<string, unknown>` for source compat). Callers that
+  previously cast `(result.reversal as { _id: Types.ObjectId })._id` can
+  drop the casts entirely.
+
+- **`Errors.fiscal()` factory removed.** Replaced by
+  `Errors.locked(scope, message, fields?)`. The scope argument is
+  uppercased and embedded into the error code.
+
+### Migration
+
+Both offending import sites:
+
+```ts
+// 0.5.x
+import { fiscalLockPlugin, dateLockPlugin } from '@classytic/ledger/plugins';
+
+fiscalLockPlugin({ FiscalPeriodModel, JournalEntryModel, orgField });
+dateLockPlugin({ getLockDate, JournalEntryModel, orgField });
+```
+
+become:
+
+```ts
+// 0.6.0
+import { fiscalLockPlugin, dailyLockPlugin } from '@classytic/ledger/plugins';
+
+fiscalLockPlugin({ FiscalPeriodModel, JournalEntryModel, orgField });
+// date-lock → daily-lock (watermark semantics — entries ON or BEFORE the
+// returned date are blocked; strictly after passes)
+dailyLockPlugin({ getLastClosedDate, JournalEntryModel, orgField });
+```
+
+For tax filings and custom scopes:
+
+```ts
+import { taxLockPlugin, createLockPlugin, periodResolver } from '@classytic/ledger/plugins';
+
+// Preset — narrowed by accountSelector (default: acc.taxMetadata != null)
+taxLockPlugin({
+  TaxPeriodModel,
+  AccountModel,
+  JournalEntryModel,
+  isTaxAffecting: (acc) => acc.isTaxAccount === true, // optional override
+});
+
+// Bespoke scope — compose the factory with a resolver
+createLockPlugin({
+  scope: 'bank-recon',
+  JournalEntryModel,
+  resolve: periodResolver({
+    scope: 'bank-recon',
+    PeriodModel: BankReconModel,
+    startField: 'statementStart',
+    endField: 'statementEnd',
+    closedField: 'reconciled',
+  }),
+});
+```
+
+Error-handler updates:
+
+```ts
+// 0.5.x
+if (err.code === 'FISCAL_ERROR') return reply.status(400).send(err);
+
+// 0.6.0
+if (err.code?.startsWith('PERIOD_LOCKED_')) return reply.status(409).send(err);
+```
+
+### Removed
+
+- `src/plugins/fiscal-lock.plugin.ts`
+- `src/plugins/date-lock.plugin.ts`
+- `Errors.fiscal()` factory
+- `FISCAL_ERROR` code
+
+### Added
+
+- `src/plugins/lock/` — types, factory, resolvers, presets, barrel
+- `Errors.locked(scope, msg, fields?)` factory
+- `ReverseResult<TEntry>`, `BulkCreateResult<TAccount>` generics
+- Integration suite at `tests/e2e/lock-scopes.test.ts` exercising all
+  three presets through a real `mongodb-memory-server` pipeline, plus
+  unit suites under `tests/plugins/lock/` for the factory and resolvers
+  in isolation.
+
+---
+
 ## 0.5.1
 
 ### Bug fixes

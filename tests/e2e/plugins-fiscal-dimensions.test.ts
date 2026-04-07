@@ -14,7 +14,7 @@ import mongoose from 'mongoose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
-import { dateLockPlugin } from '../../src/plugins/date-lock.plugin.js';
+import { dailyLockPlugin } from '../../src/plugins/lock/index.js';
 import { taxHookPlugin } from '../../src/plugins/tax-hook.plugin.js';
 import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
@@ -721,13 +721,13 @@ describe('Fiscal Period Management', () => {
 // 5. DATE LOCK PLUGIN
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('Date Lock Plugin', () => {
+describe('Daily Lock Plugin', () => {
   it('blocks entries before the lock date', async () => {
     // Set lock date to March 1, 2025
     lockDateCutoff = new Date('2025-03-01');
 
-    const plugin = dateLockPlugin({
-      getLockDate: async () => lockDateCutoff,
+    const plugin = dailyLockPlugin({
+      getLastClosedDate: async () => lockDateCutoff,
       JournalEntryModel: JEModel,
     });
 
@@ -752,14 +752,14 @@ describe('Date Lock Plugin', () => {
       },
     };
 
-    await expect(listeners['before:create'](context)).rejects.toThrow(/before lock date/);
+    await expect(listeners['before:create'](context)).rejects.toThrow(/day closed through/);
   });
 
   it('allows entries on or after the lock date', async () => {
     lockDateCutoff = new Date('2025-03-01');
 
-    const plugin = dateLockPlugin({
-      getLockDate: async () => lockDateCutoff,
+    const plugin = dailyLockPlugin({
+      getLastClosedDate: async () => lockDateCutoff,
       JournalEntryModel: JEModel,
     });
 
@@ -791,8 +791,8 @@ describe('Date Lock Plugin', () => {
     // Move lock date forward to April 1
     lockDateCutoff = new Date('2025-04-01');
 
-    const plugin = dateLockPlugin({
-      getLockDate: async () => lockDateCutoff,
+    const plugin = dailyLockPlugin({
+      getLastClosedDate: async () => lockDateCutoff,
       JournalEntryModel: JEModel,
     });
 
@@ -816,14 +816,14 @@ describe('Date Lock Plugin', () => {
       },
     };
 
-    await expect(listeners['before:create'](context)).rejects.toThrow(/before lock date/);
+    await expect(listeners['before:create'](context)).rejects.toThrow(/day closed through/);
   });
 
   it('ignores draft entries even before lock date', async () => {
     lockDateCutoff = new Date('2025-03-01');
 
-    const plugin = dateLockPlugin({
-      getLockDate: async () => lockDateCutoff,
+    const plugin = dailyLockPlugin({
+      getLastClosedDate: async () => lockDateCutoff,
       JournalEntryModel: JEModel,
     });
 

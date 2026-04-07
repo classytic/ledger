@@ -99,10 +99,10 @@ describe('Improvement 0: AccountingError', () => {
     expect(err.code).toBe('IMMUTABLE_ENTRY');
   });
 
-  it('Errors.fiscal() returns 400 FISCAL_ERROR', () => {
-    const err = Errors.fiscal('period closed');
-    expect(err.status).toBe(400);
-    expect(err.code).toBe('FISCAL_ERROR');
+  it('Errors.locked() returns 409 PERIOD_LOCKED_{SCOPE}', () => {
+    const err = Errors.locked('fiscal', 'period closed');
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('PERIOD_LOCKED_FISCAL');
   });
 
   it('AccountingError is catchable as Error', () => {
@@ -667,7 +667,7 @@ describe('Improvement 2: Internal Session Management', () => {
       expect.fail('Should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(AccountingError);
-      expect((err as AccountingError).code).toBe('FISCAL_ERROR');
+      expect((err as AccountingError).code).toBe('PERIOD_LOCKED_FISCAL');
     }
   });
 

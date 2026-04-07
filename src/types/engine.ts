@@ -19,6 +19,7 @@ export interface LedgerRepositoryPlugins {
   fiscalPeriod?: PluginType[];
   budget?: PluginType[];
   reconciliation?: PluginType[];
+  journal?: PluginType[];
 }
 
 /** Pagination caps per repository. Omit a key to use mongokit defaults. */
@@ -28,6 +29,7 @@ export interface LedgerPaginationConfig {
   fiscalPeriod?: PaginationConfig;
   budget?: PaginationConfig;
   reconciliation?: PaginationConfig;
+  journal?: PaginationConfig;
 }
 
 // ─── Multi-Tenancy ───────────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ export interface ModelNames {
   fiscalPeriod?: string; // default: 'FiscalPeriod'
   budget?: string; // default: 'Budget'
   reconciliation?: string; // default: 'Reconciliation'
+  journal?: string; // default: 'Journal'
 }
 
 // ─── Engine Config ───────────────────────────────────────────────────────────
@@ -141,6 +144,7 @@ export interface AccountingEngineConfig {
     fiscalPeriod?: SchemaOptions;
     budget?: SchemaOptions;
     reconciliation?: SchemaOptions;
+    journal?: SchemaOptions;
   };
   /** Country pack providing account types, tax codes, and templates */
   country: CountryPack;

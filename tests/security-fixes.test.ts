@@ -14,7 +14,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../src/country/index.js';
-import { fiscalLockPlugin } from '../src/plugins/fiscal-lock.plugin.js';
+import { fiscalLockPlugin } from '../src/plugins/lock/index.js';
 import { generateBalanceSheet } from '../src/reports/balance-sheet.js';
 import { generateCashFlow } from '../src/reports/cash-flow.js';
 import { closeFiscalPeriod, reopenFiscalPeriod } from '../src/reports/fiscal-close.js';

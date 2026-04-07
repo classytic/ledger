@@ -73,7 +73,7 @@ export async function closeFiscalPeriod(
       unknown
     > | null;
     if (!period) throw Errors.notFound('Fiscal period not found');
-    if (period.closed) throw Errors.fiscal('Fiscal period is already closed');
+    if (period.closed) throw Errors.locked('fiscal', 'Fiscal period is already closed');
 
     const startDate = period.startDate as Date;
     const endDate = period.endDate as Date;
@@ -107,7 +107,8 @@ export async function closeFiscalPeriod(
     }
 
     if (!retainedEarningsId) {
-      throw Errors.fiscal(
+      throw Errors.locked(
+        'fiscal',
         `Retained earnings account (code: ${retainedEarningsAccountCode}) not found. ` +
           'Create this account before closing the fiscal period.',
       );
@@ -257,7 +258,7 @@ export async function reopenFiscalPeriod(
       unknown
     > | null;
     if (!period) throw Errors.notFound('Fiscal period not found');
-    if (!period.closed) throw Errors.fiscal('Fiscal period is not closed');
+    if (!period.closed) throw Errors.locked('fiscal', 'Fiscal period is not closed');
 
     // 2. Block if a later period is already closed (prevents cascade corruption)
     const laterQuery: Record<string, unknown> = {
@@ -268,7 +269,8 @@ export async function reopenFiscalPeriod(
 
     const laterClosed = await FiscalPeriodModel.findOne(laterQuery, null, queryOpts).lean();
     if (laterClosed) {
-      throw Errors.fiscal(
+      throw Errors.locked(
+        'fiscal',
         'Cannot reopen: a later fiscal period is already closed. Reopen later periods first.',
       );
     }
