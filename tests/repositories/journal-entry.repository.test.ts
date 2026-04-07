@@ -22,6 +22,13 @@ function setup(
   const repo: Record<string, unknown> = {
     getByQuery: vi.fn().mockResolvedValue(doc),
     create: vi.fn().mockResolvedValue({ _id: 'reversal-1' }),
+    // post/unpost/archive now route their state mutations through update() so
+    // the plugin pipeline fires. The mock echoes back the patched doc so the
+    // assertions on the returned entry continue to work.
+    update: vi.fn().mockImplementation(async (_id: unknown, patch: Record<string, unknown>) => ({
+      ...(doc as Record<string, unknown>),
+      ...patch,
+    })),
     withTransaction: vi
       .fn()
       .mockImplementation(async (cb: (session: unknown) => Promise<unknown>) => cb(null)),
@@ -341,7 +348,14 @@ describe('wireJournalEntryMethods — reverse()', () => {
 
     const createCall = (repo.create as any).mock.calls[0][0];
     expect(createCall.postedBy).toBe('user-99');
-    expect(entry.reversedByUser).toBe('user-99');
+
+    // The reverse-mark step now routes through repository.update() — assert
+    // the actor stamp was in the patch instead of on the raw mongoose doc.
+    expect(repo.update).toHaveBeenCalledWith(
+      'entry-1',
+      expect.objectContaining({ reversedByUser: 'user-99' }),
+      expect.objectContaining({ _ledgerInternal: 'reverseMark' }),
+    );
   });
 
   it('preserves extra dimension fields on reversal items', async () => {

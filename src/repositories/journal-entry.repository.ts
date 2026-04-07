@@ -9,9 +9,13 @@
  * AccountingEngine.createJournalEntryRepository().
  */
 
-import type { Repository } from '@classytic/mongokit';
-import type { ClientSession } from 'mongoose';
+import type { Repository, UpdateOptions } from '@classytic/mongokit';
+import type { ClientSession, Types } from 'mongoose';
 import type { StrictnessConfig } from '../types/engine.js';
+// Side-effect import: activates the `_ledgerInternal` typing on
+// RepositoryContext/SessionOptions so the calls below are fully type-safe.
+import type { LedgerInternalOp } from '../types/mongokit-augmentation.js';
+import '../types/mongokit-augmentation.js';
 import type { JournalEntryRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
@@ -49,8 +53,11 @@ const ITEM_CORE_KEYS = new Set([
   'id',
 ]);
 
+/** Mongoose document id — string in serialized form, ObjectId at runtime. */
+type EntryId = string | Types.ObjectId;
+
 interface JournalEntryDoc {
-  _id: unknown;
+  _id: EntryId;
   state: string;
   stateChangedAt?: Date;
   journalType?: string;
@@ -63,6 +70,17 @@ interface JournalEntryDoc {
   journalItems: JournalItemWithLabel[];
   save(options?: { session?: ClientSession | null }): Promise<this>;
   [key: string]: unknown;
+}
+
+/**
+ * UpdateOptions extension carrying an internal repo signal that legitimate
+ * state-transition methods (post, unpost, archive) use to opt out of the
+ * double-entry plugin's immutability guard. Plain `repository.update()`
+ * callers cannot set this flag, so the immutability contract is preserved
+ * for them.
+ */
+interface InternalUpdateOptions extends UpdateOptions {
+  _ledgerInternal: LedgerInternalOp;
 }
 
 interface ReverseOptions extends PostOptions {
@@ -90,7 +108,54 @@ export function wireJournalEntryMethods<TDoc = unknown>(
   // Bind mongokit Repository methods — retain `this` context when called standalone.
   const getByQuery = repository.getByQuery.bind(repository);
   const create = repository.create.bind(repository);
+  const update = repository.update.bind(repository);
   const withTransaction = repository.withTransaction.bind(repository);
+
+  // Top-level fields owned by reverse()/duplicate() — copy everything else from
+  // the source entry so consumer-defined extraFields (departmentId, projectId,
+  // sourceRef, branch tags, etc.) survive these operations.
+  const RESERVED_TOPLEVEL = new Set([
+    '_id',
+    '__v',
+    'id',
+    'journalType',
+    'state',
+    'date',
+    'label',
+    'journalItems',
+    'totalDebit',
+    'totalCredit',
+    'reversalOf',
+    'reversedBy',
+    'reversedByUser',
+    'reversed',
+    'stateChangedAt',
+    'createdAt',
+    'updatedAt',
+    'referenceNumber',
+    'idempotencyKey',
+    'postedBy',
+    'approvedBy',
+    'approvedAt',
+  ]);
+
+  /** Copy non-reserved top-level fields from `source` onto `target`. */
+  function copyExtraTopLevel(
+    source: Record<string, unknown>,
+    target: Record<string, unknown>,
+  ): void {
+    const obj =
+      typeof (source as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+        ? (source as { toObject: () => Record<string, unknown> }).toObject()
+        : source;
+    for (const key of Object.keys(obj)) {
+      if (RESERVED_TOPLEVEL.has(key)) continue;
+      if (key in target) continue; // caller already set it
+      const value = obj[key];
+      if (value === undefined || value === null) continue;
+      target[key] = value;
+    }
+  }
 
   // ── Shared helpers ──────────────────────────────────────────────────────
 
@@ -243,14 +308,23 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       );
     }
 
-    entry.state = 'posted';
-    entry.stateChangedAt = new Date();
-    if (options.actorId) {
-      entry.postedBy = options.actorId;
-    }
-    await entry.save({ session: options.session });
+    // Route the state mutation through repository.update() so plugins
+    // (fiscalLockPlugin, dateLockPlugin, audit, observability) fire on the
+    // draft → posted transition. Direct entry.save() bypasses the plugin
+    // pipeline and silently breaks period locks.
+    const patch: Record<string, unknown> = {
+      state: 'posted',
+      stateChangedAt: new Date(),
+    };
+    if (options.actorId) patch.postedBy = options.actorId;
 
-    return entry;
+    const updateOptions: InternalUpdateOptions = {
+      _ledgerInternal: 'post',
+      ...(options.session ? { session: options.session } : {}),
+    };
+    const updated = (await update(entry._id, patch, updateOptions)) as JournalEntryDoc | null;
+
+    return updated ?? entry;
   };
 
   // ── unpost() ────────────────────────────────────────────────────────────
@@ -291,11 +365,17 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       );
     }
 
-    entry.state = 'draft';
-    entry.stateChangedAt = new Date();
-    await entry.save({ session: options.session });
+    const updateOptions: InternalUpdateOptions = {
+      _ledgerInternal: 'unpost',
+      ...(options.session ? { session: options.session } : {}),
+    };
+    const updated = (await update(
+      entry._id,
+      { state: 'draft', stateChangedAt: new Date() },
+      updateOptions,
+    )) as JournalEntryDoc | null;
 
-    return entry;
+    return updated ?? entry;
   };
 
   // ── archive() ───────────────────────────────────────────────────────────
@@ -321,11 +401,17 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       throw Errors.validation('Only draft entries can be archived');
     }
 
-    entry.state = 'archived';
-    entry.stateChangedAt = new Date();
-    await entry.save({ session: options.session });
+    const updateOptions: InternalUpdateOptions = {
+      _ledgerInternal: 'archive',
+      ...(options.session ? { session: options.session } : {}),
+    };
+    const updated = (await update(
+      entry._id,
+      { state: 'archived', stateChangedAt: new Date() },
+      updateOptions,
+    )) as JournalEntryDoc | null;
 
-    return entry;
+    return updated ?? entry;
   };
 
   // ── duplicate() ─────────────────────────────────────────────────────────
@@ -373,10 +459,10 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       }),
     };
 
-    // Carry over org field
-    if (orgField && entry[orgField] != null) {
-      duplicateData[orgField] = entry[orgField];
-    }
+    // Propagate every consumer-defined top-level field (extraFields,
+    // dimensions, sourceRef, branch tags, organizationId, etc.) so the
+    // duplicate keeps all the context the original carried.
+    copyExtraTopLevel(entry as unknown as Record<string, unknown>, duplicateData);
 
     const duplicated = await create(
       duplicateData,
@@ -463,10 +549,11 @@ export function wireJournalEntryMethods<TDoc = unknown>(
         stateChangedAt: new Date(),
       };
 
-      // Carry over org field
-      if (orgField && entry[orgField] != null) {
-        reversalData[orgField] = entry[orgField];
-      }
+      // Propagate every consumer-defined top-level field (extraFields,
+      // dimensions, sourceRef, branch tags, organizationId, etc.) so the
+      // reversal carries the same scope/context as the original — branch
+      // reports, plugin hooks, and audit trails all see the right data.
+      copyExtraTopLevel(entry as unknown as Record<string, unknown>, reversalData);
 
       // Stamp actor on reversal entry
       if (options.actorId) {
@@ -479,15 +566,24 @@ export function wireJournalEntryMethods<TDoc = unknown>(
         unknown
       >;
 
-      // Mark original as reversed (bidirectional link)
-      entry.reversed = true;
-      entry.reversedBy = reversalEntry._id;
-      if (options.actorId) {
-        entry.reversedByUser = options.actorId;
-      }
-      await entry.save({ session });
+      // Mark original as reversed (bidirectional link). Route through
+      // repository.update() with _ledgerInternal: 'reverseMark' so plugins
+      // (audit, observability, notifications) see the reversal event. The
+      // double-entry immutability guard honours the internal flag so this
+      // legitimate mutation is permitted.
+      const markPatch: Record<string, unknown> = {
+        reversed: true,
+        reversedBy: reversalEntry._id,
+      };
+      if (options.actorId) markPatch.reversedByUser = options.actorId;
 
-      return { original: entry, reversal: reversalEntry };
+      const markOptions: InternalUpdateOptions = {
+        _ledgerInternal: 'reverseMark',
+        ...(session ? { session } : {}),
+      };
+      const marked = (await update(entry._id, markPatch, markOptions)) as JournalEntryDoc | null;
+
+      return { original: marked ?? entry, reversal: reversalEntry };
     };
 
     // External session: caller manages transaction; run directly

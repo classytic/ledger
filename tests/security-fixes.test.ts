@@ -929,7 +929,13 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
 
     const result = await repo.post('entry-1', org1);
     expect(result.state).toBe('posted');
-    expect(mockEntry.save).toHaveBeenCalled();
+    // post() routes through repository.update() so the plugin pipeline fires;
+    // assert update was called instead of the legacy direct entry.save().
+    expect(repo.update).toHaveBeenCalledWith(
+      'entry-1',
+      expect.objectContaining({ state: 'posted' }),
+      expect.objectContaining({ _ledgerInternal: 'post' }),
+    );
   });
 
   it('cross-tenant check throws AccountingError with 400 status', async () => {

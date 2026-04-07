@@ -9,11 +9,11 @@ description: |
   income statement, trial balance, general ledger, cash flow, fiscal period, fiscal close,
   Money cents, country pack, tax code, CSV export, subledger, posting contract, bookkeeping,
   debit credit, account type, fiscal year, retained earnings.
-version: "0.1.0"
+version: "0.5.1"
 license: MIT
 metadata:
   author: Classytic
-  version: "0.1.0"
+  version: "0.5.1"
 tags:
   - accounting
   - double-entry
@@ -30,7 +30,7 @@ progressive_disclosure:
   entry_point:
     summary: "Double-entry accounting engine: schemas, plugins, reports, Money, country packs, subledger contracts"
     when_to_use: "Building accounting, journal entries, financial reports, fiscal periods, multi-tenant bookkeeping, or subledger integration with MongoDB"
-    quick_start: "1. npm install @classytic/ledger @classytic/mongokit mongoose 2. createAccountingEngine({ country, currency }) 3. Create schemas → wire repositories → generate reports"
+    quick_start: "1. npm install @classytic/ledger @classytic/mongokit mongoose 2. createAccountingEngine({ mongoose: mongoose.connection, country, currency }) 3. Use engine.repositories.* and engine.reports.* — models and plugins are wired automatically"
   context_limit: 700
 ---
 
@@ -38,7 +38,7 @@ progressive_disclosure:
 
 Production-grade double-entry accounting engine for MongoDB. Built on `@classytic/mongokit`.
 
-**Requires:** Node.js >= 22 | Mongoose >= 9 | @classytic/mongokit >= 3.3.2 | ESM only
+**Requires:** Node.js >= 22 | Mongoose >= 9.4.1 | @classytic/mongokit >= 3.5.3 | ESM only
 
 ## Install
 
@@ -46,110 +46,98 @@ Production-grade double-entry accounting engine for MongoDB. Built on `@classyti
 npm install @classytic/ledger @classytic/mongokit mongoose
 ```
 
-## Quick Start
+## Quick Start (engine-owned models — flow/promo pattern)
+
+The engine eagerly creates models, wires plugins, and exposes repositories +
+reports as properties. No manual schema creation, no manual wiring.
 
 ```typescript
+import mongoose from 'mongoose';
 import { createAccountingEngine } from '@classytic/ledger';
 import { canadaPack } from '@classytic/ledger-ca';
-import mongoose from 'mongoose';
 
-// 1. Create engine
-const accounting = createAccountingEngine({
+const engine = createAccountingEngine({
+  mongoose: mongoose.connection,                     // required — engine binds to this connection
   country: canadaPack,
   currency: 'CAD',
-  multiTenant: { orgField: 'business', orgRef: 'Business' },
-  audit: { trackActor: true },
-  idempotency: true,
+  multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+  fiscalYearStartMonth: 1,
+  pagination: { account: { maxLimit: 1000 } },       // override per-collection list cap
+  schemaOptions: {
+    journalEntry: {
+      extraFields: {                                  // top-level dimensions / branch tags / source refs
+        departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
+        sourceRef: { kind: String, docId: String },
+      },
+    },
+  },
   strictness: { immutable: true, requireActor: true },
 });
 
-// 2. Create schemas & models
-const Account = mongoose.model('Account', accounting.createAccountSchema());
-const JournalEntry = mongoose.model('JournalEntry', accounting.createJournalEntrySchema('Account', {
-  extraItemFields: {
-    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-  },
-}));
-const FiscalPeriod = mongoose.model('FiscalPeriod', accounting.createFiscalPeriodSchema());
+// Models, repositories, reports — all ready to use
+await engine.repositories.accounts.seedAccounts(orgId);
+await engine.repositories.journalEntries.post(entryId, orgId, { actorId });
 
-// 3. Wire repositories
-import { createRepository } from '@classytic/mongokit';
-
-const journalRepo = accounting.createJournalEntryRepository(
-  createRepository,
-  { JournalEntryModel: JournalEntry, AccountModel: Account, FiscalPeriodModel: FiscalPeriod },
-);
-
-const accountRepo = createRepository(Account, []);
-accounting.wireAccountRepository(accountRepo, Account);
-
-// 4. Generate reports
-const reports = accounting.createReports({ Account, JournalEntry });
-const bs = await reports.balanceSheet({
+const bs = await engine.reports.balanceSheet({
   organizationId: orgId,
   dateOption: 'year',
   dateValue: 2025,
-  filters: { 'journalItems.departmentId': deptId },
 });
+
+// Semantic verbs for AI agents and humans
+await engine.record.sale(orgId, { date, amount: 10000, receivableAccount: '1001', revenueAccount: '4010' });
+
+// Runtime introspection for MCP tools
+const catalog = await engine.introspect.catalog(orgId);
 ```
+
+Need raw access? `engine.models.Account`, `engine.models.JournalEntry`, etc. are Mongoose models you can query directly.
 
 ## Engine Configuration
 
 ```typescript
-const accounting = createAccountingEngine({
-  country: canadaPack,            // CountryPack — account types, tax codes (required)
-  currency: 'CAD',                // ISO 4217 code (required)
-  multiTenant: {                  // omit for single-tenant
-    orgField: 'business',         // field name on documents
-    orgRef: 'Business',           // Mongoose model name for ObjectId ref
+createAccountingEngine({
+  mongoose: mongoose.connection,         // required — engine owns models
+  country: canadaPack,                    // CountryPack — account types, tax codes (required)
+  currency: 'CAD',                        // ISO 4217 code (required)
+  multiTenant: { orgField, orgRef },      // omit for single-tenant
+  multiCurrency: { enabled: true, currencies: ['USD', 'EUR'] },
+  fiscalYearStartMonth: 1,                // 1-12, default 1 (January)
+  retainedEarningsAccountCode: '3600',   // overrides country pack
+  modelNames: { account: 'GLAccount' },  // optional model name overrides
+  schemaOptions: {                        // optional model extensions
+    journalEntry: { extraFields: { aiJob: { status: String } } },
   },
-  fiscalYearStartMonth: 4,       // 1-12, default 1 (January)
-  logger: winstonLogger,          // { warn, error, info } — defaults to console
-  audit: { trackActor: true },    // adds createdBy, postedBy, reversedByUser fields
-  idempotency: true,              // adds idempotencyKey field (unique sparse index)
+  pagination: {                           // per-collection list-page caps
+    account: { maxLimit: 1000 },
+  },
+  audit: { trackActor: true },
+  idempotency: true,
   strictness: {
-    immutable: true,              // unpost() disabled — correction only via reverse()
-    requireActor: true,           // actorId required on post/reverse/unpost
-    requireApproval: true,        // approvedBy + approvedAt required before posting
+    immutable: true,                      // unpost() disabled — correction only via reverse()
+    requireActor: true,                   // actorId required on post/reverse/unpost
+    requireApproval: true,                // approvedBy + approvedAt required before posting
   },
 });
 ```
 
-## Schemas
+## Models
 
-### Account Schema
+The engine creates Mongoose models eagerly and exposes them on `engine.models`:
 
-```typescript
-const accountSchema = accounting.createAccountSchema();
-// Fields: accountType (string, required), name, accountNumber, description, isActive
-// Multi-tenant: adds orgField as ObjectId ref with compound indexes
-```
-
-### Journal Entry Schema
-
-```typescript
-const jeSchema = accounting.createJournalEntrySchema('Account', {
-  extraItemFields: {
-    departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
-    projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
-  },
-});
-// Fields: date, label, journalType, state (draft|posted|archived), journalItems[], totalDebit, totalCredit
-// Conditional: createdBy, postedBy (audit), approvedBy, approvedAt (approval), idempotencyKey
-// journalItems[]: account (ObjectId ref), debit, credit, label + any extraItemFields
-```
-
-### Fiscal Period Schema
-
-```typescript
-const fpSchema = accounting.createFiscalPeriodSchema();
-// Fields: name, startDate, endDate, closed, closedAt, closedBy, reopenedAt, reopenedBy
-// Overlap protection: pre-validate hook rejects overlapping date ranges per tenant
-```
+| Property | Document fields |
+|---|---|
+| `engine.models.Account` | `accountTypeCode`, `name`, `accountNumber?`, `description?`, `active`, plus orgField in multi-tenant mode |
+| `engine.models.JournalEntry` | `date`, `label?`, `journalType`, `state` (draft/posted/archived), `journalItems[]` (account, debit, credit, label, taxDetails, custom item fields), `totalDebit`, `totalCredit`, `referenceNumber`, `reversed`, `reversedBy?`, `reversalOf?`, audit/approval fields, plus any `schemaOptions.journalEntry.extraFields` |
+| `engine.models.FiscalPeriod` | `name`, `startDate`, `endDate`, `closed`, `closedAt?`, `closedBy?`, `reopenedAt?`, `reopenedBy?` (overlap protection per tenant) |
+| `engine.models.Budget` | per-account budgets for variance reports |
+| `engine.models.Reconciliation` | reconciliation records linking JEs to bank statements |
 
 ## Repositories
 
-### Journal Entry Repository (recommended)
+`engine.repositories.*` exposes mongokit repositories with all plugins (double-entry, fiscal-lock, idempotency, optional date-lock, optional tax-hook) pre-wired. Domain methods are bound directly on the repo.
+
+### Journal Entry Repository
 
 ```typescript
 const journalRepo = accounting.createJournalEntryRepository(
@@ -158,36 +146,41 @@ const journalRepo = accounting.createJournalEntryRepository(
 );
 ```
 
-Includes all plugins (double-entry + fiscal lock + idempotency) and domain methods:
+All state-transition methods (`post`, `unpost`, `archive`) and the reverse-mark step now route through `repository.update()` so the **plugin pipeline fires on every transition** — fiscalLockPlugin, dateLockPlugin, audit, observability, and any consumer hooks attached via `engine.repositories.journalEntries.on('before:update', ...)`. The double-entry immutability guard reads a typed `_ledgerInternal` flag on the context to permit these legitimate transitions while still blocking arbitrary edits to posted entries.
 
 ```typescript
-// Post a draft → validates double-entry balance, account existence, fiscal lock, idempotency
-await journalRepo.post(entryId, organizationId, { actorId, session });
+const journals = engine.repositories.journalEntries;
 
-// Create a reversal entry (debits↔credits swapped, dimension fields preserved)
-await journalRepo.reverse(entryId, organizationId, { actorId, session });
+// draft → posted: validates balance, account existence, fiscal lock, idempotency,
+// and fires before:update so plugins/audit observe the transition
+await journals.post(entryId, orgId, { actorId, session });
 
-// Duplicate an entry as a new draft (dimension fields preserved, new date)
-await journalRepo.duplicate(entryId, organizationId, { session });
+// posted → reversal entry (debits↔credits swapped, dimension fields preserved).
+// Both the reversal create AND the mark-as-reversed step on the original fire
+// the plugin pipeline. Consumer extraFields (departmentId, sourceRef, branchTag,
+// organizationId, ...) are propagated automatically.
+await journals.reverse(entryId, orgId, { actorId, session });
 
-// Unpost (only when strictness.immutable is false)
-await journalRepo.unpost(entryId, organizationId, { actorId, session });
+// Clone an entry as a new draft (item-level + top-level extraFields preserved)
+await journals.duplicate(entryId, orgId, { session });
 
-// Archive a draft (draft → archived, preserves audit trail instead of deleting)
-await journalRepo.archive(entryId, organizationId, { actorId, session });
+// posted → draft (only when strictness.immutable is false)
+await journals.unpost(entryId, orgId, { actorId, session });
+
+// draft → archived (preserves audit trail instead of deleting)
+await journals.archive(entryId, orgId, { actorId, session });
 ```
 
 ### Account Repository
 
 ```typescript
-const accountRepo = createRepository(Account, []);
-accounting.wireAccountRepository(accountRepo, Account);
+const accounts = engine.repositories.accounts;
 
-// Seed all account types from the country pack for a tenant
-await accountRepo.seedAccounts(organizationId);
+// Seed every posting account from the country pack for a tenant
+await accounts.seedAccounts(orgId);
 
-// Bulk create custom accounts
-await accountRepo.bulkCreate([{ accountType: '1000', name: 'Operating Account' }], organizationId);
+// Bulk create custom accounts (returns { created, skipped, summary })
+await accounts.bulkCreate([{ accountTypeCode: '1000', name: 'Operating Account' }], orgId);
 ```
 
 ## Plugins
@@ -202,16 +195,18 @@ Plugins hook into mongokit's `before:create` and `before:update` events:
 
 Plugins fire in order: double-entry → fiscal-lock → idempotency.
 
-**Account validation** runs on both `before:create` (fail-closed — throws if `AccountModel` missing) and `before:update` (runs when `AccountModel` available). This closes the `repository.update(id, { state: 'posted' })` bypass.
+**Plugin pipeline coverage (0.5.1+):** `post`, `unpost`, `archive`, and the reverse-mark step on the original entry route through `repository.update()` so `before:update` and `after:update` hooks fire on every state transition. fiscalLockPlugin, dateLockPlugin, auditTrailPlugin, observabilityPlugin, and any consumer-registered listener observe the transition. Pre-0.5.1 these methods called `entry.save()` directly and silently bypassed all plugins — see CHANGELOG for the regression history.
 
-**Posted-entry protection:** The double-entry plugin blocks direct modifications to posted entries via `repository.update()`. When `strictness.immutable` is enabled, `unpost()` is also disabled — correction only via `reverse()`. Without `strictness.immutable`, `unpost()` is available to transition back to draft.
+**Posted-entry protection:** The double-entry plugin blocks direct modifications to posted entries through `repository.update()`. Internal state-transition methods opt out via a typed `_ledgerInternal` flag on the context (`'post' | 'unpost' | 'archive' | 'reverseMark'`), which only ledger's own repo methods can set — external `repository.update()` callers cannot spoof it. When `strictness.immutable` is enabled, `unpost()` is also disabled — correction only via `reverse()`. Plugin authors can read `context._ledgerInternal` directly thanks to the mongokit module augmentation in `@classytic/ledger`.
+
+**extraFields propagation:** `reverse()` and `duplicate()` copy every consumer-defined top-level field on the source entry — `departmentId`, `projectId`, `sourceRef`, `branchTag`, `organizationId`, etc. — onto the new entry. Reversed-out branch reports, plugin hooks, and audit trails see the same scope as the original. A frozen reserved-keys set excludes only fields these methods own (`_id`, `state`, `journalItems`, `referenceNumber`, `reversalOf`, `idempotencyKey`, …).
 
 ## Reports
 
 All reports use live aggregation pipelines. Multi-tenant isolation is automatic.
 
 ```typescript
-const reports = accounting.createReports({ Account, JournalEntry });
+const reports = engine.reports;
 
 await reports.trialBalance({ organizationId, dateOption, dateValue, filters? });
 await reports.balanceSheet({ organizationId, dateOption, dateValue, filters? });
