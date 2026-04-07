@@ -60,17 +60,23 @@ export function createJournalEntrySchema(
         message: 'exchangeRate must be greater than zero when set, got {VALUE}',
       },
     };
+    // Allow null — `default: null` means the item may legitimately not
+    // carry an original-currency amount. The integer guard only runs
+    // when a value is actually provided.
+    const originalAmountValidator = {
+      validator: (v: number | null) =>
+        v === null || v === undefined || (Number.isInteger(v) && v >= 0),
+      message: '{PATH} must be a non-negative integer (cents), got {VALUE}',
+    };
     currencyItemFields.originalDebit = {
       type: Number,
       default: null,
-      min: 0,
-      validate: amountValidator,
+      validate: originalAmountValidator,
     };
     currencyItemFields.originalCredit = {
       type: Number,
       default: null,
-      min: 0,
-      validate: amountValidator,
+      validate: originalAmountValidator,
     };
   }
 
@@ -86,6 +92,14 @@ export function createJournalEntrySchema(
       debit: { type: Number, default: 0, min: 0, validate: amountValidator },
       credit: { type: Number, default: 0, min: 0, validate: amountValidator },
       taxDetails: { type: [TaxDetailSchema], default: [] },
+      // Item-level open-item matching (0.6.0). Shared across items regardless
+      // of which entry they belong to — one invoice line and one payment line
+      // with the same matchingNumber are considered settled against each
+      // other. null/absent = open. See `reconciliationRepository.match`.
+      matchingNumber: { type: String, default: null },
+      // Maturity date for aged-balance bucketing (Odoo `date_maturity`).
+      // When absent, defaults to item.date or entry.date in reports.
+      maturityDate: { type: Date, default: null },
       ...currencyItemFields,
       ...extraItemFields,
     },
@@ -103,6 +117,11 @@ export function createJournalEntrySchema(
       default: JOURNAL_CODES.MISC,
       required: true,
     },
+    // First-class Journal resource (0.6.0) — optional ref. When set, takes
+    // precedence over `journalType` for reference-number generation and
+    // flows into posting-contract routing. Nullable so consumers without
+    // seeded journals keep the 0.5.x enum-only flow.
+    journal: { type: mongoose.Schema.Types.ObjectId, default: null },
     referenceNumber: { type: String },
     label: { type: String },
     date: {
@@ -383,6 +402,16 @@ export function createJournalEntrySchema(
     }
 
     schema.index({ reversed: 1 });
+
+    // Open-item matching indexes (0.6.0). A sparse index on the nested
+    // matchingNumber lets `getOpenItems` and AR/AP aging queries find
+    // unmatched items cheaply; the org-scoped variant powers multi-tenant
+    // open-item reports.
+    if (org) {
+      schema.index({ [org]: 1, 'journalItems.matchingNumber': 1 });
+    } else {
+      schema.index({ 'journalItems.matchingNumber': 1 });
+    }
 
     // Idempotency key: unique sparse index (only when enabled)
     if (config.idempotency) {

@@ -85,22 +85,22 @@ describe('Errors factory', () => {
     expect(err.message).toBe('Cannot modify posted entry');
   });
 
-  it('fiscal() → 400 FISCAL_ERROR', () => {
-    const err = Errors.fiscal('Period is closed');
+  it('locked() → 409 PERIOD_LOCKED_{SCOPE}', () => {
+    const err = Errors.locked('fiscal', 'Period is closed');
     expect(err).toBeInstanceOf(AccountingError);
-    expect(err.status).toBe(400);
-    expect(err.code).toBe('FISCAL_ERROR');
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('PERIOD_LOCKED_FISCAL');
     expect(err.message).toBe('Period is closed');
   });
 
   it('all factory methods return AccountingError instances', () => {
-    const factories = [
+    const factories: Array<(msg: string) => AccountingError> = [
       Errors.validation,
       Errors.notFound,
       Errors.conflict,
       Errors.immutable,
-      Errors.fiscal,
-    ] as const;
+      (msg: string) => Errors.locked('fiscal', msg),
+    ];
 
     for (const factory of factories) {
       const err = factory('test');
@@ -131,7 +131,9 @@ describe('Errors factory', () => {
       notFound: Errors.notFound('x'),
       conflict: Errors.conflict('x'),
       immutable: Errors.immutable('x'),
-      fiscal: Errors.fiscal('x'),
+      lockedFiscal: Errors.locked('fiscal', 'x'),
+      lockedTax: Errors.locked('tax', 'x'),
+      lockedDaily: Errors.locked('daily', 'x'),
     };
 
     for (const [name, err] of Object.entries(factories)) {

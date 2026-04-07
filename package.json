@@ -1,6 +1,6 @@
 {
   "name": "@classytic/ledger",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Production-grade double-entry accounting engine for MongoDB — schemas, reports, tax, multi-tenant",
   "type": "module",
   "sideEffects": false,
@@ -78,7 +78,7 @@
     "url": "git+https://github.com/classytic/accounting.git"
   },
   "peerDependencies": {
-    "@classytic/mongokit": ">=3.5.3",
+    "@classytic/mongokit": ">=3.5.5",
     "mongoose": ">=9.4.1"
   },
   "engines": {
@@ -96,12 +96,13 @@
     "format": "biome format src/ --write",
     "check": "biome ci src/ --diagnostic-level=error",
     "knip": "knip",
-    "prepublishOnly": "npm run check && npm run build && npm run typecheck && npm test",
-    "release": "npm run check && npm run build && npm run typecheck && npm test && npm publish --access public"
+    "smoke": "node scripts/smoke.mjs",
+    "prepublishOnly": "npm run check && npm run build && npm run typecheck && npm test && npm run smoke",
+    "release": "npm run check && npm run build && npm run typecheck && npm test && npm run smoke && npm publish --access public"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
-    "@classytic/mongokit": "^3.5.3",
+    "@classytic/mongokit": "^3.5.5",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^3.2.4",
     "knip": "^6.3.0",

@@ -12,7 +12,13 @@
  * enough to activate the augmentation. `src/types/index.ts` re-exports it.
  */
 
-export type LedgerInternalOp = 'post' | 'unpost' | 'archive' | 'reverseMark';
+export type LedgerInternalOp =
+  | 'post'
+  | 'unpost'
+  | 'archive'
+  | 'reverseMark'
+  | 'fxRealize'
+  | 'cashBasisRealize';
 
 declare module '@classytic/mongokit' {
   interface RepositoryContext {

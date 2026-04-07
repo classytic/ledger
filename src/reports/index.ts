@@ -35,6 +35,13 @@ export { generateGeneralLedger } from './general-ledger.js';
 export type { IncomeStatementOptions } from './income-statement.js';
 export { generateIncomeStatement } from './income-statement.js';
 export type {
+  PartnerLedgerLine,
+  PartnerLedgerOptions,
+  PartnerLedgerParams,
+  PartnerLedgerReport,
+} from './partner-ledger.js';
+export { generatePartnerLedger } from './partner-ledger.js';
+export type {
   RevaluationOptions,
   RevaluationParams,
   RevaluationReport,

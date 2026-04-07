@@ -54,10 +54,16 @@ describe('Errors factory', () => {
     expect(err.code).toBe('IMMUTABLE_ENTRY');
   });
 
-  it('fiscal() creates 400 FISCAL_ERROR', () => {
-    const err = Errors.fiscal('period is closed');
-    expect(err.message).toBe('period is closed');
-    expect(err.status).toBe(400);
-    expect(err.code).toBe('FISCAL_ERROR');
+  it('locked() creates 409 PERIOD_LOCKED_{SCOPE}', () => {
+    const fiscal = Errors.locked('fiscal', 'period is closed');
+    expect(fiscal.message).toBe('period is closed');
+    expect(fiscal.status).toBe(409);
+    expect(fiscal.code).toBe('PERIOD_LOCKED_FISCAL');
+
+    const tax = Errors.locked('tax', 'VAT return filed');
+    expect(tax.code).toBe('PERIOD_LOCKED_TAX');
+
+    const daily = Errors.locked('daily', 'day closed');
+    expect(daily.code).toBe('PERIOD_LOCKED_DAILY');
   });
 });

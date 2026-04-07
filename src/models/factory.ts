@@ -3,14 +3,13 @@
  *
  * Matches the flow/promo pattern: engine owns the models, consumers just
  * use `engine.models.Account`, `engine.models.JournalEntry`, etc.
- *
- * Consumer never calls `mongoose.model()` for ledger models.
  */
 
 import type { Connection, Model } from 'mongoose';
 import { createAccountSchema } from '../schemas/account.schema.js';
 import { createBudgetSchema } from '../schemas/budget.schema.js';
 import { createFiscalPeriodSchema } from '../schemas/fiscal-period.schema.js';
+import { createJournalSchema } from '../schemas/journal.schema.js';
 import { createJournalEntrySchema } from '../schemas/journal-entry.schema.js';
 import { createReconciliationSchema } from '../schemas/reconciliation.schema.js';
 import type { AccountingEngineConfig, ModelNames } from '../types/engine.js';
@@ -21,6 +20,7 @@ export interface LedgerModels {
   FiscalPeriod: Model<unknown>;
   Budget: Model<unknown>;
   Reconciliation: Model<unknown>;
+  Journal: Model<unknown>;
 }
 
 export interface ResolvedModelNames {
@@ -29,6 +29,7 @@ export interface ResolvedModelNames {
   fiscalPeriod: string;
   budget: string;
   reconciliation: string;
+  journal: string;
 }
 
 export function resolveModelNames(overrides?: ModelNames): ResolvedModelNames {
@@ -38,35 +39,31 @@ export function resolveModelNames(overrides?: ModelNames): ResolvedModelNames {
     fiscalPeriod: overrides?.fiscalPeriod ?? 'FiscalPeriod',
     budget: overrides?.budget ?? 'Budget',
     reconciliation: overrides?.reconciliation ?? 'Reconciliation',
+    journal: overrides?.journal ?? 'Journal',
   };
 }
 
-/**
- * Create (or reuse) all ledger models on the given connection.
- *
- * If a model with the same name is already registered on the connection,
- * the existing model is reused — this allows multiple engine instances
- * to share models and prevents "OverwriteModelError".
- */
 export function createModels(connection: Connection, config: AccountingEngineConfig): LedgerModels {
   const names = resolveModelNames(config.modelNames);
   const so = config.schemaOptions ?? {};
 
-  // Check for pre-registered models (supports hot-reload and multiple engines)
   const existing = connection.models as Record<string, Model<unknown>>;
-  if (
+  const allPresent =
     existing[names.account] &&
     existing[names.journalEntry] &&
     existing[names.fiscalPeriod] &&
     existing[names.budget] &&
-    existing[names.reconciliation]
-  ) {
+    existing[names.reconciliation] &&
+    existing[names.journal];
+
+  if (allPresent) {
     return {
       Account: existing[names.account],
       JournalEntry: existing[names.journalEntry],
       FiscalPeriod: existing[names.fiscalPeriod],
       Budget: existing[names.budget],
       Reconciliation: existing[names.reconciliation],
+      Journal: existing[names.journal],
     };
   }
 
@@ -95,11 +92,16 @@ export function createModels(connection: Connection, config: AccountingEngineCon
       createReconciliationSchema(config, names.account, names.journalEntry, so.reconciliation),
     );
 
+  const Journal =
+    existing[names.journal] ??
+    connection.model(names.journal, createJournalSchema(config, names.account, so.journal));
+
   return {
     Account: Account as Model<unknown>,
     JournalEntry: JournalEntry as Model<unknown>,
     FiscalPeriod: FiscalPeriod as Model<unknown>,
     Budget: Budget as Model<unknown>,
     Reconciliation: Reconciliation as Model<unknown>,
+    Journal: Journal as Model<unknown>,
   };
 }

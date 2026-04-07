@@ -35,7 +35,8 @@ import {
   createAccountingEngine,
   DEFAULT_BUCKETS,
   // Plugins
-  dateLockPlugin,
+  createLockPlugin,
+  dailyLockPlugin,
   defaultLogger,
   // Country
   defineCountryPack,
@@ -69,6 +70,7 @@ import {
   getMinorUnit,
   getNormalBalance,
   idempotencyPlugin,
+  taxLockPlugin,
   isBalanceSheet,
   isIncomeStatement,
   isValidCategory,
@@ -164,24 +166,13 @@ describe('Public API — runtime exports', () => {
   });
 
   describe('Plugins', () => {
-    it('exports all 4 plugins as objects', () => {
-      expect(dateLockPlugin).toBeDefined();
-      expect(doubleEntryPlugin).toBeDefined();
+    it('exports the unified lock primitive + presets', () => {
+      expect(createLockPlugin).toBeDefined();
       expect(fiscalLockPlugin).toBeDefined();
+      expect(taxLockPlugin).toBeDefined();
+      expect(dailyLockPlugin).toBeDefined();
+      expect(doubleEntryPlugin).toBeDefined();
       expect(idempotencyPlugin).toBeDefined();
-    });
-
-    it('each plugin has a name and apply method', () => {
-      for (const plugin of [
-        dateLockPlugin,
-        doubleEntryPlugin,
-        fiscalLockPlugin,
-        idempotencyPlugin,
-      ]) {
-        expect(plugin).toHaveProperty('name');
-        expect(plugin).toHaveProperty('apply');
-        expect(typeof plugin.apply).toBe('function');
-      }
     });
   });
 
@@ -280,7 +271,7 @@ describe('Public API — runtime exports', () => {
       expect(typeof Errors.notFound).toBe('function');
       expect(typeof Errors.conflict).toBe('function');
       expect(typeof Errors.immutable).toBe('function');
-      expect(typeof Errors.fiscal).toBe('function');
+      expect(typeof Errors.locked).toBe('function');
     });
 
     it('exports logger', () => {
