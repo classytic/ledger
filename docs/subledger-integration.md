@@ -13,7 +13,7 @@ This guide explains how to integrate external subledgers (billing, inventory, pa
 | Idempotency (duplicate guard) | Yes — plugin checks `idempotencyKey` uniqueness | Must generate deterministic keys |
 | Posted-entry protection | Yes — plugin blocks field changes on posted entries; fully immutable when `strictness.immutable` enabled | Use `reverse()` for corrections; `unpost()` available when immutable mode is off |
 | Account code → ObjectId resolution | No | Yes — look up account by `accountType` code |
-| Tax calculation | No — country packs define tax codes, not tax logic | Yes — compute tax amounts before posting |
+| Tax calculation | No — tax engines are separate packages (`@classytic/bd-tax`, `@classytic/ca-tax`, etc.) | Yes — compute tax amounts before posting via your tax engine of choice |
 | Source document validation | No | Yes — implement `validate()` on the contract |
 | Creating the journal entry | No — provides `repo.post()` | Yes — call `repo.create()` then `repo.post()` |
 | Transaction coordination | No | Yes — wrap subledger + ledger writes in a session |
@@ -268,18 +268,25 @@ The ledger's `reverse()` creates a new journal entry with debits and credits swa
 
 ## Tax Handling
 
-The ledger's country packs define **tax code metadata** (names, rates, regions) but do **not** compute tax amounts. Tax calculation is the application's responsibility:
+`@classytic/ledger@0.7+` is intentionally tax-agnostic. Country packs ship the chart of accounts and journal templates only — tax computation, return generation, and tax-period filing locks all live in dedicated tax engine packages:
 
-1. Look up applicable tax codes from the country pack (`accounting.getTaxCodesForRegion('ON')`)
-2. Compute tax amounts in your subledger / business logic
-3. Include tax lines as separate `SubledgerJournalItem` entries with the appropriate tax liability account code
-4. The ledger stores and reports on whatever you post — it does not validate tax arithmetic
+- **`@classytic/bd-tax`** — Bangladesh income tax (IT-11GA), VAT/TDS/VDS computation, Mushak 9.1 returns
+- **`@classytic/ca-tax`** *(planned)* — Canadian GST/HST/PST/QST computation, CRA GST34 form
+- **Or roll your own** — a tax engine just computes amounts and posts the resulting tax line items via `engine.repositories.journalEntries.create()`
+
+The country packs `@classytic/ledger-bd` and `@classytic/ledger-ca` still re-export the raw tax data tables (`TAX_CODES`, `TAX_CODES_BY_DIVISION` / `TAX_CODES_BY_REGION`, `mushakReturnTemplate`, `craReturnTemplate`) as named constants so tax engines can lift them.
+
+The integration pattern:
+
+1. Compute tax amounts in your tax engine (input: invoice line items + jurisdiction; output: tax line items with account codes)
+2. Include those tax line items in the same `journalEntries.create()` call as the rest of the entry
+3. The ledger stores and reports on whatever you post — it does not validate tax arithmetic
 
 ## What the Ledger Does Not Do
 
 To set clear expectations, the ledger intentionally does **not**:
 
-- **Compute taxes** — country packs provide tax code catalogs, not calculation engines
+- **Compute taxes** — that lives in dedicated tax engine packages (see above)
 - **Manage invoices, bills, or payments** — these are subledger concerns
 - **Orchestrate multi-step workflows** — approval routing, email notifications, etc. are app-level
 - **Resolve account codes to ObjectIds** — the app must map country-pack codes to tenant accounts
