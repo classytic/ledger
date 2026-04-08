@@ -4,27 +4,33 @@ description: |
   @classytic/ledger — Production-grade double-entry accounting engine for MongoDB.
   Use when building accounting systems, journal entries, chart of accounts, financial reports,
   balance sheets, income statements, trial balance, general ledger, cash flow, fiscal periods,
-  multi-tenant bookkeeping, country packs, tax codes, CSV export, or subledger integration.
+  accounts payable / receivable subsidiary ledgers, item-level matching, partner statements,
+  multi-tenant bookkeeping, country packs, CSV export, or subledger integration.
+  Tax computation/forms live in separate packages (e.g. @classytic/bd-tax) — the ledger is
+  intentionally tax-agnostic.
   Triggers: ledger, accounting, double-entry, journal entry, chart of accounts, balance sheet,
   income statement, trial balance, general ledger, cash flow, fiscal period, fiscal close,
-  Money cents, country pack, tax code, CSV export, subledger, posting contract, bookkeeping,
-  debit credit, account type, fiscal year, retained earnings.
-version: "0.6.0"
+  Money cents, country pack, A/P, A/R, accounts payable, accounts receivable, partner ledger,
+  open items, matching number, credit limit, FX realization, journal resource, CSV export,
+  subledger, posting contract, bookkeeping, debit credit, account type, fiscal year,
+  retained earnings.
+version: "0.7.0"
 license: MIT
 metadata:
   author: Classytic
-  version: "0.6.0"
+  version: "0.7.0"
 tags:
   - accounting
   - double-entry
   - bookkeeping
   - ledger
   - financial-reports
+  - accounts-payable
+  - accounts-receivable
   - multi-tenant
   - mongodb
   - mongoose
   - typescript
-  - tax
   - csv-export
 progressive_disclosure:
   entry_point:
@@ -38,7 +44,7 @@ progressive_disclosure:
 
 Production-grade double-entry accounting engine for MongoDB. Built on `@classytic/mongokit`.
 
-**Requires:** Node.js >= 22 | Mongoose >= 9.4.1 | @classytic/mongokit >= 3.5.3 | ESM only
+**Requires:** Node.js >= 22 | Mongoose >= 9.4.1 | @classytic/mongokit >= 3.5.5 | ESM only
 
 ## Install
 
@@ -98,7 +104,7 @@ Need raw access? `engine.models.Account`, `engine.models.JournalEntry`, etc. are
 ```typescript
 createAccountingEngine({
   mongoose: mongoose.connection,         // required — engine owns models
-  country: canadaPack,                    // CountryPack — account types, tax codes (required)
+  country: canadaPack,                    // CountryPack — chart of accounts (required)
   currency: 'CAD',                        // ISO 4217 code (required)
   multiTenant: { orgField, orgRef },      // omit for single-tenant
   multiCurrency: { enabled: true, currencies: ['USD', 'EUR'] },
@@ -128,7 +134,7 @@ The engine creates Mongoose models eagerly and exposes them on `engine.models`:
 | Property | Document fields |
 |---|---|
 | `engine.models.Account` | `accountTypeCode`, `name`, `accountNumber?`, `description?`, `active`, plus orgField in multi-tenant mode |
-| `engine.models.JournalEntry` | `date`, `label?`, `journalType`, `state` (draft/posted/archived), `journalItems[]` (account, debit, credit, label, taxDetails, custom item fields), `totalDebit`, `totalCredit`, `referenceNumber`, `reversed`, `reversedBy?`, `reversalOf?`, audit/approval fields, plus any `schemaOptions.journalEntry.extraFields` |
+| `engine.models.JournalEntry` | `date`, `label?`, `journalType`, `state` (draft/posted/archived), `journalItems[]` (account, debit, credit, label, `matchingNumber?`, `maturityDate?`, `taxDetails?` opaque audit, custom item fields), `totalDebit`, `totalCredit`, `referenceNumber`, `reversed`, `reversedBy?`, `reversalOf?`, audit/approval fields, plus any `schemaOptions.journalEntry.extraFields` |
 | `engine.models.FiscalPeriod` | `name`, `startDate`, `endDate`, `closed`, `closedAt?`, `closedBy?`, `reopenedAt?`, `reopenedBy?` (overlap protection per tenant) |
 | `engine.models.Budget` | per-account budgets for variance reports |
 | `engine.models.Reconciliation` | item-level open-item matching groups — `matchingNumber`, `items[{entry, itemIndex, debit, credit, amountCurrency?, exchangeRate?}]`, `isFullReconcile`, `currency?`, `fxRealizationEntry?` |
@@ -136,7 +142,7 @@ The engine creates Mongoose models eagerly and exposes them on `engine.models`:
 
 ## Repositories
 
-`engine.repositories.*` exposes mongokit repositories with all plugins (double-entry, fiscal-lock, idempotency, optional date-lock, optional tax-hook) pre-wired. Domain methods are bound directly on the repo.
+`engine.repositories.*` exposes mongokit repositories with the auto-wired plugins (double-entry, fiscal-lock, optional idempotency) pre-installed. Domain methods are bound directly on the repo. Opt-in plugins (`creditLimitPlugin`, `fxRealizationPlugin`, `dailyLockPlugin`, custom locks) attach via `.apply(engine.repositories.journalEntries)` or `.apply(engine.repositories.reconciliations)`.
 
 ### Journal Entry Repository
 
@@ -190,20 +196,21 @@ Plugins hook into mongokit's `before:create` and `before:update` events:
 
 | Plugin | What it does |
 |---|---|
-| `doubleEntryPlugin` | Validates `sum(debits) === sum(credits)`, account existence, cross-tenant integrity, posted-entry protection |
-| `fiscalLockPlugin` | Blocks create/post in closed fiscal periods (period-table range lookup) |
-| `taxLockPlugin` | Blocks posts touching tax accounts when the covering tax return is filed |
-| `dailyLockPlugin` | Blocks posts on or before a per-branch `lastClosedDate` watermark |
-| `createLockPlugin` | Low-level factory — compose your own scopes (bank recon, payroll, etc.) with `periodResolver` or `watermarkResolver` |
-| `idempotencyPlugin` | Rejects duplicate `idempotencyKey` on create (409 Conflict) |
+| `doubleEntryPlugin` | Validates `sum(debits) === sum(credits)`, account existence, cross-tenant integrity, posted-entry protection. Auto-wired. |
+| `fiscalLockPlugin` | Blocks create/post in closed fiscal periods (period-table range lookup). Auto-wired. |
+| `idempotencyPlugin` | Rejects duplicate `idempotencyKey` on create (409 Conflict). Auto-wired when `idempotency: true`. |
+| `dailyLockPlugin` | Per-branch `lastClosedDate` watermark for daily POS / operations close. Opt-in via `.apply()`. |
+| `createLockPlugin` | Low-level factory — compose your own scopes (bank reconciliation, payroll run, custom filing windows) with `periodResolver` or `watermarkResolver`. **Tax-period locks live in tax packages** (`@classytic/bd-tax`, etc.) — they compose this same factory. |
+| `creditLimitPlugin` | Per-partner A/R credit limit enforcement on `before:create`. Throws `AccountingError(402, 'CREDIT_LIMIT_EXCEEDED')`. |
+| `fxRealizationPlugin` | Listens on reconciliation `after:match` and books realized FX gain/loss when matched items have different exchange rates. |
 
 All lock plugins share the same factory — only their resolver differs — and all throw `AccountingError(409, 'PERIOD_LOCKED_{SCOPE}')`.
 
 **Plugin pipeline coverage (0.5.1+):** `post`, `unpost`, `archive`, and the reverse-mark step on the original entry route through `repository.update()` so `before:update` and `after:update` hooks fire on every state transition. All lock plugins, auditTrailPlugin, observabilityPlugin, and any consumer-registered listener observe the transition. Pre-0.5.1 these methods called `entry.save()` directly and silently bypassed all plugins.
 
-**Lock exemption policy (0.6.0):** `post` and `unpost` remain subject to locks — you cannot post into a closed period, and you cannot unpost an entry whose original date sits inside one. Only `reverseMark` and `fxRealize` are exempt: the first lets `reverse()` mark an original (potentially inside a closed period) as reversed while the counter-entry goes through the normal pipeline on its own date; the second lets `fxRealizationPlugin` book a realized gain/loss entry without the lock plugin blocking it.
+**Lock exemption policy:** `post` and `unpost` remain subject to locks — you cannot post into a closed period, and you cannot unpost an entry whose original date sits inside one. Only `reverseMark` and `fxRealize` are exempt: the first lets `reverse()` mark an original (potentially inside a closed period) as reversed while the counter-entry goes through the normal pipeline on its own date; the second lets `fxRealizationPlugin` book a realized gain/loss entry without the lock plugin blocking it.
 
-## 0.6.0 — Open-item matching, Journals, FX, Repartition
+## 0.6.0 — Open-item matching, Journals, FX
 
 ### Item-level open-item matching
 
@@ -276,53 +283,17 @@ fxRealizationPlugin({
 
 Requires `multiCurrency: { enabled: true, currencies: [...] }` on the engine config so `originalDebit` / `originalCredit` / `exchangeRate` / `currency` fields are active on journal items.
 
-### Tax repartition — multi-line tax from one tax code
+### Tax — out of scope
 
-`TaxCode.repartition` is a declarative array of `{factor, accountRole, gridCode?, documentTypes?}` lines. One tax percentage can emit multiple journal items — perfect for reverse-charge VAT, self-assessed sales tax, or multi-destination splits.
+`@classytic/ledger@0.7+` is intentionally tax-agnostic. Tax code tables, rate computation, return generation (Mushak 9.1, CRA GST34, etc.), repartition lines, exigibility, and tax-period filing locks all live in dedicated tax packages:
 
-```typescript
-// In your country pack:
-taxCodes: {
-  'RC-VAT-20': {
-    code: 'RC-VAT-20',
-    name: 'Reverse-charge VAT 20%',
-    taxType: 'VAT',
-    rate: 20,
-    direction: 'collected',
-    description: 'EU reverse-charge import VAT',
-    active: true,
-    repartition: [
-      { factor: 1, accountRole: 'collected', gridCode: 'VAT-OUT' },
-      { factor: 1, accountRole: 'recoverable', gridCode: 'VAT-IN' },
-    ],
-  },
-},
-resolveTaxRepartitionAccountCode: (role) => {
-  if (role === 'collected') return '2131';
-  if (role === 'recoverable') return '1150';
-  return undefined;
-},
-```
+- **`@classytic/bd-tax`** — Bangladesh income tax + VAT (existing package)
+- **`@classytic/ca-tax`** — Canadian GST/HST/PST/QST (planned)
+- **Roll your own** — a tax engine just calls `engine.repositories.journalEntries.create()` with the tax line items it wants posted
 
-The repartition generator then expands this into the correct multi-line entry:
+The country packs `@classytic/ledger-bd` and `@classytic/ledger-ca` still re-export their raw tax data tables (`TAX_CODES`, `TAX_CODES_BY_DIVISION` / `TAX_CODES_BY_REGION`, `mushakReturnTemplate`, `craReturnTemplate`) as named constants so tax engines can lift them without re-typing the data.
 
-```typescript
-import { createRepartitionTaxGenerator, taxHookPlugin } from '@classytic/ledger';
-
-const generator = createRepartitionTaxGenerator({
-  country: pack,
-  resolveAccount: (role, tax) => {
-    // Your app resolves the role → code via the pack, then code → ObjectId
-    const code = pack.resolveTaxRepartitionAccountCode?.(role, tax);
-    return accountIdByCode.get(code);
-  },
-});
-
-// Feed the generator to the existing taxHookPlugin — no API change.
-const taxPlugin = taxHookPlugin({ generator });
-```
-
-Cash-basis exigibility is declared via `TaxCode.exigibility: 'cash'` + a `transition` repartition role. Consumers then listen on `after:match` and move the held tax from the transition account to the real liability account at payment time.
+This mirrors how Odoo (`account/` vs `l10n_*`), QuickBooks (Ledger vs TaxService), and Xero (accounting vs Xero Tax) all separate the two concerns: the accounting engine validates and stores entries; tax engines compute amounts and produce filings.
 
 ## Building A/P + A/R on @classytic/ledger — the canonical recipe
 
@@ -519,11 +490,11 @@ There is **no separate credit-memo or debit-note model** — these are journal e
 | `report.account.aged.partner.balance` | `generateAgedBalance({ contactField })` |
 | `account.move` credit-memo type | `journalEntries.reverse()` |
 | Credit limit on `res.partner` + invoice validation hook | `creditLimitPlugin` |
-| Tax repartition (`account.tax.repartition.line`) | `TaxCode.repartition` declarative array |
+| Tax repartition (`account.tax.repartition.line`) | Lives in `@classytic/bd-tax` / `@classytic/ca-tax` (separate from the ledger by design) |
 
 Every concept Odoo encodes as a separate model, table, or class is collapsed into either a journal entry, a journal item, a matching number, or a single declarative field on the country pack. The whole A/P + A/R surface lives in **5 calls and one schema field**.
 
-**Posted-entry protection:** The double-entry plugin blocks direct modifications to posted entries through `repository.update()`. Internal state-transition methods opt out via a typed `_ledgerInternal` flag on the context (`'post' | 'unpost' | 'archive' | 'reverseMark'`), which only ledger's own repo methods can set — external `repository.update()` callers cannot spoof it. When `strictness.immutable` is enabled, `unpost()` is also disabled — correction only via `reverse()`. Plugin authors can read `context._ledgerInternal` directly thanks to the mongokit module augmentation in `@classytic/ledger`.
+**Posted-entry protection:** The double-entry plugin blocks direct modifications to posted entries through `repository.update()`. Internal state-transition methods opt out via a typed `_ledgerInternal` flag on the context (`'post' | 'unpost' | 'archive' | 'reverseMark' | 'fxRealize'`), which only ledger's own repo methods can set — external `repository.update()` callers cannot spoof it. When `strictness.immutable` is enabled, `unpost()` is also disabled — correction only via `reverse()`. Plugin authors can read `context._ledgerInternal` directly thanks to the mongokit module augmentation in `@classytic/ledger`.
 
 **extraFields propagation:** `reverse()` and `duplicate()` copy every consumer-defined top-level field on the source entry — `departmentId`, `projectId`, `sourceRef`, `branchTag`, `organizationId`, etc. — onto the new entry. Reversed-out branch reports, plugin hooks, and audit trails see the same scope as the original. A frozen reserved-keys set excludes only fields these methods own (`_id`, `state`, `journalItems`, `referenceNumber`, `reversalOf`, `idempotencyKey`, …).
 
@@ -593,6 +564,8 @@ Money.add(10050, 2000);             // → 12050
 Money.subtract(10050, 2000);        // → 8050
 Money.multiply(10050, 3);           // → 30150
 Money.percentage(10050, 13);        // → 1307 (rounded)
+// Generic percentage split helpers (legacy "tax" naming kept for compat — they
+// work for any addon: tip, surcharge, fee, discount, not only tax)
 Money.splitTaxInclusive(11300, 13); // → { base: 10000, tax: 1300 }
 Money.splitTaxExclusive(10000, 13); // → { base: 10000, tax: 1300 }
 Money.allocate(10000, [50, 30, 20]);// → [5000, 3000, 2000]
@@ -604,27 +577,33 @@ All monetary values throughout the system are stored as **integer cents**. Never
 
 ## Country Packs
 
+A country pack ships the **chart of accounts** + accounting conventions for a jurisdiction. Tax (VAT/GST/HST/income-tax) lives in separate tax packages — country packs are intentionally pure chart-of-accounts.
+
 ```typescript
 import { defineCountryPack } from '@classytic/ledger/country';
 
 const myPack = defineCountryPack({
-  code: 'CA',
-  name: 'Canada',
-  currency: 'CAD',
-  fiscalYearStartMonth: 1,
+  code: 'US',
+  name: 'United States',
+  defaultCurrency: 'USD',
+  retainedEarningsAccountCode: '3200',
   accountTypes: [
-    { code: '1000', name: 'Cash', category: 'asset', statementType: 'balance_sheet', normalBalance: 'debit', cashFlowCategory: 'operating' },
-    { code: '4000', name: 'Revenue', category: 'revenue', statementType: 'income_statement', normalBalance: 'credit' },
+    { code: '1000', name: 'Cash', category: 'Balance Sheet-Asset', description: 'Cash and equivalents', parentCode: null, isTotal: false, cashFlowCategory: 'Operating' },
+    { code: '4000', name: 'Revenue', category: 'Income Statement-Income', description: 'Service revenue', parentCode: null, isTotal: false, cashFlowCategory: null },
     // ...
   ],
-  taxCodes: [
-    { code: 'GST', name: 'GST', rate: 5, region: 'CA' },
-    { code: 'HST-ON', name: 'HST Ontario', rate: 13, region: 'ON' },
+  // Optional: declarative journal templates that `journals.seedDefaults(orgId)` reads
+  journalTemplates: [
+    { code: 'SALES', name: 'Sales', journalType: 'SALES', kind: 'sale', sequencePrefix: 'INV' },
+    { code: 'PURCHASE', name: 'Purchases', journalType: 'PURCHASES', kind: 'purchase', sequencePrefix: 'BILL' },
+    { code: 'BANK', name: 'Bank', journalType: 'CASH_RECEIPTS', kind: 'bank', sequencePrefix: 'BNK' },
+    { code: 'CASH', name: 'Cash', journalType: 'CASH_PAYMENTS', kind: 'cash', sequencePrefix: 'CSH' },
+    { code: 'MISC', name: 'Miscellaneous', journalType: 'MISC', kind: 'general', sequencePrefix: 'JE' },
   ],
 });
 ```
 
-Country packs define **metadata only** (account type catalogs, tax code catalogs). They do not compute taxes or enforce tax rules — that is the application's responsibility.
+Available packs: `@classytic/ledger-bd` (Bangladesh BFRS), `@classytic/ledger-ca` (Canada GIFI). Both ship chart of accounts + journal templates only — they re-export their raw tax data (Mushak template, CRA template, code tables) as named exports for tax engines to lift.
 
 ## CSV Export
 
@@ -662,7 +641,7 @@ const billingContract: PostingContract<Invoice> = {
 };
 ```
 
-**The ledger validates and stores journal entries. Everything upstream — account code resolution, tax calculation, workflow orchestration — is the application's job.** See the [subledger-integration reference](references/subledger-integration.md) for the full integration pattern.
+**The ledger validates and stores journal entries. Everything upstream — account code resolution, tax calculation, workflow orchestration — is the consumer's job (tax compute belongs in `@classytic/bd-tax`, `@classytic/ca-tax`, etc.).** See the [subledger-integration reference](references/subledger-integration.md) for the full integration pattern.
 
 ## Subpath Imports
 
@@ -674,10 +653,11 @@ import { generateTrialBalance, generateBalanceSheet } from '@classytic/ledger/re
 import {
   doubleEntryPlugin,
   idempotencyPlugin,
+  creditLimitPlugin,
+  fxRealizationPlugin,
   // Unified lock primitive
   createLockPlugin,
   fiscalLockPlugin,
-  taxLockPlugin,
   dailyLockPlugin,
   periodResolver,
   watermarkResolver,

@@ -21,7 +21,7 @@ const accounting = createAccountingEngine({
 
 | Option | Type | Required | Description |
 |---|---|---|---|
-| `country` | `CountryPack` | Yes | Country pack (account types, tax codes) |
+| `country` | `CountryPack` | Yes | Country pack (chart of accounts + journal templates) |
 | `currency` | `string` | Yes | ISO 4217 currency code |
 | `multiTenant` | `{ orgField, orgRef }` | No | Multi-tenant configuration |
 | `fiscalYearStartMonth` | `number` | No | 1-12, default 1 (January) |
@@ -129,8 +129,9 @@ See [Reports](reports.md) for details.
 accounting.getPostingAccountTypes()   // → AccountType[]
 accounting.isValidAccountType('1000') // → boolean
 accounting.getAccountType('1000')     // → AccountType | undefined
-accounting.getTaxCodesForRegion('ON') // → TaxCode[]
 ```
+
+> Tax code lookups have moved out of the ledger in 0.7+ — they live in dedicated tax engine packages (`@classytic/bd-tax`, etc.). See [Country Packs](country-packs.md#tax--out-of-scope).
 
 ## Logger Interface
 
