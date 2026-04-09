@@ -44,6 +44,39 @@ export function idempotencyPlugin(options: IdempotencyPluginOptions) {
           );
         }
       });
+
+      repo.on('before:createMany', async (context: RepositoryContext) => {
+        const docs = context.dataArray as Array<Record<string, unknown>> | undefined;
+        if (!docs || docs.length === 0) return;
+
+        const keys = docs
+          .map((d) => d.idempotencyKey as string | undefined)
+          .filter((k): k is string => !!k);
+        if (keys.length === 0) return;
+
+        // Batch lookup — single query for all keys
+        const query: Record<string, unknown> = {
+          idempotencyKey: { $in: keys },
+        };
+        // Use org scope from the first doc (all docs in a batch share the same org)
+        const firstOrg = orgField && docs[0]?.[orgField];
+        if (orgField && firstOrg) {
+          query[orgField] = firstOrg;
+        }
+
+        const existingDocs = (await JournalEntryModel.find(query)
+          .select('idempotencyKey')
+          .session((context.session ?? null) as ClientSession | null)
+          .lean()) as Array<Record<string, unknown>>;
+
+        if (existingDocs.length > 0) {
+          const existingKeys = existingDocs.map((d) => d.idempotencyKey);
+          throw Errors.conflict(
+            `Duplicate idempotency keys: ${existingKeys.join(', ')}. ` +
+              `${existingDocs.length} entries already exist.`,
+          );
+        }
+      });
     },
   };
 }

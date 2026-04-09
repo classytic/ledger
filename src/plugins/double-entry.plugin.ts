@@ -294,7 +294,41 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         }
       };
 
+      const validateMany = async (context: RepositoryContext) => {
+        const docs = context.dataArray as Array<Record<string, unknown>> | undefined;
+        if (!docs || docs.length === 0) return;
+
+        for (const data of docs) {
+          if (onlyOnPost && data.state !== 'posted') continue;
+
+          const items = data.journalItems as
+            | Array<{ debit?: number; credit?: number; account?: unknown }>
+            | undefined;
+
+          if (data.state === 'posted' && (!items || items.length < 2)) {
+            throw Errors.validation(
+              `Cannot post entry: at least 2 journal items required, got ${items?.length ?? 0}.`,
+            );
+          }
+
+          if (!items || items.length === 0) continue;
+
+          validateItems(items, data);
+
+          if (data.state === 'posted') {
+            if (!AccountModel) {
+              throw new Error(
+                'doubleEntryPlugin: AccountModel is required to validate posted entries. ' +
+                  'Pass AccountModel in plugin options to enable account existence and tenant integrity checks.',
+              );
+            }
+            await validateAccounts(items, data, context);
+          }
+        }
+      };
+
       repo.on('before:create', validate);
+      repo.on('before:createMany', validateMany);
       repo.on('before:update', validateUpdate);
     },
   };

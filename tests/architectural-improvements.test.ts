@@ -920,24 +920,6 @@ describe('Improvement 3: Account Repository', () => {
   it('seedAccounts deduplicates by accountNumber (not accountTypeCode)', async () => {
     const { wireAccountMethods } = await import('../src/repositories/account.repository.js');
 
-    let selectField: string | undefined;
-    const mockModel = {
-      find: () => ({
-        select: (field: string) => {
-          selectField = field;
-          return {
-            // Existing account has accountNumber '1000' — seed should skip it
-            lean: () => Promise.resolve([{ accountNumber: '1000' }]),
-          };
-        },
-      }),
-      insertMany: vi
-        .fn()
-        .mockImplementation((docs: any[]) =>
-          Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
-        ),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -948,13 +930,18 @@ describe('Improvement 3: Account Repository', () => {
       ],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      // Existing account has accountNumber '1000' — seed should skip it
+      findAll: vi.fn().mockResolvedValue([{ accountNumber: '1000' }]),
+      createMany: vi
+        .fn()
+        .mockImplementation((docs: any[]) =>
+          Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
+        ),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     const result = await repo.seedAccounts('org-1');
-
-    // Should query by accountNumber, not accountTypeCode
-    expect(selectField).toBe('accountNumber');
 
     // 1000 exists → skip, 2000 → create
     expect(result.created).toBe(1);
@@ -963,20 +950,6 @@ describe('Improvement 3: Account Repository', () => {
 
   it('seedAccounts creates default when custom account has same typeCode but different number', async () => {
     const { wireAccountMethods } = await import('../src/repositories/account.repository.js');
-
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          // Existing: accountNumber is CUSTOM-BANK, not '1000'
-          lean: () => Promise.resolve([{ accountNumber: 'CUSTOM-BANK' }]),
-        }),
-      }),
-      insertMany: vi
-        .fn()
-        .mockImplementation((docs: any[]) =>
-          Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
-        ),
-    } as any;
 
     const mockCountry = {
       isValidAccountType: () => true,
@@ -987,8 +960,16 @@ describe('Improvement 3: Account Repository', () => {
       ],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      // Existing: accountNumber is CUSTOM-BANK, not '1000'
+      findAll: vi.fn().mockResolvedValue([{ accountNumber: 'CUSTOM-BANK' }]),
+      createMany: vi
+        .fn()
+        .mockImplementation((docs: any[]) =>
+          Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` }))),
+        ),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     const result = await repo.seedAccounts('org-1');
 
@@ -1002,18 +983,6 @@ describe('Improvement 3: Account Repository', () => {
 
     let insertedDocs: any[] = [];
 
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]), // no existing accounts
-        }),
-      }),
-      insertMany: vi.fn().mockImplementation((docs: any[]) => {
-        insertedDocs = docs;
-        return Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` })));
-      }),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -1024,8 +993,14 @@ describe('Improvement 3: Account Repository', () => {
       ],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockImplementation((docs: any[]) => {
+        insertedDocs = docs;
+        return Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` })));
+      }),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     await repo.seedAccounts('org-1');
 
@@ -1049,23 +1024,7 @@ describe('Improvement 3: Account Repository', () => {
   it('bulkCreate deduplicates by accountNumber', async () => {
     const { wireAccountMethods } = await import('../src/repositories/account.repository.js');
 
-    let findFilter: any = null;
-
-    const mockModel = {
-      find: vi.fn().mockImplementation((filter: any) => {
-        findFilter = filter;
-        return {
-          select: () => ({
-            lean: () => Promise.resolve([{ accountNumber: '1000' }]),
-          }),
-        };
-      }),
-      insertMany: vi
-        .fn()
-        .mockResolvedValue([
-          { _id: 'new-id-1', accountTypeCode: '2000', accountNumber: '2000', name: 'Account 2000' },
-        ]),
-    } as any;
+    let findAllFilter: any = null;
 
     const mockCountry = {
       isValidAccountType: () => true,
@@ -1073,8 +1032,18 @@ describe('Improvement 3: Account Repository', () => {
       getAccountType: (code: string) => ({ code, name: `Account ${code}`, isGroup: false }),
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry, 'business');
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockImplementation((filter: any) => {
+        findAllFilter = filter;
+        return Promise.resolve([{ accountNumber: '1000' }]);
+      }),
+      createMany: vi
+        .fn()
+        .mockResolvedValue([
+          { _id: 'new-id-1', accountTypeCode: '2000', accountNumber: '2000', name: 'Account 2000' },
+        ]),
+    });
+    wireAccountMethods(repo, mockCountry, 'business');
 
     const result = await repo.bulkCreate(
       [{ accountTypeCode: '1000' }, { accountTypeCode: '2000' }],
@@ -1082,7 +1051,7 @@ describe('Improvement 3: Account Repository', () => {
     );
 
     // Find query should use accountNumber, not accountTypeCode
-    expect(findFilter).toEqual(
+    expect(findAllFilter).toEqual(
       expect.objectContaining({
         accountNumber: { $in: ['1000', '2000'] },
         business: 'org-1',
@@ -1093,22 +1062,10 @@ describe('Improvement 3: Account Repository', () => {
     expect(result.summary.skipped).toBe(1);
   });
 
-  it('bulkCreate passes accountNumber and name to insertMany', async () => {
+  it('bulkCreate passes accountNumber and name to createMany', async () => {
     const { wireAccountMethods } = await import('../src/repositories/account.repository.js');
 
     let insertedDocs: any[] = [];
-
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]), // nothing exists
-        }),
-      }),
-      insertMany: vi.fn().mockImplementation((docs: any[]) => {
-        insertedDocs = docs;
-        return Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` })));
-      }),
-    } as any;
 
     const mockCountry = {
       isValidAccountType: () => true,
@@ -1116,8 +1073,14 @@ describe('Improvement 3: Account Repository', () => {
       getAccountType: (code: string) => ({ code, name: `Account ${code}`, isGroup: false }),
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockImplementation((docs: any[]) => {
+        insertedDocs = docs;
+        return Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` })));
+      }),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     await repo.bulkCreate(
       [{ accountTypeCode: '1000', accountNumber: 'BANK-001', name: 'Main Bank' }],
@@ -1138,26 +1101,20 @@ describe('Improvement 3: Account Repository', () => {
 
     let insertedDocs: any[] = [];
 
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: vi.fn().mockImplementation((docs: any[]) => {
-        insertedDocs = docs;
-        return Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` })));
-      }),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
       getAccountType: (code: string) => ({ code, name: `Type ${code}`, isGroup: false }),
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockImplementation((docs: any[]) => {
+        insertedDocs = docs;
+        return Promise.resolve(docs.map((d: any, i: number) => ({ ...d, _id: `id-${i}` })));
+      }),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     await repo.bulkCreate(
       [

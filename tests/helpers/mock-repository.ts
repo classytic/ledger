@@ -58,6 +58,8 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
       ...patch,
     })),
     delete: vi.fn().mockResolvedValue({ success: true, message: 'deleted' }),
+    findAll: vi.fn().mockResolvedValue([]),
+    getOne: vi.fn().mockResolvedValue(null),
     count: vi.fn().mockResolvedValue(0),
     exists: vi.fn().mockResolvedValue(null),
     distinct: vi.fn().mockResolvedValue([]),

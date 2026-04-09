@@ -21,6 +21,7 @@
 import type { ClientSession, Model, Types } from 'mongoose';
 import type { LedgerModels } from '../models/factory.js';
 import type { LedgerRepositories } from '../repositories/factory.js';
+import { buildOpeningBalanceEntry } from '../sync/builders/opening-balance.js';
 import type { AccountingEngineConfig } from '../types/engine.js';
 import { Errors } from '../utils/errors.js';
 
@@ -146,6 +147,29 @@ export interface RecordAdjustmentInput {
   readonly journalType?: string;
 }
 
+export interface RecordOpeningBalanceInput {
+  /** Cutover date — typically start of fiscal year. */
+  readonly cutoverDate: Date;
+  /**
+   * Account balances in integer cents, signed:
+   *   - Positive = normal debit balance (assets)
+   *   - Negative = normal credit balance (liabilities, equity)
+   *
+   * Should only contain balance sheet accounts. P&L cumulative effect
+   * belongs in retained earnings (the equity account).
+   */
+  readonly balances: ReadonlyArray<{
+    readonly account: AccountCode;
+    readonly balance: Cents;
+  }>;
+  /**
+   * Equity contra account code. Defaults to the country pack's
+   * `retainedEarningsAccountCode` (e.g. '3600' for CA, '3310' for BD).
+   */
+  readonly equityAccount?: AccountCode;
+  readonly label?: string;
+}
+
 // ── Record API Shape ──────────────────────────────────────────────────────
 
 export interface RecordAPI {
@@ -203,6 +227,36 @@ export interface RecordAPI {
   adjustment(
     organizationId: unknown,
     input: RecordAdjustmentInput,
+    options?: RecordOptions,
+  ): Promise<unknown>;
+
+  /**
+   * Record opening balances for a cutover migration. Creates a single
+   * multi-line journal entry with each account's balance, contra'd against
+   * an equity account (retained earnings by default).
+   *
+   * Follows the Odoo convention: regular JE, not a special type. Only
+   * balance sheet accounts should be passed — P&L cumulative effect belongs
+   * in the equity contra account.
+   *
+   * Idempotent: uses `_externalId: 'opening-balance:{date}'` so re-calling
+   * with the same cutover date fails cleanly (duplicate key error).
+   *
+   * @example
+   * ```typescript
+   * await engine.record.openingBalance(orgId, {
+   *   cutoverDate: new Date('2025-01-01'),
+   *   balances: [
+   *     { account: '1000', balance: 5000000 },   // $50k cash
+   *     { account: '2620', balance: -1875000 },   // $18.75k AP
+   *     { account: '3600', balance: -3125000 },   // $31.25k RE
+   *   ],
+   * });
+   * ```
+   */
+  openingBalance(
+    organizationId: unknown,
+    input: RecordOpeningBalanceInput,
     options?: RecordOptions,
   ): Promise<unknown>;
 }
@@ -587,5 +641,64 @@ export function buildRecordAPI({ models, repositories, config }: BuildDeps): Rec
     );
   };
 
-  return { sale, expense, transfer, payment, adjustment };
+  // ═══════════════════════════════════════════════════════════════════════
+  // openingBalance
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const openingBalance: RecordAPI['openingBalance'] = async (organizationId, input, options) => {
+    if (!input.balances || input.balances.length === 0) {
+      throw Errors.validation('Opening balance requires at least one account balance.', [
+        { path: 'balances', issue: 'must contain at least 1 entry', value: 0 },
+      ]);
+    }
+
+    // Resolve equity account code — default from country pack
+    const equityCode = input.equityAccount ?? config.country?.retainedEarningsAccountCode;
+
+    if (!equityCode) {
+      throw Errors.validation(
+        'Equity contra account code is required. Pass equityAccount or configure retainedEarningsAccountCode in the country pack.',
+        [{ path: 'equityAccount', issue: 'required', value: undefined }],
+      );
+    }
+
+    // Build the opening balance JE using the pure function
+    const result = buildOpeningBalanceEntry({
+      cutoverDate: input.cutoverDate,
+      balances: input.balances.map((b) => ({
+        accountCode: b.account,
+        balance: b.balance,
+      })),
+      equityAccountCode: equityCode,
+      label: input.label,
+    });
+
+    // Resolve all account codes to ObjectIds
+    const allCodes = result.entry.journalItems.map((item) => item.account as string);
+    const acctMap = await resolveAccounts(
+      organizationId,
+      allCodes,
+      'balances',
+      options?.session ?? null,
+    );
+
+    // Replace account codes with ObjectIds in journal items
+    const items = result.entry.journalItems.map((item) =>
+      buildItem(acctMap.get(item.account as string)!, item.debit, item.credit, item.label),
+    );
+
+    return postEntry(
+      organizationId,
+      {
+        journalType: result.entry.journalType ?? 'GENERAL',
+        date: result.entry.date,
+        label: result.entry.label,
+        journalItems: items,
+        ...result.entry.extra,
+      },
+      options,
+    );
+  };
+
+  return { sale, expense, transfer, payment, adjustment, openingBalance };
 }

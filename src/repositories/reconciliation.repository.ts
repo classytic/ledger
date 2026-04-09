@@ -27,6 +27,57 @@ import type { MatchInput, OpenItem, ReconciliationRepository } from '../types/re
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
+// ─── Hook context types (exported for plugin consumers) ─────────────────────
+
+export interface MatchHookItem {
+  entry: unknown;
+  itemIndex: number;
+  debit: number;
+  credit: number;
+  amountCurrency: number | null;
+  exchangeRate: number | null;
+}
+
+/**
+ * Context passed to `before:match` and `after:match` hooks.
+ *
+ * - `before:match`: fired after validation but before the matchingNumber is
+ *   stamped and the reconciliation doc is created. Throw to abort.
+ * - `after:match`: fired after the reconciliation doc is persisted. Used by
+ *   fxRealizationPlugin, and can be used by invoice packages to update
+ *   payment state.
+ */
+export interface MatchHookContext {
+  /** The input that was passed to match(). */
+  input: MatchInput;
+  /** Validated + enriched item snapshots with debit/credit/currency info. */
+  items: MatchHookItem[];
+  /** Shared currency across all items, or null if mixed. */
+  sharedCurrency: string | null;
+  /** The matching number (auto-generated or caller-provided). */
+  matchingNumber: string;
+  /** Totals for the matched set. */
+  debitTotal: number;
+  creditTotal: number;
+  isFullReconcile: boolean;
+  /** The created reconciliation document (only in after:match). */
+  reconciliation?: unknown;
+  session: ClientSession | null;
+}
+
+/**
+ * Context passed to `before:unmatch` and `after:unmatch` hooks.
+ */
+export interface UnmatchHookContext {
+  matchingNumber: string;
+  /** The reconciliation document being removed. */
+  reconciliation: Record<string, unknown>;
+  /** The items that will be / were unmatched. */
+  items: Array<{ entry: unknown; itemIndex: number }>;
+  organizationId?: unknown;
+  session: ClientSession | null;
+}
+
 interface JournalEntryDoc {
   _id: unknown;
   state: string;
@@ -97,6 +148,11 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
   const create = repository.create.bind(repository);
   const deleteById = repository.delete.bind(repository);
   const repoInstance = repository as unknown as RepositoryInstance;
+
+  // mongokit 3.5.6+ exposes emitAsync() on RepositoryInstance for custom hooks.
+  // Used by match() and unmatch() to fire lifecycle events that plugins
+  // (fxRealization, invoice bridge, etc.) can subscribe to.
+  const emitHook = repoInstance.emitAsync.bind(repoInstance);
 
   repository.match = async (input: MatchInput) => {
     const { account, items, note, reconciledBy, organizationId, session = null } = input;
@@ -199,6 +255,20 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
       );
     }
 
+    // ── Fire before:match hook — plugins can validate or abort ────────
+    const hookCtx: MatchHookContext = {
+      input,
+      items: itemSnapshots,
+      sharedCurrency,
+      matchingNumber,
+      debitTotal,
+      creditTotal,
+      isFullReconcile,
+      session,
+    };
+
+    await emitHook('before:match', hookCtx);
+
     // Atomic bulkWrite to stamp matchingNumber on every referenced item.
     // Using positional operators keyed by the entry id, because mongoose
     // won't cast `journalItems.${idx}.matchingNumber` cleanly via $set on
@@ -244,21 +314,11 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
       reconciliationData as Parameters<typeof create>[0],
     )) as unknown as TDoc;
 
-    // Fire the after:match hook so plugins (fxRealizationPlugin) can react.
-    // We reuse mongokit's emitAsync via the internal _emitHook entrypoint.
-    const emit = (
-      repoInstance as unknown as {
-        _emitHook?: (event: string, data: unknown) => Promise<void>;
-      }
-    )._emitHook;
-    if (emit) {
-      await emit.call(repoInstance, 'after:match', {
-        reconciliation: record,
-        items: itemSnapshots,
-        sharedCurrency,
-        session,
-      });
-    }
+    // Fire the after:match hook so plugins (fxRealizationPlugin, invoice) can react.
+    await emitHook('after:match', {
+      ...hookCtx,
+      reconciliation: record,
+    });
 
     return record;
   };
@@ -283,6 +343,17 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
     }
 
     const items = (existing.items ?? []) as Array<{ entry: unknown; itemIndex: number }>;
+
+    // ── Fire before:unmatch hook — plugins can validate or abort ──────
+    const unmatchCtx: UnmatchHookContext = {
+      matchingNumber,
+      reconciliation: existing,
+      items,
+      organizationId,
+      session,
+    };
+    await emitHook('before:unmatch', unmatchCtx);
+
     // Clear the matchingNumber stamp on every referenced item.
     const bulkOps = items.map((it) => ({
       updateOne: {
@@ -301,6 +372,10 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
     if (!result.success) {
       throw Errors.notFound('Failed to delete reconciliation record');
     }
+
+    // ── Fire after:unmatch hook ──────────────────────────────────────
+    await emitHook('after:unmatch', unmatchCtx);
+
     return result;
   };
 

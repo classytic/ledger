@@ -306,11 +306,67 @@ For tax computation, return generation, and repartition:
 
 The country packs (`ledger-bd`, `ledger-ca`) still re-export their raw tax data tables (`TAX_CODES`, `TAX_CODES_BY_REGION`, `mushakReturnTemplate`, `craReturnTemplate`) as named exports so tax packages can lift them — they're just no longer wired into the `CountryPack` contract.
 
+## Invoice Engine Integration
+
+Wire `@classytic/invoice` to the ledger with one call — no manual journal wiring needed:
+
+```ts
+import { createAccountingEngine } from "@classytic/ledger";
+import { createLedgerBridge } from "@classytic/ledger/sync";
+import { createInvoiceEngine } from "@classytic/invoice";
+import { canadaPack } from "@classytic/ledger-ca";
+
+const accounting = createAccountingEngine({
+  mongoose: mongoose.connection,
+  country: canadaPack,
+  currency: "CAD",
+  multiTenant: { orgField: "organizationId", orgRef: "Organization" },
+  idempotency: true,
+});
+
+const invoicing = createInvoiceEngine({
+  mongoose: mongoose.connection,
+  ledger: createLedgerBridge(accounting, {
+    accounts: {
+      receivable: "1200",     // Accounts Receivable
+      payable: "2000",        // Accounts Payable
+      revenue: "4000",        // Revenue
+      expense: "5000",        // Expenses
+      taxPayable: "2100",     // Tax Payable
+      taxReceivable: "1150",  // Tax Receivable
+      cash: "1000",           // Cash / Bank
+    },
+  }),
+});
+```
+
+The bridge handles all 5 move types (`out_invoice`, `in_invoice`, `out_refund`, `in_refund`, `receipt`), payment recording, and reversal. See [docs/sync.md](docs/sync.md) for the full mapping table and configuration options.
+
+For custom subledgers (inventory, payroll, etc.) that don't use `@classytic/invoice`, see [docs/subledger-integration.md](docs/subledger-integration.md) for the manual `PostingContract` pattern.
+
+## URL-Driven Queries
+
+Parse URL query parameters directly into paginated repository queries via mongokit's `QueryParser`:
+
+```ts
+const parser = engine.createQueryParser("journalEntry");
+const parsed = parser.parse(req.query);
+// ?state=posted&date[gte]=2025-01-01&sort=-date&limit=25
+
+const result = await engine.repositories.journalEntries.getAll({
+  ...parsed,
+  filters: { ...parsed.filters, organizationId },
+});
+```
+
+Available for all 6 models: `account`, `journalEntry`, `fiscalPeriod`, `budget`, `reconciliation`, `journal`.
+
 ## Subpath Exports
 
 | Path | Contents |
 | --- | --- |
 | `@classytic/ledger`           | Engine, Money, plugins, reports, types |
+| `@classytic/ledger/sync`      | `createLedgerBridge`, `wireImport`, `wireExport`, bank/invoice/JE mappers |
 | `@classytic/ledger/money`     | `Money` class |
 | `@classytic/ledger/reports`   | Standalone report generators |
 | `@classytic/ledger/plugins`   | All plugins |
@@ -321,7 +377,7 @@ The country packs (`ledger-bd`, `ledger-ca`) still re-export their raw tax data 
 ## Testing
 
 ```bash
-npm test                            # 1246 tests, 68 files
+npm test                            # 1327 tests, 77 files
 npm run smoke                       # full pipeline against published dist/
 npx vitest run tests/e2e/           # end-to-end scenarios
 npx vitest run tests/scenarios/     # multi-step business scenarios
@@ -350,7 +406,7 @@ Coverage includes:
 - Node.js >= 22
 - MongoDB (replica set recommended for transactions)
 - Mongoose >= 9.4.1
-- @classytic/mongokit >= 3.5.5
+- @classytic/mongokit >= 3.5.6
 
 ## License
 

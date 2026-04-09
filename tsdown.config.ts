@@ -9,6 +9,7 @@ export default defineConfig({
     'src/constants/index.ts',
     'src/country/index.ts',
     'src/exports/index.ts',
+    'src/sync/index.ts',
   ],
   format: ['esm'],
   dts: { sourcemap: false },

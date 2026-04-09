@@ -112,6 +112,16 @@ export interface CountryPack {
   readonly retainedEarningsDisplayCode?: string;
   /** Display code for current year net income line (e.g. '3680' CA, '3311' BD) */
   readonly currentYearEarningsCode?: string;
+  /**
+   * Account code used as the equity contra for opening balance entries.
+   * Defaults to `retainedEarningsAccountCode` when not set.
+   *
+   * Following Odoo convention, this is typically the retained earnings
+   * account itself (not a temporary "Opening Balance Equity" account).
+   * Country packs that prefer a separate temporary account (like ERPNext)
+   * can override this.
+   */
+  readonly openingBalanceEquityCode?: string;
   /** Group label code used to identify Cost of Sales in the income statement */
   readonly cogsGroupCode?: string;
   /** Override default English report section names */
@@ -152,6 +162,7 @@ export interface CountryPackInput {
   retainedEarningsAccountCode?: string;
   retainedEarningsDisplayCode?: string;
   currentYearEarningsCode?: string;
+  openingBalanceEquityCode?: string;
   cogsGroupCode?: string;
   reportLabels?: {
     readonly assets?: string;

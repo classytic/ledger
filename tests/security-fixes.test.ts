@@ -10,6 +10,7 @@
  * 6. Bulk account creation race condition
  */
 
+import { Repository } from '@classytic/mongokit';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -678,8 +679,8 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
     BulkAcct = mongoose.model('SecBulkAcct', createAccountSchema(config));
     await BulkAcct.createIndexes();
 
-    repo = mockRepository(); // Minimal mock repo
-    wireAccountMethods(repo, BulkAcct, testPack);
+    repo = new Repository(BulkAcct, []);
+    wireAccountMethods(repo, testPack);
   });
 
   beforeEach(async () => {
@@ -790,23 +791,6 @@ describe('Fix 6: bulkCreate uses batch query and handles concurrent inserts', ()
 
 describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefully', () => {
   it('recovers from dup-key bulk write error (concurrent seed simulation)', async () => {
-    // Simulate what happens when insertMany hits a dup-key error from a concurrent caller:
-    // The error object contains insertedDocs for the docs that succeeded.
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]), // no existing accounts at check time
-        }),
-      }),
-      insertMany: vi.fn().mockRejectedValue(
-        Object.assign(new Error('E11000 duplicate key'), {
-          code: 11000,
-          writeErrors: [{ index: 0 }],
-          insertedDocs: [{ accountNumber: '2000', accountTypeCode: '2000', name: 'AP' }],
-        }),
-      ),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -817,26 +801,26 @@ describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefull
       ],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockRejectedValue(
+        Object.assign(new Error('E11000 duplicate key'), {
+          code: 11000,
+          writeErrors: [{ index: 0 }],
+          insertedDocs: [{ accountNumber: '2000', accountTypeCode: '2000', name: 'AP' }],
+        }),
+      ),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     const result = await repo.seedAccounts('org-1');
 
     // 1 inserted successfully, 1 hit dup-key (concurrent insert)
     expect(result.created).toBe(1);
-    expect(result.skipped).toBe(1); // 0 pre-existing + 1 dup-key
+    expect(result.skipped).toBe(1);
   });
 
-  it('rethrows non-duplicate-key errors from insertMany', async () => {
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: vi.fn().mockRejectedValue(new Error('Connection lost')),
-    } as any;
-
+  it('rethrows non-duplicate-key errors from createMany', async () => {
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -844,23 +828,17 @@ describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefull
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockRejectedValue(new Error('Connection lost')),
+    });
+    wireAccountMethods(repo, mockCountry);
 
     await expect(repo.seedAccounts('org-1')).rejects.toThrow('Connection lost');
   });
 
-  it('uses ordered: false in insertMany call', async () => {
-    const insertManySpy = vi.fn().mockResolvedValue([{ _id: 'id-1' }]);
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: insertManySpy,
-    } as any;
-
+  it('uses ordered: false in createMany call', async () => {
+    const createManySpy = vi.fn().mockResolvedValue([{ _id: 'id-1' }]);
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -868,13 +846,15 @@ describe('Fix 6b: seedAccounts handles concurrent duplicate-key errors gracefull
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry);
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: createManySpy,
+    });
+    wireAccountMethods(repo, mockCountry);
 
     await repo.seedAccounts('org-1');
 
-    // Verify ordered: false was passed
-    expect(insertManySpy).toHaveBeenCalledWith(
+    expect(createManySpy).toHaveBeenCalledWith(
       expect.any(Array),
       expect.objectContaining({ ordered: false }),
     );
@@ -1021,7 +1001,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
     } as any;
 
     const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry, 'business');
+    wireAccountMethods(repo, mockCountry, 'business');
 
     await expect(repo.seedAccounts(undefined)).rejects.toThrow('organizationId is required');
     await expect(repo.seedAccounts(null)).rejects.toThrow('organizationId is required');
@@ -1042,7 +1022,7 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
     } as any;
 
     const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry, 'business');
+    wireAccountMethods(repo, mockCountry, 'business');
 
     await expect(repo.bulkCreate([{ accountTypeCode: '1000' }], undefined)).rejects.toThrow(
       'organizationId is required',
@@ -1057,15 +1037,6 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
   });
 
   it('seedAccounts succeeds when orgField set and orgId is provided', async () => {
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: vi.fn().mockResolvedValue([{ _id: 'id-1' }]),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -1073,46 +1044,34 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry, 'business');
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockResolvedValue([{ _id: 'id-1' }]),
+    });
+    wireAccountMethods(repo, mockCountry, 'business');
 
     const result = await repo.seedAccounts('org-123');
     expect(result.created).toBe(1);
   });
 
   it('bulkCreate succeeds when orgField set and orgId is provided', async () => {
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: vi.fn().mockResolvedValue([{ _id: 'id-1', accountTypeCode: '1000' }]),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
       getAccountType: (code: string) => ({ code, name: `Account ${code}` }),
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry, 'business');
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockResolvedValue([{ _id: 'id-1', accountTypeCode: '1000' }]),
+    });
+    wireAccountMethods(repo, mockCountry, 'business');
 
     const result = await repo.bulkCreate([{ accountTypeCode: '1000' }], 'org-123');
     expect(result.summary.created).toBe(1);
   });
 
   it('seedAccounts allows no orgId when orgField is not configured (single-tenant)', async () => {
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: vi.fn().mockResolvedValue([{ _id: 'id-1' }]),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
@@ -1120,8 +1079,11 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
       getPostingAccountTypes: () => [{ code: '1000', name: 'Cash' }],
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry); // no orgField
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockResolvedValue([{ _id: 'id-1' }]),
+    });
+    wireAccountMethods(repo, mockCountry); // no orgField
 
     // Should not throw — single-tenant mode
     const result = await repo.seedAccounts(undefined);
@@ -1129,23 +1091,17 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
   });
 
   it('bulkCreate allows no orgId when orgField is not configured (single-tenant)', async () => {
-    const mockModel = {
-      find: () => ({
-        select: () => ({
-          lean: () => Promise.resolve([]),
-        }),
-      }),
-      insertMany: vi.fn().mockResolvedValue([{ _id: 'id-1', accountTypeCode: '1000' }]),
-    } as any;
-
     const mockCountry = {
       isValidAccountType: () => true,
       isPostingAccount: () => true,
       getAccountType: (code: string) => ({ code, name: `Account ${code}` }),
     } as any;
 
-    const repo: any = mockRepository();
-    wireAccountMethods(repo, mockModel, mockCountry); // no orgField
+    const repo: any = mockRepository({
+      findAll: vi.fn().mockResolvedValue([]),
+      createMany: vi.fn().mockResolvedValue([{ _id: 'id-1', accountTypeCode: '1000' }]),
+    });
+    wireAccountMethods(repo, mockCountry); // no orgField
 
     const result = await repo.bulkCreate([{ accountTypeCode: '1000' }], undefined);
     expect(result.summary.created).toBe(1);

@@ -69,7 +69,7 @@ export function createRepositories(
 
   // ── Account repository ──────────────────────────────────────────────────
   const accountBase = new Repository(models.Account, plugins.account ?? [], accountPagination);
-  const accounts = wireAccountMethods(accountBase, models.Account, country, orgField);
+  const accounts = wireAccountMethods(accountBase, country, orgField);
 
   // ── Journal entry repository (with plugins) ─────────────────────────────
   const jePlugins: PluginType[] = [
