@@ -163,7 +163,25 @@ export function createLockPlugin(options: CreateLockPluginOptions) {
         );
       };
 
+      const runMany = async (context: RepositoryContext) => {
+        const docs = context.dataArray as Array<Record<string, unknown>> | undefined;
+        if (!docs || docs.length === 0) return;
+
+        for (const data of docs) {
+          if (data.state !== 'posted') continue;
+          // Build a synthetic single-doc context for the shared `run` logic.
+          // Only fields read by `run` need to be present.
+          const singleCtx: RepositoryContext = {
+            ...context,
+            data,
+            dataArray: undefined,
+          } as unknown as RepositoryContext;
+          await run(singleCtx, false);
+        }
+      };
+
       repo.on('before:create', (ctx: RepositoryContext) => run(ctx, false));
+      repo.on('before:createMany', runMany);
       repo.on('before:update', (ctx: RepositoryContext) => run(ctx, true));
     },
   };

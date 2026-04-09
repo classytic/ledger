@@ -182,6 +182,11 @@ export { defineCountryPack } from './country/index.js';
 // ── Repository Types ──────────────────────────────────────────────────────
 
 export type {
+  MatchHookContext,
+  MatchHookItem,
+  UnmatchHookContext,
+} from './repositories/reconciliation.repository.js';
+export type {
   AccountRepository,
   BulkCreateInput,
   BulkCreateResult,

@@ -82,3 +82,16 @@ export type {
   TrialBalanceReport,
   TrialBalanceRow,
 } from './report.js';
+
+export type {
+  ExportReport,
+  ExportSink,
+  ImportContext,
+  ImportError,
+  ImportMapper,
+  ImportReport,
+  JournalEntryInput,
+  JournalItemInput,
+  WireExportArgs,
+  WireImportArgs,
+} from './sync.js';

@@ -7,7 +7,7 @@
  */
 
 import type { Repository, RepositoryContext } from '@classytic/mongokit';
-import type { ClientSession, Model } from 'mongoose';
+import type { ClientSession } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
 import type { AccountRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
@@ -28,13 +28,11 @@ interface SeedOptions {
  * onto an existing mongokit Repository.
  *
  * @param repository - A mongokit Repository instance (already created)
- * @param AccountModel - The Mongoose model for accounts
  * @param country - The CountryPack for account type lookups
  * @param orgField - The multi-tenant field name (e.g. 'business')
  */
 export function wireAccountMethods<TDoc = unknown>(
   repository: Repository<TDoc>,
-  AccountModel: Model<unknown>,
   country: CountryPack,
   orgField?: string,
 ): AccountRepository<TDoc> {
@@ -57,9 +55,10 @@ export function wireAccountMethods<TDoc = unknown>(
     const filter: Record<string, unknown> = {};
     if (orgField && orgId != null) filter[orgField] = orgId;
 
-    const existing = (await AccountModel.find(filter)
-      .select('accountNumber')
-      .lean()) as unknown as Array<{ accountNumber: string }>;
+    const existing = (await repository.findAll(filter, {
+      select: { accountNumber: 1 },
+      lean: true,
+    })) as unknown as Array<{ accountNumber: string }>;
     const existingNumbers = new Set(existing.map((a) => a.accountNumber));
 
     const toCreate = postingTypes
@@ -77,9 +76,9 @@ export function wireAccountMethods<TDoc = unknown>(
     if (toCreate.length === 0) return { created: 0, skipped: existingNumbers.size };
 
     try {
-      // ordered: false ensures a dup-key on one doc doesn't abort the rest
-      // (handles concurrent seed calls hitting the unique accountNumber index)
-      const inserted = await AccountModel.insertMany(toCreate, {
+      // Route through mongokit's createMany so plugins (before:createMany,
+      // after:createMany) fire — enables observability, audit, and custom hooks.
+      const inserted = await repository.createMany(toCreate, {
         session: options.session ?? undefined,
         ordered: false,
       });
@@ -87,7 +86,6 @@ export function wireAccountMethods<TDoc = unknown>(
     } catch (err: unknown) {
       const bulkError = err as MongoBulkWriteError;
       if (bulkError.code === 11000 || bulkError.writeErrors) {
-        // Partial success: some docs inserted, some hit dup-key from concurrent caller
         const insertedDocs = bulkError.insertedDocs ?? [];
         return {
           created: insertedDocs.length,
@@ -190,9 +188,10 @@ export function wireAccountMethods<TDoc = unknown>(
     const existsFilter: Record<string, unknown> = { accountNumber: { $in: numbersToCheck } };
     if (orgField && orgId != null) existsFilter[orgField] = orgId;
 
-    const existingDocs = (await AccountModel.find(existsFilter)
-      .select('accountNumber')
-      .lean()) as Array<Record<string, unknown>>;
+    const existingDocs = (await repository.findAll(existsFilter, {
+      select: { accountNumber: 1 },
+      lean: true,
+    })) as Array<Record<string, unknown>>;
     const existingNumbers = new Set(existingDocs.map((d) => d.accountNumber as string));
 
     // Partition into create vs skip
@@ -230,8 +229,8 @@ export function wireAccountMethods<TDoc = unknown>(
       });
 
       try {
-        // ordered: false ensures a dup-key on one doc doesn't abort the rest
-        const inserted = await AccountModel.insertMany(docs, { ordered: false });
+        // Route through mongokit's createMany so plugins fire
+        const inserted = await repository.createMany(docs, { ordered: false });
         results.created = toCreate.map((item, idx) => ({
           accountTypeCode: item.accountTypeCode,
           active: item.active,

@@ -31,6 +31,7 @@
  * ```
  */
 
+import { QueryParser, type QueryParserOptions } from '@classytic/mongokit';
 import type { Model } from 'mongoose';
 import type { CountryPack } from './country/index.js';
 import { createModels, type LedgerModels } from './models/factory.js';
@@ -121,6 +122,73 @@ export class AccountingEngine {
   /** Get account type definition by code */
   getAccountType(code: string) {
     return this.country.getAccountType(code);
+  }
+
+  // ── Query Parser Factory ────────────────────────────────────────────────────
+
+  /**
+   * Create a pre-configured QueryParser for URL-driven queries against
+   * ledger repositories. Returns a mongokit QueryParser with the correct
+   * schema and pagination limits for the specified model.
+   *
+   * @param model - Which ledger model to parse queries for
+   * @param overrides - Additional QueryParserOptions to merge
+   *
+   * @example
+   * ```typescript
+   * const parser = engine.createQueryParser('journalEntry');
+   * const parsed = parser.parse(req.query);
+   * const result = await engine.repositories.journalEntries.getAll({
+   *   ...parsed,
+   *   filters: { ...parsed.filters, organizationId },
+   * });
+   * ```
+   */
+  createQueryParser(
+    model: 'account' | 'journalEntry' | 'fiscalPeriod' | 'budget' | 'reconciliation' | 'journal',
+    overrides?: Partial<QueryParserOptions>,
+  ): QueryParser {
+    const paginationConfig = this.config.pagination ?? {};
+
+    const modelMap: Record<string, { model: Model<unknown>; pagination?: { maxLimit?: number } }> =
+      {
+        account: {
+          model: this.models.Account as Model<unknown>,
+          pagination: paginationConfig.account,
+        },
+        journalEntry: {
+          model: this.models.JournalEntry as Model<unknown>,
+          pagination: paginationConfig.journalEntry,
+        },
+        fiscalPeriod: {
+          model: this.models.FiscalPeriod as Model<unknown>,
+          pagination: paginationConfig.fiscalPeriod,
+        },
+        budget: {
+          model: this.models.Budget as Model<unknown>,
+          pagination: paginationConfig.budget,
+        },
+        reconciliation: {
+          model: this.models.Reconciliation as Model<unknown>,
+          pagination: paginationConfig.reconciliation,
+        },
+        journal: {
+          model: this.models.Journal as Model<unknown>,
+          pagination: paginationConfig.journal,
+        },
+      };
+
+    const entry = modelMap[model];
+    if (!entry) {
+      throw new Error(`createQueryParser: unknown model "${model}"`);
+    }
+
+    return new QueryParser({
+      schema: entry.model.schema,
+      maxLimit: entry.pagination?.maxLimit ?? 100,
+      searchMode: 'regex',
+      ...overrides,
+    });
   }
 
   // ── Reports Builder (uses owned models) ────────────────────────────────────

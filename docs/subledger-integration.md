@@ -1,6 +1,20 @@
 # Subledger Integration
 
-This guide explains how to integrate external subledgers (billing, inventory, payroll, etc.) with `@classytic/ledger`. The ledger provides **type-only posting contracts** — your application code is responsible for wiring subledgers to the journal entry repository.
+This guide explains how to integrate external subledgers (billing, inventory, payroll, etc.) with `@classytic/ledger`.
+
+## Which pattern should I use?
+
+| Subledger | Recommended approach |
+|---|---|
+| `@classytic/invoice` | Use `createLedgerBridge()` from `@classytic/ledger/sync` — see [sync.md](sync.md) |
+| Custom invoicing, billing, or any system with the `LedgerBridge` interface | Use `createLedgerBridge()` — same bridge, no `@classytic/invoice` dependency needed |
+| Inventory, payroll, or other custom subledgers | Use the `PostingContract` pattern described below |
+
+If you're integrating with `@classytic/invoice`, **start with [sync.md](sync.md)** — the bridge handles all the wiring for you. This document covers the manual `PostingContract` pattern for custom subledgers that don't use the invoice engine.
+
+---
+
+The ledger provides **type-only posting contracts** — your application code is responsible for wiring subledgers to the journal entry repository.
 
 ## Responsibility Boundaries
 

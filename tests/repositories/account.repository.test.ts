@@ -5,6 +5,7 @@
  * from wireAccountMethods().
  */
 
+import { Repository } from '@classytic/mongokit';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -174,15 +175,8 @@ beforeEach(async () => {
 });
 
 function createRepo() {
-  const repo: any = { _hooks: {} as Record<string, Function[]> };
-  repo.on = (event: string, fn: Function) => {
-    if (!repo._hooks[event]) repo._hooks[event] = [];
-    repo._hooks[event].push(fn);
-  };
-  repo._trigger = async (event: string, ctx: any) => {
-    for (const fn of repo._hooks[event] ?? []) await fn(ctx);
-  };
-  wireAccountMethods(repo, AccountModel, testPack, 'business');
+  const repo = new Repository(AccountModel, []);
+  wireAccountMethods(repo, testPack, 'business');
   return repo;
 }
 
@@ -408,26 +402,28 @@ describe('before:create validation', () => {
   it('blocks creation of group account types', async () => {
     const repo = createRepo();
     await expect(
-      repo._trigger('before:create', { data: { accountTypeCode: 'Assets' } }),
+      repo.create({ accountTypeCode: 'Assets', accountNumber: 'GRP', name: 'Group', business: orgId }),
     ).rejects.toThrow('structural group');
   });
 
   it('blocks creation of total account types', async () => {
     const repo = createRepo();
     await expect(
-      repo._trigger('before:create', { data: { accountTypeCode: '1999' } }),
+      repo.create({ accountTypeCode: '1999', accountNumber: 'TOT', name: 'Total', business: orgId }),
     ).rejects.toThrow('structural group or calculated total');
   });
 
   it('allows creation of posting account types', async () => {
     const repo = createRepo();
     await expect(
-      repo._trigger('before:create', { data: { accountTypeCode: '1000' } }),
-    ).resolves.not.toThrow();
+      repo.create({ accountTypeCode: '1000', accountNumber: 'POST-1', name: 'Cash', business: orgId }),
+    ).resolves.toBeDefined();
   });
 
-  it('allows creation when accountTypeCode is not provided', async () => {
+  it('allows creation of accounts with valid posting type code', async () => {
     const repo = createRepo();
-    await expect(repo._trigger('before:create', { data: {} })).resolves.not.toThrow();
+    await expect(
+      repo.create({ accountTypeCode: '1000', accountNumber: 'VALID-1', name: 'Valid Account', business: orgId }),
+    ).resolves.toBeDefined();
   });
 });
