@@ -103,17 +103,17 @@
     }
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.10",
-    "@classytic/fin-io": "file:../fin-io",
+    "@biomejs/biome": "^2.4.12",
+    "@classytic/fin-io": "^0.1.0",
     "@classytic/mongokit": "^3.6.4",
     "@types/node": "^25.5.0",
-    "@vitest/coverage-v8": "^3.2.4",
-    "knip": "^6.3.0",
-    "mongodb-memory-server": "^10.2.3",
+    "@vitest/coverage-v8": "^4.1.4",
+    "knip": "^6.4.1",
+    "mongodb-memory-server": "^11.0.1",
     "mongoose": "^9.4.1",
-    "tsdown": "^0.21.5",
+    "tsdown": "^0.21.8",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.4"
   },
   "engines": {
     "node": ">=22"
