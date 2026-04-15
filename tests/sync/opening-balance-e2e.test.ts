@@ -187,7 +187,10 @@ describe('Opening Balance E2E — record.openingBalance()', () => {
     } catch (err: unknown) {
       threw = true;
       const msg = (err as Error).message;
-      expect(msg).toMatch(/duplicate|E11000/i);
+      // 0.9.0: the race-safe create wrapper classifies dup-keys by index
+      // name instead of bubbling the raw MongoServerError — accept the
+      // typed message in addition to the legacy patterns.
+      expect(msg).toMatch(/duplicate|E11000|unique index/i);
     }
     expect(threw).toBe(true);
 

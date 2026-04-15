@@ -1,5 +1,284 @@
 # Changelog
 
+## 0.9.0 — "Events, Bridges, Tenant Plugin, Hardening"
+
+Classytic package-rules alignment **plus** the full hardening slate flagged
+by the 0.8.x peer review. Verified against `@classytic/mongokit@3.6.2`
+from the npm registry. Zero regressions across 1420 tests.
+
+### Bundled from the 0.8.x peer review (previously planned as 0.8.1)
+
+**Fix** — `idempotencyKey` unique partial index was broken in 0.8.x. Its
+`partialFilterExpression` used `{ $exists: true, $ne: null }`, which
+MongoDB rejects with `Expression not supported in partial index: $not`.
+The index was never actually built in consumers, so `idempotency: true`
+was silently un-enforced at the DB layer — concurrent posts with the
+same `idempotencyKey` could create duplicate journal entries.
+
+Switched to `{ $type: 'string' }` — an allowed operator with the same
+effective semantics given the schema already types `idempotencyKey` as
+`string`. Mongoose's `syncIndexes()` detects drift and drops the broken
+index spec automatically on next boot — no manual migration needed.
+`engine.models.JournalEntry.syncIndexes()` is the recommended post-
+upgrade step (or pass `syncIndexes: true` to `createAccountingEngine`,
+see below).
+
+Original scope of this fix was 0.8.1. It ships bundled into 0.9.0
+alongside the full race-safety / typed-error / atomic-counter slate
+the peer reviewer requested.
+
+### Peer deps
+
+- `@classytic/mongokit` peer now `>=3.6.2` (up from `>=3.6.1`).
+
+  3.6.2 adds two primitives this release depends on:
+  - `getNextSequence(counterKey, increment?, connection?, session?)` —
+    session parameter enables atomic counter bumps inside caller
+    transactions.
+  - `multiTenantPlugin({ fieldType: 'string' | 'objectId' })` — native
+    `ObjectId` cast for tenant IDs so `$lookup` / `.populate()` work
+    against Better Auth's `organization` collection.
+
+  Both shipped exactly as I flagged in the 0.9.0 mongokit-PR list —
+  ledger now consumes them directly instead of reinventing the wheel.
+
+### Added
+
+**Events (§11-14 of PACKAGE_RULES):**
+- `@classytic/ledger/events` subpath export
+- `EventTransport` interface — structurally identical to `@classytic/arc`'s
+  `EventTransport`. Drop in `MemoryEventTransport`, `RedisEventTransport`,
+  `BullMQEventTransport`, or any custom implementation with zero adapter code.
+- `InProcessLedgerBus` — default in-process transport when no `eventTransport`
+  is injected. Supports exact-name, `*`, `ns.*`, and `ns:*` glob subscribe.
+  Implements `publishMany` for outbox batching.
+- `LEDGER_EVENTS` constants + typed payloads for every state transition:
+  `ledger:entry.{created,posted,unposted,archived,duplicated,reversed}`,
+  `ledger:account.{seeded,bulk-created}`, `ledger:journal.seeded`,
+  `ledger:reconciliation.{matched,unmatched}`.
+- `createEvent(type, payload, ctx, meta)` — auto-fills `meta.id`
+  (`node:crypto.randomUUID`), `meta.timestamp`, `meta.userId`,
+  `meta.organizationId`, `meta.correlationId`, `meta.resource`, `meta.resourceId`.
+- Every state transition in the repository layer publishes via the injected
+  transport. Failures in subscribers are caught — broken listeners cannot
+  break the write path.
+- `engine.events: EventTransport` — glob-subscribe from hosts:
+  `await engine.events.subscribe('ledger:entry.*', handler)`.
+
+**Bridges (§7, §23 of PACKAGE_RULES):**
+- `@classytic/ledger/bridges` subpath export
+- `SourceBridge` — host-implemented resolver for polymorphic external refs
+  (Invoice, Payment, Stripe Charge, Postgres Order, anything). `resolve` for
+  single, `resolveMany` for batch N+1 avoidance.
+- `NotificationBridge` — direct-callback channel for operational alerts:
+  `onPeriodLocked`, `onPeriodUnlocked`, `onEntryReversed`,
+  `onReconciliationMismatch` (auto-fires from `reconciliations.match()` when
+  `debitTotal !== creditTotal`).
+- `engine.bridges: LedgerBridges` — `{ source?, notification? }`.
+
+**Multi-tenant plugin (§9):**
+- New `config.multiTenant.plugin: true` opts into mongokit's
+  `multiTenantPlugin`, which injects the tenant filter at POLICY priority
+  (before cache/audit/observability). Defaults to `false` for back-compat.
+- `config.multiTenant.required: true` makes plugin fail-closed on missing
+  `ctx.organizationId`. Defaults to `false`.
+- `config.tenantFieldType: 'objectId' | 'string'` — forward-looking config
+  surface for §9.1. Lets hosts declare whether the tenant field is stored as
+  `ObjectId` (Better Auth compatibility for `$lookup` and `.populate()`) or
+  `string` (external-auth-system compatibility).
+
+### Preserved
+
+- Every existing public signature. No breaking changes.
+- `wireXxxMethods()` factories remain the stable internal API (an additive
+  `integrations` parameter was appended). All 1398 tests pass unchanged.
+- `orgId` positional parameter preserved — manual tenant scoping inside
+  domain verbs stays as defense-in-depth alongside the optional plugin.
+
+### Host wiring
+
+```ts
+import { MemoryEventTransport } from '@classytic/arc/events';
+import { createAccountingEngine } from '@classytic/ledger';
+import { LEDGER_EVENTS } from '@classytic/ledger/events';
+
+const engine = createAccountingEngine({
+  mongoose: mongoose.connection,
+  country: canadaPack,
+  currency: 'CAD',
+  multiTenant: { orgField: 'business', orgRef: 'Business', plugin: true },
+  tenantFieldType: 'objectId',
+  eventTransport: new MemoryEventTransport(),  // or Redis, Kafka, BullMQ
+  bridges: {
+    source: { async resolve(id, model) { /* ... */ } },
+    notification: { async onReconciliationMismatch(p) { alert(p); } },
+  },
+});
+
+await engine.events.subscribe('ledger:entry.*', (e) => audit.record(e));
+```
+
+### Tests
+
+- New scenario-oriented e2e: `tests/e2e/events-bridges-0.9.test.ts` (7 tests
+  covering the full arc contract, bridge invocation, tenant plugin isolation,
+  and structural-typing compatibility with arc transports).
+- New smoke: `tests/smoke/v0.9-exports.smoke.test.ts` (4 tests verifying
+  `/events` and `/bridges` subpaths build and import correctly from `dist/`).
+
+### Hardening (peer-review follow-ups)
+
+**Atomic `referenceNumber` counter (PR #2).** Replaces the pre-0.9
+aggregate-then-insert allocator that caused duplicate reference numbers
+under concurrent `post()` calls. Delegates to mongokit's
+`getNextSequence(counterKey, 1, connection, session)` — backed by the
+shared `_mongokit_counters` collection used across every
+`@classytic/*` package. Key format: `ledger:{orgScope}:{journalType}:{YYYY}-{MM}`.
+
+Counter bumps participate in caller transactions via the `session`
+parameter (requires mongokit 3.6.2+), so `withTransaction` wrappers
+commit the counter atomically with the document write.
+
+Migration note: the counter collection moved from `_ledger_counters`
+(my 0.9.0-preview name) to the shared `_mongokit_counters` store. If
+you ran a pre-release of 0.9.0, migrate counter docs with:
+
+```js
+db._ledger_counters.find().forEach(doc => {
+  db._mongokit_counters.insertOne({ _id: doc._id, seq: doc.seq });
+});
+db._ledger_counters.drop();
+```
+
+E2e proof: 5 concurrent `post()` calls in the same partition now all
+succeed and receive unique monotonic sequences (`SALES/2026/01/0001`
+through `0005`). Verified in
+[`tests/e2e/hardening-0.9.test.ts`](tests/e2e/hardening-0.9.test.ts)
+scenario 1.
+
+**Race-safe `create` with typed errors (PR #2).** The repository's
+`create()` wraps mongokit's base create with:
+
+1. **Fast-path idempotency pre-check** (revenue pattern) — same
+   `idempotencyKey` returns the existing entry without a second write.
+2. **Race-safe insert with dup-key recovery** (cart pattern) — concurrent
+   losers get the winner instead of a raw `MongoServerError(11000)`.
+3. **Typed errors** — `IdempotencyConflictError`, `DuplicateReferenceError`,
+   `ConcurrencyError`, `ImmutableViolationError`, all extending
+   `AccountingError`. Callers can `instanceof`-check without parsing
+   driver internals. Also exports `classifyDuplicateKey(err)` helper.
+
+E2e proof: 10 concurrent creates with the same `idempotencyKey` collapse
+to exactly 1 document, all 10 resolve to the same `_id`.
+
+**FSM atomic transitions + `strictness.immutable` enforcement (PR #3).**
+New `immutableGuardPlugin` wired automatically when
+`config.strictness.immutable === true`. Blocks direct
+`repository.update()`/`repository.delete()` calls targeting posted entries
+at the `before:update`/`before:delete` hook layer. The engine's own
+state-transition verbs (`post`, `unpost`, `archive`, `reverse`) still
+work via the `_ledgerInternal` escape flag. Also adds
+`optimisticConcurrency: true` on the journal entry schema for
+`__v`-guarded saves.
+
+The pre-existing `Errors.immutable(...)` factory now returns
+`ImmutableViolationError`, so every throw site across the package
+(including the double-entry plugin) is instance-checkable.
+
+**Transactional wrapper (PR #4).** `outboxStore.save(event, { session })`
+participates in the caller-provided mongoose session, letting hosts write
+outbox rows atomically with the ledger document write. Existing
+`context.session` threading in post/unpost/archive/reverse/duplicate/match/
+unmatch is unchanged.
+
+**Idempotency TTL index (PR #5).** Adds a sparse TTL index on
+`createdAt` filtered by `{ idempotencyKey: { $type: 'string' } }` when
+`config.idempotency: true`. Default TTL: 86400 seconds (24h, matches
+Stripe/Saleor convention). Override via `config.idempotencyTtlSeconds`.
+Stale replay keys no longer collide forever.
+
+**Period lock plugin (PR #6).** No change — `fiscalLockPlugin`,
+`dailyLockPlugin`, and the `createLockPlugin` factory already ship in
+[`src/plugins/lock/`](src/plugins/lock/). Documented as satisfying
+PACKAGE_RULES §9/§10 period-lock requirements.
+
+**`OutboxStore` interface + `onAfterCommit`-equivalent (PR #7).**
+New `@classytic/ledger/events` export `OutboxStore` — structurally
+identical to `@classytic/arc`'s `OutboxStore` (copied shape, no runtime
+import, same pattern as `EventTransport`). Hosts with arc pass their
+`MongoOutboxStore` directly; non-arc hosts implement the 4 required
+methods against any DB. Package does NOT ship a concrete store
+(PACKAGE_RULES §5.5). The `safePublish` path in every repository now
+calls `outboxStore.save(event, { session })` BEFORE the transport
+publish, so outbox persistence happens in the same session as the
+ledger write.
+
+**Test helpers, `syncIndexes`, public errors (PR #8).**
+- `config.syncIndexes: true` — engine fires `syncIndexes()` on every
+  managed model at boot so new partial/TTL indexes are present before
+  the first write. Default `false` for hosts running their own
+  migration pipeline.
+- New typed error classes exported at the root:
+  `IdempotencyConflictError`, `DuplicateReferenceError`,
+  `ConcurrencyError`, `ImmutableViolationError`, plus the
+  `classifyDuplicateKey(err)` helper.
+- `allocateReferenceNumber`, `buildReferenceCounterKey`,
+  `formatReferenceNumber`, `getNextSequence` exported for consumers
+  that want the counter without the full schema.
+
+### Verified against mongokit 3.6.2 (npm)
+
+Installed the published `@classytic/mongokit@3.6.2` from the npm
+registry (not `file:` link, not local source). Peer and dev deps both
+pinned to `>=3.6.2`. Entire suite re-run: **1420 passed, 1 skipped** —
+no regressions from the upgrade, from the hardening slate, or from the
+wheel-reinvention cleanup.
+
+### Wheel-reinvention cleanup
+
+Removed my own sequence-counter infrastructure in favor of mongokit
+3.6.2's native primitives:
+
+- **Deleted `src/utils/sequence.ts`** (~110 lines). Schema pre-save
+  hook now calls `mongokit.getNextSequence` directly.
+- **Dropped `allocateReferenceNumber`, `buildReferenceCounterKey`,
+  `formatReferenceNumber`, `getNextSequence` exports** from the root.
+  Consumers that want the counter primitive can import from
+  `@classytic/mongokit` directly.
+- **Counter collection aligned** on `_mongokit_counters` — shared with
+  invoice, order, cart, revenue. One counter store per app.
+
+No behavior change for consumers — the race-safety guarantee is
+identical. The peer-review 5-concurrent-post test still passes.
+
+### Wired `tenantFieldType` through `multiTenantPlugin`
+
+`config.tenantFieldType: 'string' | 'objectId'` now propagates all the
+way into `multiTenantPlugin({ fieldType })`. When set to `'objectId'`,
+the plugin casts string tenant IDs from request context into
+`mongoose.Types.ObjectId` before injection, so:
+
+- `$lookup` / `$match` work against the `organization` collection
+- `.populate('organization')` resolves the tenant document
+- Better Auth's `organization._id` (native ObjectId) becomes
+  interoperable with ledger documents that store `organizationId`
+  as `Schema.Types.ObjectId`
+
+Defaults to `'string'` for back-compat with UUID/slug-based auth
+systems. New Better-Auth-backed hosts should set `'objectId'`.
+
+### Deferred to 1.0.0
+
+- Full class extension of repositories (§1). Current `wireXxxMethods`
+  pattern stays stable; classes will replace them in a future major.
+- Hard break on `orgId` positional argument. Reserved for 1.0.0 once
+  hosts have migrated to context-based scoping via the opt-in plugin.
+- Schema-level `tenantFieldType` switching in the models factory. The
+  engine config field is live; the model factory will consume it once
+  mongokit publishes a version with `fieldType` in `multiTenantPlugin`.
+
+---
+
 ## 0.7.0 — "Tax Out, Accounting Stays" (BREAKING)
 
 `@classytic/ledger` is a **double-entry accounting engine** — not a tax

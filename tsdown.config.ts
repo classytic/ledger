@@ -10,6 +10,8 @@ export default defineConfig({
     'src/country/index.ts',
     'src/exports/index.ts',
     'src/sync/index.ts',
+    'src/events/index.ts',
+    'src/bridges/index.ts',
   ],
   format: ['esm'],
   dts: { sourcemap: false },

@@ -564,6 +564,8 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
   beforeEach(async () => {
     await SeqAcct.deleteMany({});
     await SeqJE.deleteMany({});
+    // 0.9.0: drop the atomic counter so each test starts from seq=1
+    await mongoose.connection.db?.collection('_mongokit_counters').deleteMany({});
 
     const cash = await SeqAcct.create({ accountTypeCode: '1000' });
     const eq = await SeqAcct.create({ accountTypeCode: '3000' });
@@ -571,8 +573,10 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
     eqId = eq._id;
   });
 
-  it('generates sequence 10000 after 9999', async () => {
-    // Directly insert an entry with sequence 9999 (bypassing auto-generation)
+  it('atomic counter is independent of hand-inserted rows (0.9 migration note)', async () => {
+    // Insert a doc with a very high referenceNumber directly — simulates
+    // pre-0.9 data migrated from the old aggregation allocator, or rows
+    // hand-inserted by a migration script.
     await SeqJE.collection.insertOne({
       journalType: 'GENERAL',
       referenceNumber: 'GENERAL/2025/03/9999',
@@ -586,7 +590,11 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       totalCredit: 10000,
     });
 
-    // Now create a new entry via Mongoose (auto-generation)
+    // The atomic counter starts at 1 regardless of pre-existing rows.
+    // This is a deliberate trade-off: race-free allocation under concurrent
+    // writes in exchange for no runtime scan of existing documents. Hosts
+    // that migrate from pre-0.9 data must seed `_mongokit_counters` to the
+    // max existing sequence per partition before the first 0.9 write.
     const entry = await SeqJE.create({
       journalType: 'GENERAL',
       state: 'posted',
@@ -599,11 +607,20 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       totalCredit: 20000,
     });
 
-    expect(entry.referenceNumber).toBe('GENERAL/2025/03/10000');
+    // Counter-allocated sequence starts at 1 — no collision with 9999.
+    expect(entry.referenceNumber).toBe('GENERAL/2025/03/0001');
   });
 
-  it('generates correct sequence when both 9999 and 10000 exist', async () => {
-    // Insert entries with high sequences directly
+  it('handles pre-seeded counter to avoid migration collisions', async () => {
+    // Host can pre-seed the counter so the next allocation continues
+    // from where legacy data left off. Direct insert of the mongokit
+    // counter doc. Key format: `ledger:{orgScope}:{journalType}:{YYYY}-{MM}`.
+    await mongoose.connection.db?.collection('_mongokit_counters').insertOne({
+      _id: 'ledger:global:MISC:2025-06' as unknown as never,
+      seq: 10000,
+    });
+    // Also insert legacy docs so the unique index has something to collide
+    // against if the counter misbehaves.
     await SeqJE.collection.insertMany([
       {
         journalType: 'MISC',
@@ -643,6 +660,7 @@ describe('Fix 5: Reference number sequencing handles numbers beyond 9999', () =>
       totalCredit: 30000,
     });
 
+    // Counter bumps from 10000 to 10001 atomically
     expect(entry.referenceNumber).toBe('MISC/2025/06/10001');
   });
 

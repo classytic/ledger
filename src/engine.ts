@@ -33,7 +33,11 @@
 
 import { QueryParser, type QueryParserOptions } from '@classytic/mongokit';
 import type { Model } from 'mongoose';
+import type { LedgerBridges } from './bridges/index.js';
 import type { CountryPack } from './country/index.js';
+import { InProcessLedgerBus } from './events/in-process-bus.js';
+import type { OutboxStore } from './events/outbox-store.js';
+import type { EventTransport } from './events/transport.js';
 import { createModels, type LedgerModels } from './models/factory.js';
 import { Money } from './money.js';
 import { generateAgedBalance } from './reports/aged-balance.js';
@@ -59,6 +63,25 @@ export class AccountingEngine {
   readonly repositories: LedgerRepositories;
   readonly record: RecordAPI;
   readonly introspect: IntrospectAPI;
+  /**
+   * Event transport — structurally matches `@classytic/arc`'s `EventTransport`.
+   * When the host does not inject one, the engine instantiates
+   * `InProcessLedgerBus` (suitable for single-instance deployments only).
+   * Subscribe with glob patterns: `ledger:entry.*`, `ledger:reconciliation.*`, `*`.
+   */
+  readonly events: EventTransport;
+  /**
+   * Host-provided bridges. Empty object when none supplied. Callers should
+   * optional-chain every method (`engine.bridges.source?.resolve?.(...)`).
+   */
+  readonly bridges: LedgerBridges;
+  /**
+   * Host-provided outbox store for durable event delivery (0.9.0). When
+   * present, every domain event is persisted to the outbox in the same
+   * mongoose session as the ledger write before the transport publish.
+   * Undefined when the host opts out of durable delivery.
+   */
+  readonly outboxStore: OutboxStore | undefined;
 
   private _reports?: ReturnType<AccountingEngine['_buildReports']>;
 
@@ -74,6 +97,11 @@ export class AccountingEngine {
     this.country = config.country;
     this.currency = config.currency;
 
+    // Event transport + bridges + outbox — structurally arc-compatible.
+    this.events = config.eventTransport ?? new InProcessLedgerBus();
+    this.bridges = config.bridges ?? {};
+    this.outboxStore = config.outboxStore;
+
     // Eagerly build models + repositories (flow/promo pattern)
     this.models = createModels(config.mongoose, config);
     this.repositories = createRepositories(
@@ -81,7 +109,27 @@ export class AccountingEngine {
       config,
       config.plugins ?? {},
       config.pagination ?? {},
+      {
+        events: this.events,
+        bridges: this.bridges,
+        outboxStore: this.outboxStore,
+      },
     );
+
+    // 0.9.0: optional auto-sync of indexes so new partial/TTL indexes are
+    // present before the first write. Hosts running their own migration
+    // pipeline should leave this off.
+    if (config.syncIndexes) {
+      // Fire-and-forget — errors surface on the first index-dependent query.
+      void Promise.all([
+        this.models.Account.syncIndexes().catch(() => undefined),
+        this.models.JournalEntry.syncIndexes().catch(() => undefined),
+        this.models.FiscalPeriod.syncIndexes().catch(() => undefined),
+        this.models.Budget.syncIndexes().catch(() => undefined),
+        this.models.Reconciliation.syncIndexes().catch(() => undefined),
+        this.models.Journal.syncIndexes().catch(() => undefined),
+      ]);
+    }
 
     // Semantic APIs — primitives for AI agents and MCP tools
     this.record = buildRecordAPI({

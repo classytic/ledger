@@ -7,7 +7,10 @@
 
 import type { PaginationConfig, PluginType } from '@classytic/mongokit';
 import type { Connection } from 'mongoose';
+import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack } from '../country/index.js';
+import type { OutboxStore } from '../events/outbox-store.js';
+import type { EventTransport } from '../events/transport.js';
 import type { Logger } from '../utils/logger.js';
 
 // ─── Plugin & Pagination Wiring ──────────────────────────────────────────────
@@ -40,6 +43,22 @@ export interface MultiTenantConfig {
   orgField: string;
   /** Mongoose model name the org field references (e.g., 'Business', 'Organization') */
   orgRef: string;
+  /**
+   * Enable mongokit's `multiTenantPlugin` on every ledger repository. The plugin
+   * injects the tenant filter at POLICY priority (before cache/audit) whenever
+   * `ctx.organizationId` is present on a call. When `false` (default), only
+   * manual `orgField` filters inside domain verbs enforce scoping.
+   *
+   * Recommended: `true` for new hosts. Keep `false` if your app has not yet
+   * migrated to context-based scoping.
+   */
+  plugin?: boolean;
+  /**
+   * Fail closed when `ctx.organizationId` is missing on a plugin-scoped call.
+   * Only applies when `plugin: true`. Default: `false` (skip injection when
+   * context is empty — matches historical ledger behavior).
+   */
+  required?: boolean;
 }
 
 // ─── Schema Options ──────────────────────────────────────────────────────────
@@ -171,10 +190,68 @@ export interface AccountingEngineConfig {
   audit?: AuditConfig;
   /** Enable built-in idempotency key field on journal entries */
   idempotency?: boolean;
+  /**
+   * TTL in seconds for idempotency records — stale replay keys auto-expire
+   * via a partial TTL index so they don't collide with legitimate reuse
+   * after the window closes. Default: 86400 (24h). Matches Stripe / Saleor
+   * convention. Only applies when `idempotency: true`.
+   */
+  idempotencyTtlSeconds?: number;
+  /**
+   * Automatically call `Model.syncIndexes()` on every managed model right
+   * after the engine boots. Ensures new partial/TTL indexes (0.9.0+) are
+   * present in MongoDB before the first write. Default: `false` — hosts
+   * that run migrations themselves should leave this off.
+   */
+  syncIndexes?: boolean;
   /** Strictness rules for the ledger */
   strictness?: StrictnessConfig;
   /** Mongokit plugins to install per repository. */
   plugins?: LedgerRepositoryPlugins;
   /** Pagination caps per repository. */
   pagination?: LedgerPaginationConfig;
+  /**
+   * Mongoose type for the multi-tenant field on all ledger schemas.
+   *
+   * - `'string'` (default, back-compat): stores tenant IDs as strings.
+   *   Accepts any external auth system (UUIDs, slugs, external identifiers).
+   * - `'objectId'`: stores tenant IDs as native MongoDB ObjectId with a
+   *   Mongoose ref to the organization collection. Enables `$lookup` and
+   *   `.populate()` against Better Auth's `organization` collection.
+   *
+   * New hosts wiring Better Auth should pass `'objectId'`. See
+   * PACKAGE_RULES §9.1 and §9.2.
+   *
+   * Note: this field is plumbed into `multiTenantPlugin` when
+   * `multiTenant.plugin: true`. Schema-level type switching is applied
+   * by the models factory when it supports dynamic type declaration.
+   */
+  tenantFieldType?: 'objectId' | 'string';
+  /**
+   * Optional event transport — structurally identical to `@classytic/arc`'s
+   * `EventTransport`. Drop in any arc transport (Memory, Redis, Kafka, BullMQ)
+   * or provide a custom one. When omitted, the engine uses an in-process bus
+   * (`InProcessLedgerBus`) that is NOT suitable for multi-instance deployments.
+   */
+  eventTransport?: EventTransport;
+  /**
+   * Optional host-owned outbox store — structurally identical to
+   * `@classytic/arc`'s `OutboxStore`. When provided, domain events are
+   * persisted via `outbox.save(event, { session })` inside the same
+   * mongoose session as the ledger write, giving at-least-once delivery
+   * guarantees. A host-side relay worker calls `store.claimPending` +
+   * `transport.publish` + `store.acknowledge` independently.
+   *
+   * Package-owned durable outbox storage is an anti-pattern per
+   * PACKAGE_RULES §5.5. Ledger does NOT ship a concrete store — the
+   * host picks `MongoOutboxStore` (arc), a SQL store, a Redis store,
+   * etc. See `src/events/outbox-store.ts` for the interface contract.
+   */
+  outboxStore?: OutboxStore;
+  /**
+   * Host-provided bridges for external integrations (source resolution,
+   * notifications). All bridges and all methods are optional — features
+   * degrade gracefully when a bridge is missing.
+   */
+  bridges?: LedgerBridges;
 }

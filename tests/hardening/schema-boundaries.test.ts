@@ -88,6 +88,10 @@ beforeEach(async () => {
   for (const key in mongoose.connection.collections) {
     await mongoose.connection.collections[key].deleteMany({});
   }
+  // 0.9.0: drop the atomic reference counter between tests so sequences
+  // restart at 1. The counters collection is not mongoose-managed (it's
+  // a raw db.collection) so it's not in connection.collections.
+  await mongoose.connection.db?.collection('_mongokit_counters').deleteMany({});
 });
 
 async function createAccounts() {

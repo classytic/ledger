@@ -19,9 +19,14 @@ function setup(
   doc: Record<string, unknown> | null = null,
   opts: { orgField?: string; strictness?: StrictnessConfig } = {},
 ) {
+  // 0.9.0: capture the original create spy before wireJournalEntryMethods
+  // installs its race-safe wrapper. Tests that assert on `create` call
+  // arguments should use `createSpy` directly instead of `repo.create`,
+  // because the wrapper's `.mock` is not the original spy.
+  const createSpy = vi.fn().mockResolvedValue({ _id: 'reversal-1' });
   const repo: Record<string, unknown> = {
     getByQuery: vi.fn().mockResolvedValue(doc),
-    create: vi.fn().mockResolvedValue({ _id: 'reversal-1' }),
+    create: createSpy,
     // post/unpost/archive now route their state mutations through update() so
     // the plugin pipeline fires. The mock echoes back the patched doc so the
     // assertions on the returned entry continue to work.
@@ -34,7 +39,7 @@ function setup(
       .mockImplementation(async (cb: (session: unknown) => Promise<unknown>) => cb(null)),
   };
   wireJournalEntryMethods(repo as any, {} as any, opts.orgField, opts.strictness);
-  return { repo };
+  return { repo, createSpy };
 }
 
 // ── post() ────────────────────────────────────────────────────────────────
@@ -317,14 +322,14 @@ describe('wireJournalEntryMethods — reverse()', () => {
         { account: { _id: 'a2' }, debit: 0, credit: 1000, label: 'Revenue' },
       ],
     });
-    const { repo } = setup(entry);
+    const { repo, createSpy } = setup(entry);
 
     const result = await (repo.reverse as Function)('entry-1');
     expect(result.original.reversed).toBe(true);
     expect(result.original.reversedBy).toBe('reversal-1');
 
     // Verify create was called with swapped amounts
-    const createCall = (repo.create as any).mock.calls[0][0];
+    const createCall = (createSpy as any).mock.calls[0][0];
     expect(createCall.journalItems[0].debit).toBe(0); // was credit: 0 → debit: 0
     expect(createCall.journalItems[0].credit).toBe(1000); // was debit: 1000 → credit: 1000
     expect(createCall.journalItems[1].debit).toBe(1000); // was credit: 1000 → debit: 1000
@@ -342,11 +347,11 @@ describe('wireJournalEntryMethods — reverse()', () => {
         { account: { _id: 'a2' }, debit: 0, credit: 500 },
       ],
     });
-    const { repo } = setup(entry);
+    const { repo, createSpy } = setup(entry);
 
     await (repo.reverse as Function)('entry-1', undefined, { actorId: 'user-99' });
 
-    const createCall = (repo.create as any).mock.calls[0][0];
+    const createCall = (createSpy as any).mock.calls[0][0];
     expect(createCall.postedBy).toBe('user-99');
 
     // The reverse-mark step now routes through repository.update() — assert
@@ -372,11 +377,11 @@ describe('wireJournalEntryMethods — reverse()', () => {
         { account: { _id: 'a2' }, debit: 0, credit: 1000, departmentId: 'dept-2' },
       ],
     });
-    const { repo } = setup(entry);
+    const { repo, createSpy } = setup(entry);
 
     await (repo.reverse as Function)('entry-1');
 
-    const createCall = (repo.create as any).mock.calls[0][0];
+    const createCall = (createSpy as any).mock.calls[0][0];
     expect(createCall.journalItems[0].departmentId).toBe('dept-1');
     expect(createCall.journalItems[0].projectId).toBe('proj-1');
     expect(createCall.journalItems[1].departmentId).toBe('dept-2');
@@ -401,11 +406,11 @@ describe('wireJournalEntryMethods — duplicate()', () => {
         { account: { _id: 'a2' }, debit: 0, credit: 1000, label: 'line 2' },
       ],
     });
-    const { repo } = setup(entry);
+    const { repo, createSpy } = setup(entry);
 
     await (repo.duplicate as Function)('entry-1');
 
-    const createCall = (repo.create as any).mock.calls[0][0];
+    const createCall = (createSpy as any).mock.calls[0][0];
     expect(createCall.state).toBe('draft');
     expect(createCall.label).toBe('Copy of Original Entry');
     expect(createCall.journalType).toBe('SALE');

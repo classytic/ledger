@@ -14,10 +14,45 @@
  */
 
 import type { Repository } from '@classytic/mongokit';
+import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack, JournalTemplate } from '../country/index.js';
+import { LEDGER_EVENTS } from '../events/event-constants.js';
+import { createEvent } from '../events/helpers.js';
+import type { OutboxStore } from '../events/outbox-store.js';
+import type { EventTransport } from '../events/transport.js';
 import type { JournalRepository, SeedResult } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+
+export interface JournalIntegrations {
+  events?: EventTransport;
+  bridges?: LedgerBridges;
+  outboxStore?: OutboxStore;
+}
+
+async function safePublish(
+  events: EventTransport | undefined,
+  outboxStore: OutboxStore | undefined,
+  type: string,
+  payload: unknown,
+  ctx?: { organizationId?: unknown },
+): Promise<void> {
+  const event = createEvent(type, payload, ctx);
+  if (outboxStore) {
+    try {
+      await outboxStore.save(event);
+    } catch {
+      /* outbox failures must not break mutations */
+    }
+  }
+  if (events) {
+    try {
+      await events.publish(event);
+    } catch {
+      /* transport failures must not break mutations */
+    }
+  }
+}
 
 /**
  * Lean default set used when a country pack doesn't provide
@@ -47,9 +82,12 @@ export function wireJournalMethods<TDoc = Record<string, unknown>>(
   repository: Repository<TDoc>,
   country: CountryPack,
   orgField?: string,
+  integrations: JournalIntegrations = {},
 ): JournalRepository<TDoc> {
   const create = repository.create.bind(repository);
   const exists = repository.exists.bind(repository);
+  const events = integrations.events;
+  const outboxStore = integrations.outboxStore;
 
   repository.seedDefaults = async (orgId: unknown): Promise<SeedResult> => {
     requireOrgScope(orgField, orgId);
@@ -82,6 +120,14 @@ export function wireJournalMethods<TDoc = Record<string, unknown>>(
       await create(data as Parameters<typeof create>[0]);
       created += 1;
     }
+
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.JOURNAL_SEEDED,
+      { created, skipped, organizationId: orgId },
+      { organizationId: orgId },
+    );
 
     return { created, skipped };
   };
