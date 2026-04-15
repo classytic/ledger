@@ -43,7 +43,7 @@ describe('idempotencyPlugin', () => {
     await expect(repo._emitHook('before:create', { data })).resolves.toBeUndefined();
   });
 
-  it('throws 409 conflict when a duplicate idempotency key exists', async () => {
+  it('throws IdempotencyConflictError when a duplicate idempotency key exists (0.9)', async () => {
     const repo = createMockRepository();
     const existingEntry = { _id: 'existing-entry-id' };
     idempotencyPlugin({
@@ -51,12 +51,16 @@ describe('idempotencyPlugin', () => {
     }).apply(repo);
 
     const data = { idempotencyKey: 'duplicate-key' };
+    // 0.9.0: the plugin throws a typed `IdempotencyConflictError` so the
+    // repository's race-safe `create` wrapper can re-read the winner.
+    // The message references the key; callers should `instanceof`-check,
+    // not parse message strings.
     await expect(repo._emitHook('before:create', { data })).rejects.toThrow(
-      'Duplicate idempotency key: "duplicate-key"',
+      /duplicate-key/,
     );
   });
 
-  it('throws error with status 409 and CONFLICT code', async () => {
+  it('thrown error has status=409 and code=IDEMPOTENCY_CONFLICT (0.9)', async () => {
     const repo = createMockRepository();
     const existingEntry = { _id: 'abc123' };
     idempotencyPlugin({
@@ -69,8 +73,11 @@ describe('idempotencyPlugin', () => {
       expect.unreachable('Should have thrown');
     } catch (err: any) {
       expect(err.status).toBe(409);
-      expect(err.code).toBe('CONFLICT');
-      expect(err.message).toContain('abc123');
+      // 0.9.0: renamed from 'CONFLICT' to the more specific code so
+      // consumers can distinguish idempotency conflicts from other 409s.
+      expect(err.code).toBe('IDEMPOTENCY_CONFLICT');
+      expect(err.name).toBe('IdempotencyConflictError');
+      expect(err.existingId).toBe('abc123');
     }
   });
 

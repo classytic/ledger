@@ -23,9 +23,44 @@
 
 import type { Repository, RepositoryInstance } from '@classytic/mongokit';
 import type { ClientSession, Model } from 'mongoose';
+import type { LedgerBridges } from '../bridges/index.js';
+import { LEDGER_EVENTS } from '../events/event-constants.js';
+import { createEvent } from '../events/helpers.js';
+import type { OutboxStore } from '../events/outbox-store.js';
+import type { EventTransport } from '../events/transport.js';
 import type { MatchInput, OpenItem, ReconciliationRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+
+export interface ReconciliationIntegrations {
+  events?: EventTransport;
+  bridges?: LedgerBridges;
+  outboxStore?: OutboxStore;
+}
+
+async function safePublish(
+  events: EventTransport | undefined,
+  outboxStore: OutboxStore | undefined,
+  type: string,
+  payload: unknown,
+  ctx?: { organizationId?: unknown; session?: ClientSession | null },
+): Promise<void> {
+  const event = createEvent(type, payload, ctx);
+  if (outboxStore) {
+    try {
+      await outboxStore.save(event, { session: ctx?.session ?? undefined });
+    } catch {
+      /* outbox failures must not break mutations */
+    }
+  }
+  if (events) {
+    try {
+      await events.publish(event);
+    } catch {
+      /* transport failures must not break mutations */
+    }
+  }
+}
 
 // ─── Hook context types (exported for plugin consumers) ─────────────────────
 
@@ -144,10 +179,14 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
   ReconciliationModel: Model<unknown>,
   JournalEntryModel: Model<unknown>,
   orgField?: string,
+  integrations: ReconciliationIntegrations = {},
 ): ReconciliationRepository<TDoc> {
   const create = repository.create.bind(repository);
   const deleteById = repository.delete.bind(repository);
   const repoInstance = repository as unknown as RepositoryInstance;
+  const events = integrations.events;
+  const outboxStore = integrations.outboxStore;
+  const notification = integrations.bridges?.notification;
 
   // mongokit 3.5.6+ exposes emitAsync() on RepositoryInstance for custom hooks.
   // Used by match() and unmatch() to fire lifecycle events that plugins
@@ -320,6 +359,42 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
       reconciliation: record,
     });
 
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.RECONCILIATION_MATCHED,
+      {
+        matchingNumber,
+        account,
+        itemCount: itemSnapshots.length,
+        debitTotal,
+        creditTotal,
+        isFullReconcile,
+        currency: sharedCurrency,
+        organizationId,
+      },
+      { organizationId, session },
+    );
+
+    // Fire notification bridge for unbalanced matches (FX gain/loss, etc.)
+    if (!isFullReconcile && notification?.onReconciliationMismatch) {
+      try {
+        await notification.onReconciliationMismatch(
+          {
+            matchingNumber,
+            account,
+            debitTotal,
+            creditTotal,
+            difference,
+            currency: sharedCurrency,
+          },
+          { organizationId },
+        );
+      } catch {
+        /* bridge failures must not break matching */
+      }
+    }
+
     return record;
   };
 
@@ -375,6 +450,14 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
 
     // ── Fire after:unmatch hook ──────────────────────────────────────
     await emitHook('after:unmatch', unmatchCtx);
+
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.RECONCILIATION_UNMATCHED,
+      { matchingNumber, itemCount: items.length, organizationId },
+      { organizationId, session },
+    );
 
     return result;
   };

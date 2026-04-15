@@ -10,6 +10,7 @@
  * - Optimized indexes for high-load reporting
  */
 
+import { getNextSequence } from '@classytic/mongokit';
 import mongoose from 'mongoose';
 import { _freezeJournalTypes, getJournalTypeCodes, JOURNAL_CODES } from '../constants/journals.js';
 import type { AccountingEngineConfig, JournalSchemaOptions } from '../types/engine.js';
@@ -198,7 +199,15 @@ export function createJournalEntrySchema(
 
   // ── Schema ───────────────────────────────────────────────────────────────
 
-  const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, { timestamps: true });
+  const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, {
+    timestamps: true,
+    // 0.9.0: optimistic concurrency guard — every `save()` includes `__v` in
+    // the filter and bumps it atomically. Concurrent writers lose with a
+    // Mongoose `VersionError`, which the repository layer translates to a
+    // typed `ConcurrencyError`. Prevents draft→posted / posted→draft state
+    // bounce under contention.
+    optimisticConcurrency: true,
+  });
 
   // ── Pre-validate: double-entry enforcement ───────────────────────────────
 
@@ -253,58 +262,20 @@ export function createJournalEntrySchema(
   // ── Pre-save: auto-generate reference number ─────────────────────────────
 
   if (autoReference) {
-    // Helper: compute next reference number from DB
-    // Uses aggregation pipeline to extract & sort the numeric suffix,
-    // avoiding lexicographic sort issues beyond sequence 9999.
-    const generateReferenceNumber = async (
-      doc: Record<string, unknown>,
-      Model: mongoose.Model<unknown>,
-      session: unknown,
-    ) => {
-      const jt = (doc.journalType as string) || 'MISC';
-      const d = new Date(doc.date as string | number | Date);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const prefix = `${jt}/${year}/${month}/`;
-
-      // Build match filter
-      const matchFilter: Record<string, unknown> = {
-        referenceNumber: { $regex: `^${prefix.replace(/\//g, '\\/')}` },
-      };
-
-      // Add org field to query for multi-tenant
-      if (multiTenant) {
-        matchFilter[multiTenant.orgField] = doc[multiTenant.orgField];
-      }
-
-      // Extract numeric suffix via $split and sort numerically
-      const pipeline: mongoose.PipelineStage[] = [
-        { $match: matchFilter },
-        {
-          $addFields: {
-            _refSeq: {
-              $toInt: {
-                $arrayElemAt: [{ $split: ['$referenceNumber', '/'] }, -1],
-              },
-            },
-          },
-        },
-        { $sort: { _refSeq: -1 as const } },
-        { $limit: 1 },
-        { $project: { _refSeq: 1 } },
-      ];
-
-      const results = await Model.aggregate(pipeline).session(
-        session as mongoose.mongo.ClientSession | null,
-      );
-
-      let seq = 1;
-      if (results.length > 0 && typeof results[0]._refSeq === 'number') {
-        seq = results[0]._refSeq + 1;
-      }
-
-      return `${prefix}${String(seq).padStart(4, '0')}`;
-    };
+    // ─── Atomic reference allocator (0.9.0) ──────────────────────────────
+    //
+    // Replaces the pre-0.9 `aggregate({ $max }) + retry-on-11000` pattern
+    // that caused duplicate `referenceNumber` allocation under concurrent
+    // post (see the 5-concurrent-posts peer-review test).
+    //
+    // Delegates to `@classytic/mongokit`'s `getNextSequence(counterKey, 1,
+    // connection, session)` which uses `findOneAndUpdate($inc, upsert,
+    // returnDocument:'after')` on `_mongokit_counters`. Session-aware —
+    // counter bumps commit atomically with caller transactions (requires
+    // mongokit >=3.6.2 for the `session` parameter).
+    //
+    // Same counter collection (`_mongokit_counters`) as @classytic/invoice,
+    // order, cart, revenue — one shared store across the monorepo.
 
     interface JournalSaveDoc {
       referenceNumber?: string;
@@ -317,6 +288,8 @@ export function createJournalEntrySchema(
     }
 
     schema.pre('save', async function (this: mongoose.Document & JournalSaveDoc) {
+      // Changing the journal type invalidates the existing reference — the
+      // new type needs its own partition and sequence. Clear + regenerate.
       if (this.isModified('journalType')) {
         this.referenceNumber = undefined;
       }
@@ -324,55 +297,48 @@ export function createJournalEntrySchema(
       if (!this.referenceNumber) {
         const session = this.$session?.() ?? null;
         const Model = this.constructor as mongoose.Model<unknown>;
-        this.referenceNumber = await generateReferenceNumber(this, Model, session);
+        const connection = Model.db;
+        const journalType = (this.journalType as string) || 'MISC';
+        const date = this.date
+          ? new Date(this.date as unknown as string | number | Date)
+          : new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+
+        // Multi-tenant partition — include org scope so sequences are per-tenant.
+        // Use `.get()` so Mongoose returns the cast value (not the raw input).
+        let orgScope = 'global';
+        if (multiTenant) {
+          const raw = (this as mongoose.Document).get(multiTenant.orgField);
+          if (raw != null) {
+            orgScope =
+              typeof (raw as { toHexString?: () => string }).toHexString === 'function'
+                ? (raw as { toHexString: () => string }).toHexString()
+                : String(raw);
+          } else {
+            orgScope = 'unscoped';
+          }
+        }
+
+        // Counter key matches the format mongokit's `dateSequentialId`
+        // generator produces for `partition: 'monthly'`, with an extra
+        // `ledger:{orgScope}:` prefix for tenant isolation.
+        const counterKey = `ledger:${orgScope}:${journalType}:${year}-${month}`;
+        const seq = await getNextSequence(counterKey, 1, connection, session ?? undefined);
+        this.referenceNumber = `${journalType}/${year}/${month}/${String(seq).padStart(4, '0')}`;
       }
     });
 
-    interface MongoError extends Error {
-      code?: number;
-      keyPattern?: Record<string, unknown>;
-    }
-
-    interface RetryDoc {
-      __refRetries?: number;
-      referenceNumber?: string;
-      $session?(): mongoose.mongo.ClientSession | null;
-      constructor: mongoose.Model<unknown>;
-      save(options?: { session?: mongoose.mongo.ClientSession | null }): Promise<unknown>;
-      [key: string]: unknown;
-    }
-
-    // Retry on duplicate key error (race condition between concurrent inserts)
-    const MAX_REF_RETRIES = 3;
-    schema.post('save', async (error: Error, doc: unknown, next: (err?: Error) => void) => {
-      const mongoError = error as MongoError;
-      // 11000 = MongoDB duplicate key error
-      if (mongoError.code === 11000 && mongoError.keyPattern?.referenceNumber) {
-        const entry = doc as RetryDoc;
-        const retryCount: number = entry.__refRetries ?? 0;
-        if (retryCount >= MAX_REF_RETRIES) {
-          next(
-            new Error(
-              `Failed to generate unique reference number after ${MAX_REF_RETRIES} retries. ` +
-                'Too many concurrent inserts for this period.',
-            ),
-          );
-          return;
-        }
-        entry.__refRetries = retryCount + 1;
-        const session = entry.$session?.() ?? null;
-        const Model = entry.constructor as mongoose.Model<unknown>;
-        entry.referenceNumber = await generateReferenceNumber(entry, Model, session);
-        try {
-          await entry.save({ session });
-          next();
-        } catch (retryError) {
-          next(retryError as Error);
-        }
-      } else {
-        next(error);
-      }
-    });
+    // ─── Legacy retry path removed (0.9.0) ──────────────────────────────
+    //
+    // Before 0.9 a `post('save')` error handler caught dup-key errors on
+    // `referenceNumber` and retried with a fresh aggregate. That allocator
+    // was race-prone; 0.9 replaces it with the atomic counter above. Raw
+    // E11000 now propagates up to mongokit's `parseDuplicateKeyError`, which
+    // wraps it as a 409 error. The repository layer's `raceSafeCreate`
+    // catches that and rethrows a typed `DuplicateReferenceError` with the
+    // offending reference string, so consumers get an `instanceof`-friendly
+    // error without parsing driver internals.
   }
 
   // ── Indexes ──────────────────────────────────────────────────────────────
@@ -420,8 +386,25 @@ export function createJournalEntrySchema(
       idempotencyIdx.idempotencyKey = 1;
       schema.index(idempotencyIdx, {
         unique: true,
-        partialFilterExpression: { idempotencyKey: { $exists: true, $ne: null } },
+        partialFilterExpression: { idempotencyKey: { $type: 'string' } },
       });
+
+      // TTL index — auto-expire old idempotency rows so stale replay keys
+      // don't collide forever. Scoped to rows that carry an idempotencyKey
+      // so normal journal entries are never TTL'd. Default: 24h (Stripe /
+      // Saleor convention). Override via `config.idempotencyTtlSeconds`.
+      const ttlSeconds =
+        typeof config.idempotencyTtlSeconds === 'number' && config.idempotencyTtlSeconds > 0
+          ? config.idempotencyTtlSeconds
+          : 86_400;
+      schema.index(
+        { createdAt: 1 },
+        {
+          name: 'idempotency_ttl_idx',
+          expireAfterSeconds: ttlSeconds,
+          partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+        },
+      );
     }
   }
 

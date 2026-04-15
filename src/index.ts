@@ -25,6 +25,73 @@
  * @license MIT
  */
 
+// ── Events (§11-14) ────────────────────────────────────────────────────────
+
+export type { LedgerEventName } from './events/event-constants.js';
+export { LEDGER_EVENTS } from './events/event-constants.js';
+export type {
+  AccountBulkCreatedPayload,
+  AccountSeededPayload,
+  EntryArchivedPayload,
+  EntryCreatedPayload,
+  EntryDuplicatedPayload,
+  EntryPostedPayload,
+  EntryReversedPayload,
+  EntryUnpostedPayload,
+  JournalSeededPayload,
+  ReconciliationMatchedPayload,
+  ReconciliationUnmatchedPayload,
+} from './events/event-payloads.js';
+export type { EventContext } from './events/helpers.js';
+export { createEvent } from './events/helpers.js';
+export type { InProcessLedgerBusOptions } from './events/in-process-bus.js';
+export { InProcessLedgerBus } from './events/in-process-bus.js';
+export type {
+  OutboxAcknowledgeOptions,
+  OutboxClaimOptions,
+  OutboxErrorInfo,
+  OutboxFailOptions,
+  OutboxStore,
+  OutboxWriteOptions,
+} from './events/outbox-store.js';
+export { OutboxOwnershipError } from './events/outbox-store.js';
+export type {
+  DomainEvent,
+  EventHandler,
+  EventLogger,
+  EventTransport,
+  PublishManyResult,
+} from './events/transport.js';
+
+// ── Hardening primitives (0.9.0) ───────────────────────────────────────────
+
+export type { ImmutableGuardOptions } from './plugins/immutable-guard.plugin.js';
+export { immutableGuardPlugin } from './plugins/immutable-guard.plugin.js';
+export type { FieldError } from './utils/errors.js';
+export {
+  AccountingError,
+  ConcurrencyError,
+  classifyDuplicateKey,
+  DuplicateReferenceError,
+  Errors,
+  IdempotencyConflictError,
+  ImmutableViolationError,
+} from './utils/errors.js';
+
+// ── Bridges (§7, §23) ──────────────────────────────────────────────────────
+
+export type {
+  EntryReversedNotification,
+  LedgerBridges,
+  NotificationBridge,
+  NotificationBridgeContext,
+  PeriodLockedNotification,
+  ReconciliationMismatchNotification,
+  SourceBridge,
+  SourceBridgeContext,
+  SourceRef,
+} from './bridges/index.js';
+
 // ── Engine ─────────────────────────────────────────────────────────────────
 
 export { AccountingEngine, createAccountingEngine } from './engine.js';
@@ -217,8 +284,6 @@ export {
 } from './utils/date-range.js';
 export type { DimensionDefinition } from './utils/dimensions.js';
 export { buildDimensionFields, buildDimensionIndexes } from './utils/dimensions.js';
-export type { FieldError } from './utils/errors.js';
-export { AccountingError, Errors } from './utils/errors.js';
 export { buildItemFilters } from './utils/filter-builder.js';
 export type { Logger } from './utils/logger.js';
 export { defaultLogger } from './utils/logger.js';

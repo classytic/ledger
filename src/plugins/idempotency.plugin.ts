@@ -7,7 +7,7 @@
 
 import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
 import type { ClientSession, Model } from 'mongoose';
-import { Errors } from '../utils/errors.js';
+import { Errors, IdempotencyConflictError } from '../utils/errors.js';
 
 export interface IdempotencyPluginOptions {
   /** Mongoose model for journal entries */
@@ -39,9 +39,12 @@ export function idempotencyPlugin(options: IdempotencyPluginOptions) {
           .lean()) as Record<string, unknown> | null;
 
         if (existing) {
-          throw Errors.conflict(
-            `Duplicate idempotency key: "${data.idempotencyKey}". Existing entry: ${existing._id}`,
-          );
+          // 0.9.0: throw a typed error that the repository's race-safe
+          // `create()` wrapper catches and re-reads the winner, so concurrent
+          // losers never see a raw dup-key error. Pre-0.9 callers that
+          // bypass the wrapper still get an AccountingError subclass with
+          // `code: 'IDEMPOTENCY_CONFLICT'` they can type-check.
+          throw new IdempotencyConflictError(data.idempotencyKey as string, existing._id);
         }
       });
 

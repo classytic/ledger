@@ -11,14 +11,79 @@
 
 import type { Repository, UpdateOptions } from '@classytic/mongokit';
 import type { ClientSession, Types } from 'mongoose';
+import type { LedgerBridges } from '../bridges/index.js';
+import { LEDGER_EVENTS } from '../events/event-constants.js';
+import { createEvent } from '../events/helpers.js';
+import type { OutboxStore } from '../events/outbox-store.js';
+import type { DomainEvent, EventTransport } from '../events/transport.js';
 import type { StrictnessConfig } from '../types/engine.js';
 // Side-effect import: activates the `_ledgerInternal` typing on
 // RepositoryContext/SessionOptions so the calls below are fully type-safe.
 import type { LedgerInternalOp } from '../types/mongokit-augmentation.js';
 import '../types/mongokit-augmentation.js';
 import type { JournalEntryRepository } from '../types/repositories.js';
-import { Errors } from '../utils/errors.js';
+import {
+  classifyDuplicateKey,
+  DuplicateReferenceError,
+  Errors,
+  IdempotencyConflictError,
+} from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+
+export interface JournalEntryIntegrations {
+  events?: EventTransport;
+  bridges?: LedgerBridges;
+  /**
+   * Host-owned outbox store (0.9.0). When present, domain events are
+   * persisted to the outbox inside the same mongoose session as the write
+   * BEFORE being published to the transport. This gives at-least-once
+   * delivery because the host-side relay can re-read pending outbox rows
+   * if the transport is down or the process crashes.
+   */
+  outboxStore?: OutboxStore;
+}
+
+/**
+ * Publish a domain event. When an outbox store is provided, first persist
+ * the event inside the caller's session (so outbox + ledger write commit
+ * atomically), then fire-and-forget publish to the transport. Without an
+ * outbox, publish-only, still fire-and-forget — transport errors never
+ * propagate into ledger mutations.
+ *
+ * Tracks PACKAGE_RULES §16 (host-composed transactional outbox) and §14
+ * (domain verbs publish via injected transport).
+ */
+async function safePublish(
+  events: EventTransport | undefined,
+  outboxStore: OutboxStore | undefined,
+  type: string,
+  payload: unknown,
+  ctx?: { actorId?: unknown; organizationId?: unknown; session?: ClientSession | null },
+  meta?: { resource?: string; resourceId?: string },
+): Promise<void> {
+  const event: DomainEvent = createEvent(type, payload, ctx, meta);
+
+  // 1. Outbox write (atomic with host's session, if provided).
+  if (outboxStore) {
+    try {
+      await outboxStore.save(event, { session: ctx?.session ?? undefined });
+    } catch {
+      // Outbox failures during write-path publish must not break the
+      // ledger write. Host-side relay workers catch anything missed here
+      // via the retry-on-pending path, as long as the previous call to
+      // the ledger repo wrote its outbox row successfully.
+    }
+  }
+
+  // 2. Transport publish (fire-and-forget).
+  if (events) {
+    try {
+      await events.publish(event);
+    } catch {
+      // Transport failures must not propagate into ledger mutations.
+    }
+  }
+}
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
 
@@ -104,12 +169,126 @@ export function wireJournalEntryMethods<TDoc = unknown>(
   _JournalEntryModel: unknown,
   orgField?: string,
   strictness?: StrictnessConfig,
+  integrations: JournalEntryIntegrations = {},
 ): JournalEntryRepository<TDoc> {
+  const events = integrations.events;
+  const outboxStore = integrations.outboxStore;
   // Bind mongokit Repository methods — retain `this` context when called standalone.
   const getByQuery = repository.getByQuery.bind(repository);
-  const create = repository.create.bind(repository);
+  const baseCreate = repository.create.bind(repository);
   const update = repository.update.bind(repository);
   const withTransaction = repository.withTransaction.bind(repository);
+
+  // ─── Race-safe create (0.9.0) ─────────────────────────────────────────
+  //
+  // Wraps mongokit's `create` with:
+  //
+  //   1. Fast-path idempotency pre-check (revenue pattern) — if the
+  //      caller supplies `idempotencyKey` and the entry already exists,
+  //      return it without a second write.
+  //
+  //   2. Race-safe insert with typed dup-key recovery (cart pattern) —
+  //      if the unique `idempotencyKey` index fires on insert, re-read
+  //      the winner and return it. Concurrent losers never see a raw
+  //      `MongoServerError(11000)`.
+  //
+  //   3. Typed `DuplicateReferenceError` wrapping — in the unlikely event
+  //      the `referenceNumber` unique index fires (should be impossible
+  //      with the atomic counter in 0.9.0, but migrated rows from pre-0.9
+  //      could collide), callers get a typed error instead of sniffing
+  //      `err.code === 11000`.
+  //
+  //   4. Other dup-key errors bubble as `Errors.conflict` with the index
+  //      name, so callers can pattern-match by index without parsing
+  //      driver error messages.
+  //
+  // Consumers of `Repository<TDoc>` keep the same signature — this is a
+  // drop-in replacement. See `tests/e2e/race-safe-create-0.9.test.ts`.
+  const raceSafeCreate: typeof baseCreate = async (data, options) => {
+    const input = data as unknown as Record<string, unknown>;
+    const idempotencyKey =
+      typeof input.idempotencyKey === 'string' && input.idempotencyKey.length > 0
+        ? input.idempotencyKey
+        : undefined;
+    const orgValue = orgField ? input[orgField] : undefined;
+
+    // 1. Fast-path: caller supplied an idempotency key that already exists.
+    if (idempotencyKey) {
+      const prequery: Record<string, unknown> = { idempotencyKey };
+      if (orgField && orgValue != null) prequery[orgField] = orgValue;
+      const existing = await getByQuery(
+        prequery as never,
+        {
+          lean: false,
+          throwOnNotFound: false,
+          ...(options?.session ? { session: options.session } : {}),
+        } as never,
+      );
+      if (existing) {
+        return existing as never;
+      }
+    }
+
+    // 2. Attempt the write.
+    try {
+      return await baseCreate(data, options);
+    } catch (err) {
+      // 2a. idempotencyPlugin hook threw a typed conflict — re-read winner.
+      if (err instanceof IdempotencyConflictError && err.existingId) {
+        const winner = await getByQuery(
+          { _id: err.existingId } as never,
+          {
+            lean: false,
+            throwOnNotFound: false,
+            ...(options?.session ? { session: options.session } : {}),
+          } as never,
+        );
+        if (winner) {
+          return winner as never;
+        }
+        throw err;
+      }
+
+      const dup = classifyDuplicateKey(err);
+      if (!dup) throw err;
+
+      // 2a. referenceNumber collision — atomic counter should make this
+      // impossible, but pre-0.9 data might exist.
+      if (dup.keyPattern?.referenceNumber) {
+        const refNum = String(input.referenceNumber ?? '');
+        throw new DuplicateReferenceError(refNum);
+      }
+
+      // 2b. idempotencyKey collision — re-read the winner.
+      if (dup.keyPattern?.idempotencyKey && idempotencyKey) {
+        const winnerQuery: Record<string, unknown> = { idempotencyKey };
+        if (orgField && orgValue != null) winnerQuery[orgField] = orgValue;
+        const winner = await getByQuery(
+          winnerQuery as never,
+          {
+            lean: false,
+            throwOnNotFound: false,
+            ...(options?.session ? { session: options.session } : {}),
+          } as never,
+        );
+        if (winner) {
+          return winner as never;
+        }
+        // Winner vanished between the conflict and the re-read (TTL expiry,
+        // manual delete). Surface as a typed error instead of returning null.
+        throw new IdempotencyConflictError(idempotencyKey, null);
+      }
+
+      // 2c. Other unique index fired — surface the index name.
+      throw Errors.conflict(`Journal entry write violated unique index ${dup.indexName}.`);
+    }
+  };
+
+  // Swap the raw base create for the race-safe version on the repository
+  // instance so every consumer (tests, hosts, wireJournalEntryMethods
+  // callers) picks it up transparently.
+  repository.create = raceSafeCreate.bind(repository) as typeof repository.create;
+  const create = raceSafeCreate;
 
   // Top-level fields owned by reverse()/duplicate() — copy everything else from
   // the source entry so consumer-defined extraFields (departmentId, projectId,
@@ -323,8 +502,25 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       ...(options.session ? { session: options.session } : {}),
     };
     const updated = (await update(entry._id, patch, updateOptions)) as JournalEntryDoc | null;
+    const final = updated ?? entry;
 
-    return updated ?? entry;
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.ENTRY_POSTED,
+      {
+        entryId: final._id,
+        referenceNumber: final.referenceNumber,
+        postedBy: options.actorId,
+        totalDebit,
+        totalCredit,
+        organizationId: orgId,
+      },
+      { actorId: options.actorId, organizationId: orgId, session: options.session ?? null },
+      { resource: 'journal-entry', resourceId: String(final._id) },
+    );
+
+    return final;
   };
 
   // ── unpost() ────────────────────────────────────────────────────────────
@@ -374,8 +570,18 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       { state: 'draft', stateChangedAt: new Date() },
       updateOptions,
     )) as JournalEntryDoc | null;
+    const final = updated ?? entry;
 
-    return updated ?? entry;
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.ENTRY_UNPOSTED,
+      { entryId: final._id, unpostedBy: options.actorId, organizationId: orgId },
+      { actorId: options.actorId, organizationId: orgId, session: options.session ?? null },
+      { resource: 'journal-entry', resourceId: String(final._id) },
+    );
+
+    return final;
   };
 
   // ── archive() ───────────────────────────────────────────────────────────
@@ -410,8 +616,18 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       { state: 'archived', stateChangedAt: new Date() },
       updateOptions,
     )) as JournalEntryDoc | null;
+    const final = updated ?? entry;
 
-    return updated ?? entry;
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.ENTRY_ARCHIVED,
+      { entryId: final._id, archivedBy: options.actorId, organizationId: orgId },
+      { actorId: options.actorId, organizationId: orgId, session: options.session ?? null },
+      { resource: 'journal-entry', resourceId: String(final._id) },
+    );
+
+    return final;
   };
 
   // ── duplicate() ─────────────────────────────────────────────────────────
@@ -468,6 +684,21 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       duplicateData,
       options.session ? { session: options.session } : {},
     );
+    const dup = duplicated as unknown as JournalEntryDoc;
+
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.ENTRY_DUPLICATED,
+      {
+        sourceEntryId: entry._id,
+        duplicateEntryId: dup._id,
+        organizationId: orgId,
+      },
+      { actorId: undefined, organizationId: orgId, session: options.session ?? null },
+      { resource: 'journal-entry', resourceId: String(dup._id) },
+    );
+
     return duplicated;
   };
 
@@ -582,8 +813,24 @@ export function wireJournalEntryMethods<TDoc = unknown>(
         ...(session ? { session } : {}),
       };
       const marked = (await update(entry._id, markPatch, markOptions)) as JournalEntryDoc | null;
+      const original = marked ?? entry;
 
-      return { original: marked ?? entry, reversal: reversalEntry };
+      await safePublish(
+        events,
+        outboxStore,
+        LEDGER_EVENTS.ENTRY_REVERSED,
+        {
+          originalEntryId: original._id,
+          reversalEntryId: reversalEntry._id,
+          reversalDate: (reversalData.date as Date) ?? new Date(),
+          reversedBy: options.actorId,
+          organizationId: orgId,
+        },
+        { actorId: options.actorId, organizationId: orgId, session: session ?? null },
+        { resource: 'journal-entry', resourceId: String(original._id) },
+      );
+
+      return { original, reversal: reversalEntry };
     };
 
     // External session: caller manages transaction; run directly

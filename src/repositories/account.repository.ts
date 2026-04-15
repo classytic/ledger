@@ -8,10 +8,45 @@
 
 import type { Repository, RepositoryContext } from '@classytic/mongokit';
 import type { ClientSession } from 'mongoose';
+import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack } from '../country/index.js';
+import { LEDGER_EVENTS } from '../events/event-constants.js';
+import { createEvent } from '../events/helpers.js';
+import type { OutboxStore } from '../events/outbox-store.js';
+import type { EventTransport } from '../events/transport.js';
 import type { AccountRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+
+export interface AccountIntegrations {
+  events?: EventTransport;
+  bridges?: LedgerBridges;
+  outboxStore?: OutboxStore;
+}
+
+async function safePublish(
+  events: EventTransport | undefined,
+  outboxStore: OutboxStore | undefined,
+  type: string,
+  payload: unknown,
+  ctx?: { organizationId?: unknown; session?: ClientSession | null },
+): Promise<void> {
+  const event = createEvent(type, payload, ctx);
+  if (outboxStore) {
+    try {
+      await outboxStore.save(event, { session: ctx?.session ?? undefined });
+    } catch {
+      /* outbox failures must not break mutations */
+    }
+  }
+  if (events) {
+    try {
+      await events.publish(event);
+    } catch {
+      /* transport failures must not break mutations */
+    }
+  }
+}
 
 interface MongoBulkWriteError extends Error {
   code?: number;
@@ -35,7 +70,10 @@ export function wireAccountMethods<TDoc = unknown>(
   repository: Repository<TDoc>,
   country: CountryPack,
   orgField?: string,
+  integrations: AccountIntegrations = {},
 ): AccountRepository<TDoc> {
+  const events = integrations.events;
+  const outboxStore = integrations.outboxStore;
   // Validate posting accounts on create
   repository.on('before:create', (ctx: RepositoryContext) => {
     const code = ctx.data?.accountTypeCode as string | undefined;
@@ -75,6 +113,7 @@ export function wireAccountMethods<TDoc = unknown>(
 
     if (toCreate.length === 0) return { created: 0, skipped: existingNumbers.size };
 
+    let result: { created: number; skipped: number };
     try {
       // Route through mongokit's createMany so plugins (before:createMany,
       // after:createMany) fire — enables observability, audit, and custom hooks.
@@ -82,18 +121,28 @@ export function wireAccountMethods<TDoc = unknown>(
         session: options.session ?? undefined,
         ordered: false,
       });
-      return { created: inserted.length, skipped: existingNumbers.size };
+      result = { created: inserted.length, skipped: existingNumbers.size };
     } catch (err: unknown) {
       const bulkError = err as MongoBulkWriteError;
       if (bulkError.code === 11000 || bulkError.writeErrors) {
         const insertedDocs = bulkError.insertedDocs ?? [];
-        return {
+        result = {
           created: insertedDocs.length,
           skipped: existingNumbers.size + (toCreate.length - insertedDocs.length),
         };
+      } else {
+        throw err;
       }
-      throw err;
     }
+
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.ACCOUNT_SEEDED,
+      { created: result.created, skipped: result.skipped, organizationId: orgId },
+      { organizationId: orgId, session: options.session ?? null },
+    );
+    return result;
   };
 
   /**
@@ -270,15 +319,27 @@ export function wireAccountMethods<TDoc = unknown>(
       }
     }
 
-    return {
-      summary: {
-        total: accounts.length,
-        created: results.created.length,
-        skipped: results.skipped.length,
-        errors: results.errors.length,
-      },
-      ...results,
+    const summary = {
+      total: accounts.length,
+      created: results.created.length,
+      skipped: results.skipped.length,
+      errors: results.errors.length,
     };
+
+    await safePublish(
+      events,
+      outboxStore,
+      LEDGER_EVENTS.ACCOUNT_BULK_CREATED,
+      {
+        created: summary.created,
+        skipped: summary.skipped,
+        errors: summary.errors,
+        organizationId: orgId,
+      },
+      { organizationId: orgId },
+    );
+
+    return { summary, ...results };
   };
 
   // Register methods for discoverability (mongokit 3.4+)
