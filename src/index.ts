@@ -82,6 +82,7 @@ export {
 
 export type {
   EntryReversedNotification,
+  ExchangeRateBridge,
   LedgerBridges,
   NotificationBridge,
   NotificationBridgeContext,
