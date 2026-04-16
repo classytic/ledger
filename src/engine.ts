@@ -145,6 +145,22 @@ export class AccountingEngine {
   }
 
   /**
+   * Explicitly sync indexes on all managed models.
+   * Call this in deploy-time scripts — NOT on every boot.
+   * See PACKAGE_RULES section 32.
+   */
+  async syncIndexes(): Promise<void> {
+    await Promise.all([
+      this.models.Account.syncIndexes(),
+      this.models.JournalEntry.syncIndexes(),
+      this.models.FiscalPeriod.syncIndexes(),
+      this.models.Budget.syncIndexes(),
+      this.models.Reconciliation.syncIndexes(),
+      this.models.Journal.syncIndexes(),
+    ]);
+  }
+
+  /**
    * Pre-built reports bound to the engine's owned models.
    * Lazy-initialized on first access.
    */
