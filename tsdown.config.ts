@@ -17,7 +17,8 @@ export default defineConfig({
   dts: { sourcemap: false },
   clean: true,
   sourcemap: false,
+  treeshake: true,
   deps: {
-    neverBundle: ['mongoose', /^@classytic\//],
+    neverBundle: ['mongoose', 'zod', /^@classytic\//],
   },
 });

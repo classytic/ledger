@@ -1,13 +1,13 @@
 /**
  * Event creation helper.
  *
- * Builds a well-formed DomainEvent with auto-generated `meta.id` + `meta.timestamp`.
- * Threads optional context fields (userId, organizationId, correlationId) that
- * hosts rely on for audit trails and distributed tracing.
+ * Wraps `@classytic/primitives/events` `createEvent` with ledger's
+ * cross-runtime id coercion: `actorId` / `organizationId` values commonly
+ * arrive as Mongoose ObjectId or Buffer, so we normalize them to strings
+ * before the primitives helper stamps them into the event meta.
  */
-
-import { randomUUID } from 'node:crypto';
-import type { DomainEvent } from './transport.js';
+import type { DomainEvent } from '@classytic/primitives/events';
+import { createEvent as createPrimitiveEvent } from '@classytic/primitives/events';
 
 /** Minimal context shape for event metadata. */
 export interface EventContext {
@@ -37,16 +37,10 @@ export function createEvent<T>(
   ctx?: EventContext,
   meta?: Partial<DomainEvent['meta']>,
 ): DomainEvent<T> {
-  return {
-    type,
-    payload,
-    meta: {
-      id: randomUUID(),
-      timestamp: new Date(),
-      userId: toIdString(ctx?.actorId),
-      organizationId: toIdString(ctx?.organizationId),
-      correlationId: ctx?.correlationId ?? ctx?.traceId,
-      ...meta,
-    },
-  };
+  return createPrimitiveEvent(type, payload, {
+    userId: toIdString(ctx?.actorId),
+    organizationId: toIdString(ctx?.organizationId),
+    correlationId: ctx?.correlationId ?? ctx?.traceId,
+    ...meta,
+  });
 }

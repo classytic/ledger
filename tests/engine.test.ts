@@ -192,7 +192,7 @@ describe('AccountingEngine', () => {
         mongoose: mongoose.connection,
         country: testPack,
         currency: 'TST',
-        multiTenant: { orgField: 'business', orgRef: 'Business' },
+        multiTenant: { tenantField: 'business', ref: 'Business' },
         modelNames: engModelNames(),
       });
       expect(engine.models.Account).toBeDefined();
@@ -237,7 +237,7 @@ describe('AccountingEngine', () => {
         mongoose: mongoose.connection,
         country: testPack,
         currency: 'TST',
-        multiTenant: { orgField: 'business', orgRef: 'Business' },
+        multiTenant: { tenantField: 'business', ref: 'Business' },
         modelNames: engModelNames(),
       });
       expect(engine.models.Account.schema.path('business')).toBeDefined();

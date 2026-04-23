@@ -95,9 +95,9 @@ async function bootEngine(
 async function bootEngineWithOrg(
   orgId: mongoose.Types.ObjectId,
   plugins: { account?: PluginType[]; journalEntry?: PluginType[] } = {},
-  multiTenant: { orgField: string; orgRef: string } = {
-    orgField: 'organizationId',
-    orgRef: 'Organization',
+  multiTenant: { tenantField: string; ref: string } = {
+    tenantField: 'organizationId',
+    ref: 'Organization',
   },
 ): Promise<AccountingEngine> {
   for (const n of [`${PREFIX}Acct`, `${PREFIX}JE`, `${PREFIX}FP`, `${PREFIX}B`, `${PREFIX}R`]) {
@@ -317,7 +317,7 @@ describe('multi-tenant context propagation', () => {
     const engine = await bootEngineWithOrg(
       orgId,
       { journalEntry: [connector] },
-      { orgField: 'organizationId', orgRef: 'Organization' },
+      { tenantField: 'organizationId', ref: 'Organization' },
     );
 
     await engine.record.sale(orgId, {

@@ -196,7 +196,7 @@ export function wireImport<TRaw>(args: WireImportArgs<TRaw>) {
         // ── 4. Persist: bulk or sequential ──────────────────────────────
         if (useBulk) {
           try {
-            await args.journalEntries.createMany!(pendingDocs.map((p) => p.doc));
+            await args.journalEntries.createMany?.(pendingDocs.map((p) => p.doc));
             batchInserted += pendingDocs.length;
           } catch (_err) {
             // If bulk fails, fall back to sequential for per-record isolation

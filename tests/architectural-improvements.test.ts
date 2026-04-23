@@ -891,7 +891,7 @@ describe('Improvement 3: Account Schema Identity Split', () => {
     const schema = createAccountSchema({
       country: mockCountry,
       currency: 'CAD',
-      multiTenant: { orgField: 'business', orgRef: 'Business' },
+      multiTenant: { tenantField: 'business', ref: 'Business' },
     });
 
     const indexes = schema.indexes();

@@ -13,7 +13,7 @@
  * const accounting = createAccountingEngine({
  *   country: canadaPack,
  *   currency: 'CAD',
- *   multiTenant: { orgField: 'business', orgRef: 'Business' },
+ *   multiTenant: { tenantField: 'business', ref: 'Business' },
  * });
  *
  * const AccountSchema = accounting.createAccountSchema();
@@ -27,6 +27,14 @@
 
 // ── Events (§11-14) ────────────────────────────────────────────────────────
 
+// Transport shapes come from @classytic/primitives/events. Ledger's local
+// `EventLogger` is tied to the in-process bus implementation.
+export type {
+  DomainEvent,
+  EventHandler,
+  EventTransport,
+  PublishManyResult,
+} from '@classytic/primitives/events';
 export type { LedgerEventName } from './events/event-constants.js';
 export { LEDGER_EVENTS } from './events/event-constants.js';
 export type {
@@ -44,24 +52,41 @@ export type {
 } from './events/event-payloads.js';
 export type { EventContext } from './events/helpers.js';
 export { createEvent } from './events/helpers.js';
-export type { InProcessLedgerBusOptions } from './events/in-process-bus.js';
+export type { EventLogger, InProcessLedgerBusOptions } from './events/in-process-bus.js';
 export { InProcessLedgerBus } from './events/in-process-bus.js';
+export type {
+  LedgerEventDefinition,
+  LedgerEventPayloadOf,
+  LedgerEventSchema,
+} from './events/ledger-event-catalog.js';
+// Arc 2.10 EventRegistry catalog — Zod-backed definitions + JSON Schemas
+// derived via `z.toJSONSchema()`. See PACKAGE_RULES §18.5.
+export {
+  AccountBulkCreated,
+  AccountSeeded,
+  EntryArchived,
+  EntryCreated,
+  EntryDuplicated,
+  EntryPosted,
+  EntryReversed,
+  EntryUnposted,
+  JournalSeeded,
+  ledgerEventDefinitions,
+  ReconciliationMatched,
+  ReconciliationUnmatched,
+} from './events/ledger-event-catalog.js';
 export type {
   OutboxAcknowledgeOptions,
   OutboxClaimOptions,
   OutboxErrorInfo,
   OutboxFailOptions,
+  OutboxFailureContext,
+  OutboxFailureDecision,
+  OutboxFailurePolicy,
   OutboxStore,
   OutboxWriteOptions,
 } from './events/outbox-store.js';
-export { OutboxOwnershipError } from './events/outbox-store.js';
-export type {
-  DomainEvent,
-  EventHandler,
-  EventLogger,
-  EventTransport,
-  PublishManyResult,
-} from './events/transport.js';
+export { InvalidOutboxEventError, OutboxOwnershipError } from './events/outbox-store.js';
 
 // ── Hardening primitives (0.9.0) ───────────────────────────────────────────
 

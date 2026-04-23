@@ -12,9 +12,9 @@
  */
 
 import { multiTenantPlugin, type PluginType, Repository } from '@classytic/mongokit';
+import type { EventTransport } from '@classytic/primitives/events';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { OutboxStore } from '../events/outbox-store.js';
-import type { EventTransport } from '../events/transport.js';
 import type { LedgerModels } from '../models/factory.js';
 import { doubleEntryPlugin } from '../plugins/double-entry.plugin.js';
 import { idempotencyPlugin } from '../plugins/idempotency.plugin.js';
@@ -68,7 +68,7 @@ export function createRepositories(
   pagination: LedgerPaginationConfig = {},
   integrations: LedgerRepositoryIntegrations = {},
 ): LedgerRepositories {
-  const orgField = config.multiTenant?.orgField;
+  const orgField = config.multiTenant?.tenantField;
   const strictness = config.strictness;
   const country = config.country;
   const { events, bridges, outboxStore } = integrations;

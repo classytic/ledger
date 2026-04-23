@@ -309,7 +309,7 @@ describe('0.9.0 — multiTenantPlugin opt-in', () => {
       mongoose: mongoose.connection,
       country: testPack,
       currency: 'USD',
-      multiTenant: { orgField: 'business', orgRef: 'Business', plugin: true },
+      multiTenant: { tenantField: 'business', ref: 'Business', plugin: true },
     });
     await engine.models.Account.createIndexes();
 

@@ -127,8 +127,23 @@ export interface LedgerPaymentInput {
  */
 export interface LedgerBridge {
   createJournalEntry(input: LedgerPostInput): Promise<string>;
-  reverseJournalEntry(journalEntryId: string, reason: string): Promise<string>;
+  reverseJournalEntry(
+    journalEntryId: string,
+    reason: string,
+    ctx: LedgerReverseContext,
+  ): Promise<string>;
   recordPayment(input: LedgerPaymentInput): Promise<string>;
+}
+
+/**
+ * Context threaded from the invoice engine into the ledger reversal call.
+ * Required so the ledger can stamp `reversedByUser` and satisfy strict-mode
+ * `requireActor` / multi-tenant guards.
+ */
+export interface LedgerReverseContext {
+  organizationId?: string;
+  actorId?: string;
+  session?: unknown;
 }
 
 // ─── Engine shape (minimal interface — no hard dep on AccountingEngine) ────
@@ -163,7 +178,7 @@ interface JournalEntryRepoLike {
   reverse(
     id: unknown,
     orgId?: unknown,
-    options?: { actorId?: string; session?: unknown },
+    options?: { actorId?: string; session?: unknown; reversalDate?: Date },
   ): Promise<{ original: { _id: unknown }; reversal: { _id: unknown } }>;
 }
 
@@ -334,8 +349,19 @@ export function createLedgerBridge(engine: EngineLike, config: LedgerBridgeConfi
       return String(result._id);
     },
 
-    async reverseJournalEntry(journalEntryId: string, _reason: string): Promise<string> {
-      const result = await engine.repositories.journalEntries.reverse(journalEntryId);
+    async reverseJournalEntry(
+      journalEntryId: string,
+      _reason: string,
+      ctx: LedgerReverseContext,
+    ): Promise<string> {
+      const options: { actorId?: string; session?: unknown } = {};
+      if (ctx.actorId) options.actorId = ctx.actorId;
+      if (ctx.session) options.session = ctx.session;
+      const result = await engine.repositories.journalEntries.reverse(
+        journalEntryId,
+        ctx.organizationId,
+        options,
+      );
       return String(result.reversal._id);
     },
 

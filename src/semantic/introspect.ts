@@ -265,7 +265,7 @@ interface BuildDeps {
 export function buildIntrospectAPI({ models, country, config }: BuildDeps): IntrospectAPI {
   const AccountModel = models.Account as Model<unknown>;
   const FiscalPeriodModel = models.FiscalPeriod as Model<unknown>;
-  const orgField = config.multiTenant?.orgField;
+  const orgField = config.multiTenant?.tenantField;
 
   // ── Normal balance lookup from category ──
   const normalBalanceFor = (category: string): 'debit' | 'credit' => {

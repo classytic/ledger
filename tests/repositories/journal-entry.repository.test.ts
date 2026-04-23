@@ -14,7 +14,23 @@ function createEntryDoc(overrides: Record<string, unknown> = {}) {
   return doc;
 }
 
-/** Create a repository mock with getByQuery/create/withTransaction and wire methods onto it */
+/**
+ * Build a fake connection + session pair that satisfies mongokit's
+ * `withTransaction(connection, fn)` contract. The standalone helper calls
+ * `connection.startSession()` → `session.withTransaction(cb)`, so the mock
+ * mirrors that shape. `reverse()` inside ledger reaches for
+ * `repository.Model.db` as the connection — we mount the fake there.
+ */
+function createFakeConnection() {
+  const session = {
+    withTransaction: vi.fn(async (cb: () => Promise<unknown>) => cb()),
+    endSession: vi.fn(),
+  };
+  const db = { startSession: vi.fn().mockResolvedValue(session) };
+  return { db, session };
+}
+
+/** Create a repository mock with getByQuery/create and wire methods onto it */
 function setup(
   doc: Record<string, unknown> | null = null,
   opts: { orgField?: string; strictness?: StrictnessConfig } = {},
@@ -24,6 +40,7 @@ function setup(
   // arguments should use `createSpy` directly instead of `repo.create`,
   // because the wrapper's `.mock` is not the original spy.
   const createSpy = vi.fn().mockResolvedValue({ _id: 'reversal-1' });
+  const { db, session } = createFakeConnection();
   const repo: Record<string, unknown> = {
     getByQuery: vi.fn().mockResolvedValue(doc),
     create: createSpy,
@@ -34,12 +51,14 @@ function setup(
       ...(doc as Record<string, unknown>),
       ...patch,
     })),
-    withTransaction: vi
-      .fn()
-      .mockImplementation(async (cb: (session: unknown) => Promise<unknown>) => cb(null)),
+    // `reverse()` builds its own session-threading helper from
+    // `mongokitWithTransaction(repository.Model.db, ...)`. Expose a fake
+    // `Model.db` so the helper's `startSession()` returns a stub session
+    // that just invokes the callback.
+    Model: { db },
   };
   wireJournalEntryMethods(repo as any, {} as any, opts.orgField, opts.strictness);
-  return { repo, createSpy };
+  return { repo, createSpy, session };
 }
 
 // ── post() ────────────────────────────────────────────────────────────────

@@ -1,21 +1,27 @@
 /**
- * InProcessLedgerBus — minimal structural match of @classytic/arc's MemoryEventTransport.
+ * InProcessLedgerBus — minimal default transport for ledger.
  *
- * Supports exact, `*`, and `resource.*` glob matching. Per-handler errors are
- * caught so one failing listener cannot block siblings. This is the default
- * transport when the host does not inject one.
+ * Structurally identical to `@classytic/arc`'s `MemoryEventTransport`.
+ * Pattern matching (exact, `*`, `resource.*`, `resource:*`) delegates to
+ * `matchEventPattern` from `@classytic/primitives/events` so all packages
+ * share one rule set.
  *
- * NOT suitable for multi-instance deployments — use a durable transport
+ * Not suitable for multi-instance deployments — use a durable transport
  * (Redis pub/sub, Kafka, BullMQ) wired through arc for those.
  */
-
 import type {
   DomainEvent,
   EventHandler,
-  EventLogger,
   EventTransport,
   PublishManyResult,
-} from './transport.js';
+} from '@classytic/primitives/events';
+import { matchEventPattern } from '@classytic/primitives/events';
+
+/** Package-specific logger contract — `console` satisfies it. */
+export interface EventLogger {
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+}
 
 export interface InProcessLedgerBusOptions {
   logger?: EventLogger;
@@ -31,26 +37,13 @@ export class InProcessLedgerBus implements EventTransport {
   }
 
   async publish(event: DomainEvent): Promise<void> {
-    const exact = this.handlers.get(event.type) ?? new Set();
-    const wildcard = this.handlers.get('*') ?? new Set();
-
-    const pattern = new Set<EventHandler>();
-    for (const [p, handlers] of this.handlers.entries()) {
-      if (p.endsWith('.*')) {
-        const prefix = p.slice(0, -2);
-        if (event.type.startsWith(`${prefix}.`)) {
-          for (const h of handlers) pattern.add(h);
-        }
-      } else if (p.endsWith(':*')) {
-        const prefix = p.slice(0, -2);
-        if (event.type.startsWith(`${prefix}:`)) {
-          for (const h of handlers) pattern.add(h);
-        }
+    const matched = new Set<EventHandler>();
+    for (const [pattern, set] of this.handlers.entries()) {
+      if (matchEventPattern(pattern, event.type)) {
+        for (const h of set) matched.add(h);
       }
     }
-
-    const all = new Set([...exact, ...wildcard, ...pattern]);
-    for (const handler of all) {
+    for (const handler of matched) {
       try {
         await handler(event);
       } catch (err) {

@@ -59,6 +59,7 @@ export type {
   LedgerPaymentInput,
   LedgerPostInput,
   LedgerPostLine,
+  LedgerReverseContext,
 } from './ledger-bridge';
 export { createLedgerBridge } from './ledger-bridge';
 export type { BankStatementMapperConfig } from './mappers/bank-statement';

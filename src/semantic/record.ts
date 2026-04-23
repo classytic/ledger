@@ -271,7 +271,7 @@ interface BuildDeps {
 
 export function buildRecordAPI({ models, repositories, config }: BuildDeps): RecordAPI {
   const AccountModel = models.Account as Model<unknown>;
-  const orgField = config.multiTenant?.orgField;
+  const orgField = config.multiTenant?.tenantField;
 
   // ── Account resolver (code → ObjectId, scoped by org) ──
   const resolveAccounts = async (

@@ -88,8 +88,19 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
     buildAggregation: vi.fn(),
     buildLookup: vi.fn(),
 
-    // Model
-    Model: {} as any,
+    // Model — `reverse()` reaches into `Model.db` to build a session-based
+    // `withTransaction` helper for multi-collaborator workflows (the 3.10
+    // instance method hands back a tx-bound repo, which doesn't fit).
+    // Expose a fake session starter so the helper's `startSession()` returns
+    // a stub session that just invokes the callback.
+    Model: {
+      db: {
+        startSession: vi.fn().mockResolvedValue({
+          withTransaction: vi.fn(async (cb: () => Promise<unknown>) => cb()),
+          endSession: vi.fn(),
+        }),
+      },
+    } as any,
     model: 'MockModel',
 
     // Internal

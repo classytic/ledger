@@ -9,11 +9,13 @@
  */
 
 import mongoose from 'mongoose';
+import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.js';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
 import { buildCurrencyField } from './currency-field.js';
 
 export function createAccountSchema(config: AccountingEngineConfig, options: SchemaOptions = {}) {
-  const { multiTenant, country } = config;
+  const { country } = config;
+  const scope = resolveLedgerTenant(config);
   const { indexes = true, extraFields = {}, extraIndexes = [] } = options;
 
   // ── Base fields ──────────────────────────────────────────────────────────
@@ -48,16 +50,6 @@ export function createAccountSchema(config: AccountingEngineConfig, options: Sch
 
   Object.assign(fields, extraFields);
 
-  // ── Multi-tenant field ───────────────────────────────────────────────────
-
-  if (multiTenant) {
-    fields[multiTenant.orgField] = {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: multiTenant.orgRef,
-      required: true,
-    };
-  }
-
   // ── Schema ───────────────────────────────────────────────────────────────
 
   const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, { timestamps: true });
@@ -81,25 +73,27 @@ export function createAccountSchema(config: AccountingEngineConfig, options: Sch
   });
 
   // ── Indexes ──────────────────────────────────────────────────────────────
+  //
+  // Compound indexes are declared WITHOUT a tenant prefix — when
+  // `multiTenant` is configured, `injectTenantField()` prepends the tenant
+  // field onto every entry below so the resulting indexes stay
+  // index-efficient under multi-tenant scoping.
 
   if (indexes) {
-    if (multiTenant) {
-      const org = multiTenant.orgField;
-      schema.index({ [org]: 1, active: 1 });
-      // accountNumber is the unique identity per org
-      schema.index({ [org]: 1, accountNumber: 1 }, { unique: true });
-      // accountTypeCode is non-unique — multiple accounts can share a classification
-      schema.index({ [org]: 1, accountTypeCode: 1 });
-    } else {
-      schema.index({ active: 1 });
-      schema.index({ accountNumber: 1 }, { unique: true });
-      schema.index({ accountTypeCode: 1 });
-    }
+    schema.index({ active: 1 });
+    // accountNumber is the unique identity (per org when scoped)
+    schema.index({ accountNumber: 1 }, { unique: true });
+    // accountTypeCode is non-unique — multiple accounts can share a classification
+    schema.index({ accountTypeCode: 1 });
   }
 
   for (const idx of extraIndexes) {
     schema.index(idx.fields, idx.options);
   }
+
+  // Injects the tenant field (type follows `config.tenantFieldType`, default
+  // `'objectId'`) and prepends it to the compound indexes above.
+  injectTenantField(schema, scope);
 
   return schema;
 }

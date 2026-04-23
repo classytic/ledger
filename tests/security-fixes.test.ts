@@ -150,7 +150,7 @@ describe('Fix 1: requireOrgScope prevents unscoped multi-tenant queries', () => 
   const mtConfig: AccountingEngineConfig = {
     country: testPack,
     currency: 'TST',
-    multiTenant: { orgField: 'business', orgRef: 'Business' },
+    multiTenant: { tenantField: 'business', ref: 'Business' },
   };
 
   let MtAcct: mongoose.Model<any>;
@@ -242,7 +242,7 @@ describe('Fix 2: Cross-tenant fiscal close/reopen prevention', () => {
   const mtConfig: AccountingEngineConfig = {
     country: testPack,
     currency: 'TST',
-    multiTenant: { orgField: 'business', orgRef: 'Business' },
+    multiTenant: { tenantField: 'business', ref: 'Business' },
   };
 
   let MtAcct2: mongoose.Model<any>;

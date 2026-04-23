@@ -505,7 +505,7 @@ describe('Multi-Tenant Report Isolation', () => {
   const mtConfig: AccountingEngineConfig = {
     country: testPack,
     currency: 'TST',
-    multiTenant: { orgField: 'business', orgRef: 'Business' },
+    multiTenant: { tenantField: 'business', ref: 'Business' },
   };
 
   beforeAll(async () => {

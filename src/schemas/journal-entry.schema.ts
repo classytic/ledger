@@ -13,6 +13,7 @@
 import { getNextSequence } from '@classytic/mongokit';
 import mongoose from 'mongoose';
 import { _freezeJournalTypes, getJournalTypeCodes, JOURNAL_CODES } from '../constants/journals.js';
+import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.js';
 import type { AccountingEngineConfig, JournalSchemaOptions } from '../types/engine.js';
 import { buildCurrencyField } from './currency-field.js';
 
@@ -22,6 +23,7 @@ export function createJournalEntrySchema(
   options: JournalSchemaOptions = {},
 ) {
   const { multiTenant } = config;
+  const scope = resolveLedgerTenant(config);
   const {
     indexes = true,
     autoReference = true,
@@ -187,16 +189,6 @@ export function createJournalEntrySchema(
     fields.idempotencyKey = { type: String, default: null };
   }
 
-  // ── Multi-tenant field ───────────────────────────────────────────────────
-
-  if (multiTenant) {
-    fields[multiTenant.orgField] = {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: multiTenant.orgRef,
-      required: true,
-    };
-  }
-
   // ── Schema ───────────────────────────────────────────────────────────────
 
   const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, {
@@ -309,7 +301,7 @@ export function createJournalEntrySchema(
         // Use `.get()` so Mongoose returns the cast value (not the raw input).
         let orgScope = 'global';
         if (multiTenant) {
-          const raw = (this as mongoose.Document).get(multiTenant.orgField);
+          const raw = (this as mongoose.Document).get(multiTenant.tenantField);
           if (raw != null) {
             orgScope =
               typeof (raw as { toHexString?: () => string }).toHexString === 'function'
@@ -342,53 +334,62 @@ export function createJournalEntrySchema(
   }
 
   // ── Indexes ──────────────────────────────────────────────────────────────
+  //
+  // Compound indexes that want the tenant prefix are declared WITHOUT it
+  // first — `injectTenantField()` prepends the tenant field onto each
+  // entry below after the fact when multi-tenant is configured. Indexes
+  // that should NOT be tenant-scoped (cross-org `'journalItems.account'`
+  // probes, global `reversed` flag, TTL) are declared after the helper
+  // call further down.
 
   if (indexes) {
-    const org = multiTenant?.orgField;
-
     // Partial filter: unique constraint only applies to docs with a string
     // referenceNumber — allows multiple entries without a ref when autoReference is off.
     const refPartial = {
       partialFilterExpression: { referenceNumber: { $exists: true, $type: 'string' } },
     };
 
-    if (org) {
-      schema.index({ [org]: 1, referenceNumber: 1 }, { unique: true, ...refPartial });
-      schema.index({ [org]: 1, state: 1, date: 1 });
-      schema.index({ [org]: 1, date: -1 });
-      schema.index({ [org]: 1, journalType: 1 });
-      schema.index({ 'journalItems.account': 1, state: 1 });
-      schema.index({ [org]: 1, 'journalItems.account': 1, date: 1, state: 1 });
-    } else {
-      schema.index({ referenceNumber: 1 }, { unique: true, ...refPartial });
-      schema.index({ state: 1, date: 1 });
-      schema.index({ date: -1 });
-      schema.index({ journalType: 1 });
-      schema.index({ 'journalItems.account': 1, state: 1 });
+    schema.index({ referenceNumber: 1 }, { unique: true, ...refPartial });
+    schema.index({ state: 1, date: 1 });
+    schema.index({ date: -1 });
+    schema.index({ journalType: 1 });
+    // Tenant-scoped variant of the account+date+state compound — declared
+    // here so the helper prepends the tenant field. The non-scoped
+    // `{ 'journalItems.account': 1, state: 1 }` variant is added AFTER
+    // the helper further down.
+    if (scope.enabled) {
+      schema.index({ 'journalItems.account': 1, date: 1, state: 1 });
     }
+
+    // Open-item matching — tenant-scoped when multi-tenant is on.
+    schema.index({ 'journalItems.matchingNumber': 1 });
+
+    // Idempotency key: unique (only when enabled). Tenant prefix is
+    // prepended by the helper when multi-tenant is configured.
+    if (config.idempotency) {
+      schema.index(
+        { idempotencyKey: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { idempotencyKey: { $type: 'string' } },
+        },
+      );
+    }
+  }
+
+  // Inject tenant field + prepend it onto the compound indexes above.
+  injectTenantField(schema, scope);
+
+  // Indexes that must remain un-prefixed — added after the helper so the
+  // tenant field is NOT prepended onto them.
+  if (indexes) {
+    // Cross-org account+state probe (used by reports that sum across all
+    // tenants, e.g. consolidated trial balance).
+    schema.index({ 'journalItems.account': 1, state: 1 });
 
     schema.index({ reversed: 1 });
 
-    // Open-item matching indexes (0.6.0). A sparse index on the nested
-    // matchingNumber lets `getOpenItems` and AR/AP aging queries find
-    // unmatched items cheaply; the org-scoped variant powers multi-tenant
-    // open-item reports.
-    if (org) {
-      schema.index({ [org]: 1, 'journalItems.matchingNumber': 1 });
-    } else {
-      schema.index({ 'journalItems.matchingNumber': 1 });
-    }
-
-    // Idempotency key: unique sparse index (only when enabled)
     if (config.idempotency) {
-      const idempotencyIdx: Record<string, 1 | -1> = {};
-      if (org) idempotencyIdx[org] = 1;
-      idempotencyIdx.idempotencyKey = 1;
-      schema.index(idempotencyIdx, {
-        unique: true,
-        partialFilterExpression: { idempotencyKey: { $type: 'string' } },
-      });
-
       // TTL index — auto-expire old idempotency rows so stale replay keys
       // don't collide forever. Scoped to rows that carry an idempotencyKey
       // so normal journal entries are never TTL'd. Default: 24h (Stripe /

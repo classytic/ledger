@@ -6,6 +6,7 @@
  */
 
 import mongoose from 'mongoose';
+import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.js';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
 
 export function createFiscalPeriodSchema(
@@ -13,6 +14,7 @@ export function createFiscalPeriodSchema(
   options: SchemaOptions = {},
 ) {
   const { multiTenant } = config;
+  const scope = resolveLedgerTenant(config);
   const { indexes = true, extraFields = {}, extraIndexes = [] } = options;
 
   const fields: Record<string, unknown> = {
@@ -28,30 +30,20 @@ export function createFiscalPeriodSchema(
     ...extraFields,
   };
 
-  if (multiTenant) {
-    fields[multiTenant.orgField] = {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: multiTenant.orgRef,
-      required: true,
-    };
-  }
-
   const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, { timestamps: true });
 
+  // Compound indexes declared without a tenant prefix — `injectTenantField`
+  // prepends it when multi-tenant is configured.
   if (indexes) {
-    if (multiTenant) {
-      const org = multiTenant.orgField;
-      schema.index({ [org]: 1, startDate: 1, endDate: 1 }, { unique: true });
-      schema.index({ [org]: 1, closed: 1 });
-    } else {
-      schema.index({ startDate: 1, endDate: 1 }, { unique: true });
-      schema.index({ closed: 1 });
-    }
+    schema.index({ startDate: 1, endDate: 1 }, { unique: true });
+    schema.index({ closed: 1 });
   }
 
   for (const idx of extraIndexes) {
     schema.index(idx.fields, idx.options);
   }
+
+  injectTenantField(schema, scope);
 
   // ── Overlap guard: prevent overlapping date ranges within a tenant ─────
   schema.pre('validate', async function () {
@@ -70,7 +62,7 @@ export function createFiscalPeriodSchema(
     };
 
     if (multiTenant) {
-      overlapQuery[multiTenant.orgField] = doc[multiTenant.orgField];
+      overlapQuery[multiTenant.tenantField] = doc[multiTenant.tenantField];
     }
 
     const overlap = await doc.collection.findOne(overlapQuery);

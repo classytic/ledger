@@ -20,6 +20,7 @@
  */
 
 import mongoose from 'mongoose';
+import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.js';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
 
 export function createJournalSchema(
@@ -27,7 +28,7 @@ export function createJournalSchema(
   accountModelName: string,
   options: SchemaOptions = {},
 ) {
-  const { multiTenant } = config;
+  const scope = resolveLedgerTenant(config);
   const { indexes = true, extraFields = {}, extraIndexes = [] } = options;
 
   const fields: Record<string, unknown> = {
@@ -76,30 +77,20 @@ export function createJournalSchema(
     ...extraFields,
   };
 
-  if (multiTenant) {
-    fields[multiTenant.orgField] = {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: multiTenant.orgRef,
-      required: true,
-    };
-  }
-
   const schema = new mongoose.Schema(fields as mongoose.SchemaDefinition, { timestamps: true });
 
+  // Compound indexes declared without a tenant prefix — `injectTenantField`
+  // prepends it when multi-tenant is configured.
   if (indexes) {
-    const org = multiTenant?.orgField;
-    if (org) {
-      schema.index({ [org]: 1, code: 1 }, { unique: true });
-      schema.index({ [org]: 1, kind: 1, active: 1 });
-    } else {
-      schema.index({ code: 1 }, { unique: true });
-      schema.index({ kind: 1, active: 1 });
-    }
+    schema.index({ code: 1 }, { unique: true });
+    schema.index({ kind: 1, active: 1 });
   }
 
   for (const idx of extraIndexes) {
     schema.index(idx.fields, idx.options);
   }
+
+  injectTenantField(schema, scope);
 
   return schema;
 }

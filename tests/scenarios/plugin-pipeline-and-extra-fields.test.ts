@@ -397,7 +397,7 @@ describe('reverse()/duplicate() propagate consumer extraFields', () => {
       mongoose: mongoose.connection,
       country: testPack,
       currency: 'USD',
-      multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+      multiTenant: { tenantField: 'organizationId', ref: 'Organization' },
     });
 
     const orgId = new mongoose.Types.ObjectId();

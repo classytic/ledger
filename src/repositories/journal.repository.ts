@@ -14,12 +14,12 @@
  */
 
 import type { Repository } from '@classytic/mongokit';
+import type { EventTransport } from '@classytic/primitives/events';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack, JournalTemplate } from '../country/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
 import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
-import type { EventTransport } from '../events/transport.js';
 import type { JournalRepository, SeedResult } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';

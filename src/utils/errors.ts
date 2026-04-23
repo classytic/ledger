@@ -227,8 +227,8 @@ export function classifyDuplicateKey(
   }
   if (!keyPattern && wrappedMsgMatch) {
     // Parse field list from the mongokit-wrapped message
-    const fields = wrappedMsgMatch[1]!
-      .split(',')
+    const fields = wrappedMsgMatch[1]
+      ?.split(',')
       .map((f) => f.trim())
       .filter(Boolean);
     keyPattern = Object.fromEntries(fields.map((f) => [f, 1]));
