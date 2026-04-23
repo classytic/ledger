@@ -14,7 +14,7 @@ import type { SourceBridge } from './source.bridge.js';
 
 /** Collected bridges exposed as `engine.bridges`. All optional per PACKAGE_RULES §23. */
 export interface LedgerBridges {
-  source?: SourceBridge;
-  notification?: NotificationBridge;
-  exchangeRate?: ExchangeRateBridge;
+  source?: SourceBridge | undefined;
+  notification?: NotificationBridge | undefined;
+  exchangeRate?: ExchangeRateBridge | undefined;
 }

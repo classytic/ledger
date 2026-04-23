@@ -101,7 +101,7 @@ describe('seedAccounts routes through repo.createMany()', () => {
       mongoose: connection,
       country: testPack as never,
       currency: 'USD',
-      multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+      multiTenant: { tenantField: 'organizationId', ref: 'Organization' },
     });
   });
 
@@ -141,7 +141,7 @@ describe('bulkCreate routes through repo.createMany()', () => {
       mongoose: connection,
       country: testPack as never,
       currency: 'USD',
-      multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+      multiTenant: { tenantField: 'organizationId', ref: 'Organization' },
     });
   });
 

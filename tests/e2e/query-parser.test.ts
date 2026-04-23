@@ -83,7 +83,7 @@ describe('engine.createQueryParser()', () => {
       mongoose: connection,
       country: testPack as never,
       currency: 'USD',
-      multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+      multiTenant: { tenantField: 'organizationId', ref: 'Organization' },
     });
   });
 

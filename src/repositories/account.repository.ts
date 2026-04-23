@@ -7,13 +7,13 @@
  */
 
 import type { Repository, RepositoryContext } from '@classytic/mongokit';
+import type { EventTransport } from '@classytic/primitives/events';
 import type { ClientSession } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack } from '../country/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
 import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
-import type { EventTransport } from '../events/transport.js';
 import type { AccountRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';

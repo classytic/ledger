@@ -39,7 +39,7 @@ beforeAll(async () => {
     mongoose: mongoose.connection,
     country: testPack,
     currency: 'USD',
-    multiTenant: { orgField: 'business', orgRef: 'Business' },
+    multiTenant: { tenantField: 'business', ref: 'Business' },
     retainedEarningsAccountCode: '3600',
     retainedEarningsDisplayCode: '3660',
     currentYearEarningsCode: '3680',

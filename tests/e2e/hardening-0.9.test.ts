@@ -135,7 +135,7 @@ describe('0.9.0 — atomic referenceNumber counter (PR #2)', () => {
       mongoose: mongoose.connection,
       country: pack,
       currency: 'USD',
-      multiTenant: { orgField: 'business', orgRef: 'Business' },
+      multiTenant: { tenantField: 'business', ref: 'Business' },
     });
     // syncIndexes drops stale indexes from prior test runs (previous test's
     // non-compound unique referenceNumber index would otherwise collide).

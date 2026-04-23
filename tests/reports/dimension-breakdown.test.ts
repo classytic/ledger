@@ -294,7 +294,7 @@ describe('generateDimensionBreakdown', () => {
     const mtConfig: AccountingEngineConfig = {
       country: testPack,
       currency: 'TST',
-      multiTenant: { orgField: 'business', orgRef: 'Business' },
+      multiTenant: { tenantField: 'business', ref: 'Business' },
     };
 
     const dimensionFields = buildDimensionFields([

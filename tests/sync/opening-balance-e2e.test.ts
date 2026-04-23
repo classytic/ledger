@@ -60,7 +60,7 @@ beforeAll(async () => {
     mongoose: conn,
     country: testPack,
     currency: 'CAD',
-    multiTenant: { orgField: 'organizationId', orgRef: 'organization' },
+    multiTenant: { tenantField: 'organizationId', ref: 'organization' },
     fiscalYearStartMonth: 1,
     schemaOptions: {
       journalEntry: {

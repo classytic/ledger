@@ -9,9 +9,9 @@
   },
   "dependencies": {
     "@classytic/ledger": "file:..",
-    "@classytic/ledger-bd": "file:../../ledger-bd",
-    "@classytic/ledger-ca": "file:../../ledger-ca",
-    "@classytic/mongokit": "^3.5.5",
+    "@classytic/ledger-bd": ">=0.2.1",
+    "@classytic/ledger-ca": ">=0.2.0",
+    "@classytic/mongokit": ">=3.11.0",
     "mongodb-memory-server": "^10.2.3",
     "mongoose": "^9.4.1"
   }

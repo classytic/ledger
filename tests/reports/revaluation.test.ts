@@ -101,7 +101,7 @@ const config: AccountingEngineConfig = {
 
 const multiTenantConfig: AccountingEngineConfig = {
   ...config,
-  multiTenant: { orgField: 'business', orgRef: 'Business' },
+  multiTenant: { tenantField: 'business', ref: 'Business' },
 };
 
 // ── Setup ────────────────────────────────────────────────────────────────────

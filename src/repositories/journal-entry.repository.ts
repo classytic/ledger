@@ -9,13 +9,14 @@
  * AccountingEngine.createJournalEntryRepository().
  */
 
-import type { Repository, UpdateOptions } from '@classytic/mongokit';
+import type { Repository, UpdateOptions, WithTransactionOptions } from '@classytic/mongokit';
+import { withTransaction as mongokitWithTransaction } from '@classytic/mongokit';
+import type { DomainEvent, EventTransport } from '@classytic/primitives/events';
 import type { ClientSession, Types } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
 import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
-import type { DomainEvent, EventTransport } from '../events/transport.js';
 import type { StrictnessConfig } from '../types/engine.js';
 // Side-effect import: activates the `_ledgerInternal` typing on
 // RepositoryContext/SessionOptions so the calls below are fully type-safe.
@@ -177,7 +178,14 @@ export function wireJournalEntryMethods<TDoc = unknown>(
   const getByQuery = repository.getByQuery.bind(repository);
   const baseCreate = repository.create.bind(repository);
   const update = repository.update.bind(repository);
-  const withTransaction = repository.withTransaction.bind(repository);
+  // Session-based standalone helper — callback threads session into create/update/publish
+  // calls on OTHER repos + event publisher. The instance-method `repository.withTransaction`
+  // passes a tx-bound repo instead (mongokit 3.10), which doesn't match this multi-collaborator
+  // workflow.
+  const withTransaction = <T>(
+    fn: (session: ClientSession) => Promise<T>,
+    opts?: WithTransactionOptions,
+  ): Promise<T> => mongokitWithTransaction(repository.Model.db, fn, opts);
 
   // ─── Race-safe create (0.9.0) ─────────────────────────────────────────
   //

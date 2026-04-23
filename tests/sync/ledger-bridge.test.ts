@@ -336,12 +336,31 @@ describe('createLedgerBridge — reverseJournalEntry', () => {
     const engine = makeMockEngine();
     const bridge = createLedgerBridge(engine, baseConfig);
 
-    const reversalId = await bridge.reverseJournalEntry('je-original', 'Invoice cancelled');
+    const reversalId = await bridge.reverseJournalEntry('je-original', 'Invoice cancelled', {
+      organizationId: 'org_1',
+      actorId: 'user_42',
+    });
 
     expect(engine.repositories.journalEntries.reverse).toHaveBeenCalledOnce();
     const [id, orgId, options] = engine.repositories.journalEntries.reverse.mock.calls[0];
     expect(id).toBe('je-original');
+    expect(orgId).toBe('org_1');
+    expect(options).toMatchObject({ actorId: 'user_42' });
     expect(reversalId).toBe('je-reversal-1');
+  });
+
+  it('omits actorId/session from options when ctx does not provide them', async () => {
+    const engine = makeMockEngine();
+    const bridge = createLedgerBridge(engine, baseConfig);
+
+    await bridge.reverseJournalEntry('je-original', 'unpost', {
+      organizationId: 'org_1',
+    });
+
+    const [, orgId, options] = engine.repositories.journalEntries.reverse.mock.calls[0];
+    expect(orgId).toBe('org_1');
+    expect(options).not.toHaveProperty('actorId');
+    expect(options).not.toHaveProperty('session');
   });
 });
 

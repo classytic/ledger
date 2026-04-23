@@ -15,7 +15,7 @@
  *   mongoose: mongoose.connection,
  *   country: canadaPack,
  *   currency: 'CAD',
- *   multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
+ *   multiTenant: { tenantField: 'organizationId', ref: 'Organization' },
  * });
  *
  * // Models — auto-created Mongoose models
@@ -32,12 +32,12 @@
  */
 
 import { QueryParser, type QueryParserOptions } from '@classytic/mongokit';
+import type { EventTransport } from '@classytic/primitives/events';
 import type { Model } from 'mongoose';
 import type { LedgerBridges } from './bridges/index.js';
 import type { CountryPack } from './country/index.js';
 import { InProcessLedgerBus } from './events/in-process-bus.js';
 import type { OutboxStore } from './events/outbox-store.js';
-import type { EventTransport } from './events/transport.js';
 import { createModels, type LedgerModels } from './models/factory.js';
 import { Money } from './money.js';
 import { generateAgedBalance } from './reports/aged-balance.js';
@@ -262,7 +262,7 @@ export class AccountingEngine {
     const JournalEntryModel = this.models.JournalEntry as Model<unknown>;
     const BudgetModel = this.models.Budget as Model<unknown>;
     const { country, config } = this;
-    const orgField = config.multiTenant?.orgField;
+    const orgField = config.multiTenant?.tenantField;
     const fiscalYearStartMonth = config.fiscalYearStartMonth ?? 1;
     const retainedEarningsAccountCode = config.retainedEarningsAccountCode;
     const retainedEarningsDisplayCode = config.retainedEarningsDisplayCode;

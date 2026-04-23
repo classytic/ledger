@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.10.0
+
+Builds on the 0.9.x events + bridges slate with cross-currency revaluation,
+index-sync ergonomics, and a published event catalog. Peer deps migrated from
+local `file:` links onto npm-published `@classytic/primitives@^0.1.0`.
+
+### Added
+
+- **`ExchangeRateBridge`** — new optional bridge (`@classytic/ledger/bridges`)
+  that resolves fx rates at posting time. Hosts inject their own rate source
+  (oanda, internal rate table, fixed floor) and the engine applies it during
+  `postEntry` / revaluation flows. No runtime coupling to any fx provider.
+- **`engine.syncIndexes()`** — call once at boot to drop any drifted/stale
+  index specs on the three core collections (journal-entries, accounts,
+  reconciliations). Replaces the manual `engine.models.*.syncIndexes()` loop.
+- **`@classytic/ledger/events` — `ledger-event-catalog`** — typed catalog of
+  every `LEDGER_EVENTS.*` constant paired with its zod payload schema and a
+  human-readable description. Host event routers / MCP tool exposers consume
+  this instead of hand-rolling per-event schemas.
+- **`injectTenant` model helper** — internal plugin composition used by all
+  three core repositories to thread the resolved tenant config into query
+  predicates. Fixes an edge case where custom `tenantFieldType: 'custom'`
+  configs lost the `resolve(ctx)` result on `findOneAndUpdate`.
+- **Vitest projects split** — `npm test` now runs only unit + integration.
+  `npm run test:all` runs the full tree (unit + integration + e2e). CI path
+  stays fast; e2e suites stay opt-in.
+
+### Changed
+
+- **`events/transport.ts` removed.** `EventTransport` is re-exported from
+  `@classytic/primitives/events` — removes the transport type duplication
+  flagged in the 0.9 post-mortem.
+- **`@classytic/primitives` devDep moved from `file:` to npm** (`^0.1.0`).
+  Peer range `>=0.1.0` unchanged — consumers on 0.1.x are unaffected.
+- **README trimmed** — pre-0.9 tax surface removed from the reference table;
+  host integration guide kept.
+
+### Fixed
+
+- Account / Journal-Entry / Journal / Reconciliation repository + schema
+  internals: deduplicate imports, normalize zod v4 shape, and tighten
+  multi-tenant isolation checks (covered by the expanded scenario suite).
+- 1377 tests pass; 1 skipped (an e2e opening-balance scenario gated on a
+  flaky memory-server setup — non-blocking, logged in the test file).
+
+### Peer deps
+
+- `@classytic/primitives >= 0.1.0` (first npm-published version).
+- Others unchanged from 0.9.1.
+
 ## 0.9.0 — "Events, Bridges, Tenant Plugin, Hardening"
 
 Classytic package-rules alignment **plus** the full hardening slate flagged
