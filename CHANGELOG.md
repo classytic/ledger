@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.10.1
+
+### Fixed
+
+- **`accounts.bulkCreate` — concurrency race against mongokit's wrapped 409.**
+  When two callers each pass the pre-flight `existingNumbers` check and race
+  to insert the same `accountNumber`, the loser's `createMany` call comes
+  back with mongokit's `parseDuplicateKeyError` shape (`{ status: 409,
+  duplicate: { fields } }`) rather than the raw `MongoBulkWriteError`. The
+  catch only checked `code === 11000` / `writeErrors`, so the wrapped form
+  bubbled out of a function whose JSDoc promises "duplicate key errors on
+  individual docs don't abort the batch". Multi-tenant migration flows that
+  fan out concurrent imports (QBO/Xero → fajr ledger) saw 409s leaking to
+  end users instead of the partial-success result envelope.
+
+  The dup-key recognizer now matches all three shapes (raw `code === 11000`,
+  legacy `writeErrors[]`, and mongokit-wrapped `status === 409 + duplicate`).
+  Because the wrapped error strips `insertedDocs`, the recovery branch falls
+  back to a re-query by `accountNumber` to resolve the persisted `_id`s for
+  callers that need to chain follow-up writes (mapping tables, journal-entry
+  imports, etc.). Concurrent-insert rows now also carry `_id` in the
+  `skipped` envelope when resolvable.
+
+  Pure additive — no behavior change for callers that don't hit the race.
+
+### Added
+
+- **`accounts.bulkCreate` concurrency tests.** Three regression cases pinning
+  the contract: 5 concurrent calls for the same `accountNumber` produce
+  exactly one DB row and zero exceptions; mongokit-wrapped 409 with no
+  `insertedDocs` recovers via re-query; non-duplicate-key errors (validation,
+  connection) still propagate unchanged.
+
 ## 0.10.0
 
 Builds on the 0.9.x events + bridges slate with cross-currency revaluation,

@@ -396,6 +396,106 @@ describe('bulkCreate', () => {
   });
 });
 
+// ── bulkCreate concurrency safety ────────────────────────────────────────────
+//
+// Regression coverage for two real-world races:
+//
+//   1. Two concurrent callers each pass the pre-flight `existingNumbers`
+//      filter, both attempt to insert the same accountNumber, and the loser
+//      gets E11000. The loser MUST recover gracefully — either with the raw
+//      MongoBulkWriteError (older drivers) or with mongokit's wrapped
+//      `{ status: 409, duplicate: {...} }` HttpError. Both shapes have to
+//      land in the same dup-key recovery branch.
+//
+//   2. mongokit's parseDuplicateKeyError strips `insertedDocs` from the
+//      original error. Without a re-query fallback, the recovery branch
+//      can't resolve `_id`s. The fallback re-query covers that case.
+
+describe('bulkCreate — concurrency', () => {
+  it('5 concurrent bulkCreate calls for the same accountNumber yield exactly 1 doc and never throw', async () => {
+    const repo = createRepo();
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => repo.bulkCreate([{ accountTypeCode: '1000' }], orgId)),
+    );
+
+    // Every call returned a result envelope (no exception escaped).
+    for (const r of results) {
+      expect(r.summary.total).toBe(1);
+      expect(r.summary.errors).toBe(0);
+      expect(r.summary.created + r.summary.skipped).toBe(1);
+    }
+
+    // Across all 5 calls, exactly one wrote the doc.
+    const totalCreated = results.reduce((sum, r) => sum + r.summary.created, 0);
+    expect(totalCreated).toBe(1);
+
+    // And the DB has exactly one matching doc.
+    const docs = await AccountModel.find({ business: orgId, accountTypeCode: '1000' }).lean();
+    expect(docs).toHaveLength(1);
+  });
+
+  it('recovers from a mongokit-wrapped 409 (no insertedDocs / no writeErrors / no code 11000)', async () => {
+    // A concurrent peer wins the race and inserts the doc between our
+    // existsFilter check and our createMany call. Simulated by inserting
+    // directly, then patching createMany to throw the exact error shape
+    // mongokit's parseDuplicateKeyError produces.
+
+    // Pre-existing doc inserted "by another caller" AFTER our existsFilter
+    // would have run — so our existing-numbers check sees nothing.
+    const concurrentPeerId = new mongoose.Types.ObjectId();
+    const repo = createRepo();
+    const originalCreateMany = repo.createMany.bind(repo);
+
+    repo.createMany = async (docs: Record<string, unknown>[]) => {
+      // Insert the doc as if a concurrent caller did, then throw the
+      // mongokit-wrapped error shape (NO insertedDocs, NO writeErrors, NO code 11000).
+      await AccountModel.create({
+        _id: concurrentPeerId,
+        accountTypeCode: docs[0].accountTypeCode,
+        accountNumber: docs[0].accountNumber,
+        name: docs[0].name,
+        business: orgId,
+      });
+      const wrapped = new Error('Duplicate value for accountNumber') as Error & {
+        status: number;
+        duplicate: { fields: string[] };
+      };
+      wrapped.status = 409;
+      wrapped.duplicate = { fields: ['business', 'accountNumber'] };
+      throw wrapped;
+    };
+
+    const result = await repo.bulkCreate([{ accountTypeCode: '1000' }], orgId);
+
+    // Restore for cleanliness
+    repo.createMany = originalCreateMany;
+
+    expect(result.summary.errors).toBe(0);
+    expect(result.summary.created).toBe(0);
+    expect(result.summary.skipped).toBe(1);
+    expect(result.skipped[0].reason).toBe('Already exists (concurrent insert)');
+    // The fallback re-query MUST resolve the _id of the doc the peer inserted.
+    expect(String(result.skipped[0]._id)).toBe(String(concurrentPeerId));
+
+    // And the DB has exactly one matching doc.
+    const docs = await AccountModel.find({ business: orgId, accountTypeCode: '1000' }).lean();
+    expect(docs).toHaveLength(1);
+  });
+
+  it('rethrows non-duplicate-key errors (does not swallow validation/connection failures)', async () => {
+    const repo = createRepo();
+    const validationError = new Error('Validation failed') as Error & { name: string };
+    validationError.name = 'ValidationError';
+    repo.createMany = async () => {
+      throw validationError;
+    };
+
+    await expect(repo.bulkCreate([{ accountTypeCode: '1000' }], orgId)).rejects.toThrow(
+      'Validation failed',
+    );
+  });
+});
+
 // ── before:create validation ─────────────────────────────────────────────────
 
 describe('before:create validation', () => {
