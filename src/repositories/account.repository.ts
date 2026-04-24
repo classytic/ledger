@@ -52,6 +52,22 @@ interface MongoBulkWriteError extends Error {
   code?: number;
   writeErrors?: unknown[];
   insertedDocs?: Array<Record<string, unknown>>;
+  /** mongokit's parseDuplicateKeyError wraps E11000 into an HttpError that
+   *  exposes `status: 409` and a `duplicate: { fields, values? }` payload
+   *  while DROPPING `code` / `writeErrors` / `insertedDocs`. The dup-key
+   *  catch below recognizes both shapes. */
+  status?: number;
+  duplicate?: { fields?: string[]; values?: Record<string, unknown> };
+}
+
+function isDuplicateKeyBulkError(err: unknown): err is MongoBulkWriteError {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as MongoBulkWriteError;
+  if (e.code === 11000) return true;
+  if (Array.isArray(e.writeErrors) && e.writeErrors.length > 0) return true;
+  // mongokit-wrapped form
+  if (e.status === 409 && e.duplicate !== undefined) return true;
+  return false;
 }
 
 interface SeedOptions {
@@ -287,34 +303,61 @@ export function wireAccountMethods<TDoc = unknown>(
           _id: (inserted[idx] as unknown as Record<string, unknown>)._id,
         }));
       } catch (err: unknown) {
+        if (!isDuplicateKeyBulkError(err)) throw err;
+
         const bulkError = err as MongoBulkWriteError;
-        if (bulkError.code === 11000 || bulkError.writeErrors) {
-          // Partial success: some docs inserted, some hit dup-key from concurrent caller
-          const insertedDocs = bulkError.insertedDocs ?? [];
-          const insertedNumbers = new Set(
-            insertedDocs.map((d: Record<string, unknown>) => d.accountNumber as string),
-          );
-          for (const item of toCreate) {
-            if (insertedNumbers.has(item.accountNumber)) {
-              const iDoc = insertedDocs.find(
-                (d: Record<string, unknown>) => d.accountNumber === item.accountNumber,
-              );
-              results.created.push({
-                accountTypeCode: item.accountTypeCode,
-                active: item.active,
-                isCashAccount: item.isCashAccount,
-                _id: iDoc?._id,
-              });
-            } else {
-              results.skipped.push({
-                index: item.index,
-                accountTypeCode: item.accountTypeCode,
-                reason: 'Already exists (concurrent insert)',
-              });
-            }
+
+        // Raw bulk-error path keeps `insertedDocs`; mongokit wraps E11000
+        // into a 409 HttpError that strips it. When unavailable, re-query
+        // by target accountNumber so we can still resolve `_id`s for docs
+        // that ended up persisted (whether by us or a concurrent caller —
+        // both satisfy the contract that the accounts now exist).
+        const insertedDocs = bulkError.insertedDocs ?? [];
+        const insertedNumbers = new Set(
+          insertedDocs.map((d: Record<string, unknown>) => d.accountNumber as string),
+        );
+
+        const stillUnknown = toCreate.filter((t) => !insertedNumbers.has(t.accountNumber));
+        const concurrentlyPersistedById = new Map<string, unknown>();
+        if (stillUnknown.length > 0) {
+          const concurrentFilter: Record<string, unknown> = {
+            accountNumber: { $in: stillUnknown.map((t) => t.accountNumber) },
+          };
+          if (orgField && orgId != null) concurrentFilter[orgField] = orgId;
+          const persisted = (await repository.findAll(concurrentFilter, {
+            select: { _id: 1, accountNumber: 1 },
+            lean: true,
+          })) as Array<Record<string, unknown>>;
+          for (const p of persisted) {
+            concurrentlyPersistedById.set(p.accountNumber as string, p._id);
           }
-        } else {
-          throw err;
+        }
+
+        for (const item of toCreate) {
+          if (insertedNumbers.has(item.accountNumber)) {
+            const iDoc = insertedDocs.find(
+              (d: Record<string, unknown>) => d.accountNumber === item.accountNumber,
+            );
+            results.created.push({
+              accountTypeCode: item.accountTypeCode,
+              active: item.active,
+              isCashAccount: item.isCashAccount,
+              _id: iDoc?._id,
+            });
+          } else if (concurrentlyPersistedById.has(item.accountNumber)) {
+            results.skipped.push({
+              index: item.index,
+              accountTypeCode: item.accountTypeCode,
+              reason: 'Already exists (concurrent insert)',
+              _id: concurrentlyPersistedById.get(item.accountNumber),
+            });
+          } else {
+            results.skipped.push({
+              index: item.index,
+              accountTypeCode: item.accountTypeCode,
+              reason: 'Already exists (concurrent insert)',
+            });
+          }
         }
       }
     }
