@@ -107,6 +107,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.12",
+    "@classytic/dev-tools": "^0.2.0",
     "@classytic/fin-io": ">=0.1.0",
     "@classytic/mongokit": ">=3.11.0",
     "@classytic/primitives": ">=0.1.0",
@@ -139,6 +140,7 @@
     "format": "biome format src/ --write",
     "check": "biome ci src/ --diagnostic-level=error",
     "knip": "knip",
+    "push": "classytic-push",
     "smoke": "node scripts/smoke.mjs",
     "prepublishOnly": "npm run check && npm run build && npm run typecheck && npm test && npm run smoke",
     "release": "npm run check && npm run build && npm run typecheck && npm test && npm run smoke && npm publish --access public"
