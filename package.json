@@ -143,6 +143,7 @@
     "push": "classytic-push",
     "smoke": "node scripts/smoke.mjs",
     "prepublishOnly": "npm run check && npm run build && npm run typecheck && npm test && npm run smoke",
-    "release": "npm run check && npm run build && npm run typecheck && npm test && npm run smoke && npm publish --access public"
+    "release:tag": "node -e \"require('child_process').execSync('npm run push -- v'+require('./package.json').version,{stdio:'inherit'})\"",
+    "release": "npm run push -- main && npm run release:tag && npm publish"
   }
 }
