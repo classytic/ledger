@@ -1,6 +1,6 @@
 {
   "name": "@classytic/ledger",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Production-grade double-entry accounting engine for MongoDB — schemas, reports, tax, multi-tenant",
   "type": "module",
   "sideEffects": false,

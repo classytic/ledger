@@ -194,6 +194,39 @@ export interface AccountingEngineConfig {
   currency: string;
   /** Multi-tenant configuration. Omit for single-tenant apps. */
   multiTenant?: MultiTenantConfig | undefined;
+  /**
+   * Field name used to stamp every journal entry with the originating
+   * organization / branch — *without* scoping the chart of accounts or any
+   * other collection. Use this for single-company-multi-branch deployments
+   * where Account / FiscalPeriod stay company-wide but each posting needs a
+   * branch attribution for partition-style reports (per-branch P&L, AR aging,
+   * partner ledger).
+   *
+   * When `multiTenant` is set, that takes precedence — `multiTenant.tenantField`
+   * already provides the same stamp and additionally scopes every repository.
+   *
+   * The host MUST declare the field on the JournalEntry schema via
+   * `schemaOptions.journalEntry.extraFields.<field>` (the engine doesn't add
+   * the schema path for you — keeps schema mutation explicit).
+   *
+   * Example:
+   *
+   *   createAccountingEngine({
+   *     // ...no multiTenant — accounts are company-wide
+   *     journalEntryOrgField: 'organizationId',
+   *     schemaOptions: {
+   *       journalEntry: {
+   *         extraFields: {
+   *           organizationId: { type: ObjectId, ref: 'organization', default: null, index: true },
+   *         },
+   *       },
+   *     },
+   *   });
+   *
+   *   await engine.record.sale(branchId, { ... });
+   *   // → JE doc: { organizationId: branchId, ... }
+   */
+  journalEntryOrgField?: string | undefined;
   /** Multi-currency support. Omit for single-currency apps. */
   multiCurrency?: MultiCurrencyConfig | undefined;
   /** Fiscal year start month (1-12, default: 1 = January) */
