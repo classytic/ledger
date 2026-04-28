@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`config.journalEntryOrgField` — non-scoping branch tag on JE docs.** Single-company-multi-branch hosts (Account / FiscalPeriod stay company-wide, but every JE carries the originating branch ID for partition-style reports) had no way to surface the branch attribution through `record.*` helpers; the orgId arg was silently dropped because `multiTenant?.tenantField` was the only gate. The new field — paired with a host-declared `extraFields.<field>` schema path — lets `postEntry` stamp the JE doc on every record verb (`sale / adjustment / payment / expense / transfer`) without scoping the chart of accounts. `multiTenant` (when set) takes precedence — full multi-tenant scoping path is unchanged. Five scenario tests under [tests/scenarios/journal-entry-org-field.test.ts](tests/scenarios/journal-entry-org-field.test.ts) cover the matrix; 193/193 regression suite green.
+
 ## 0.10.1
 
 ### Fixed

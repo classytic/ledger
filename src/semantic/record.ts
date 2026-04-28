@@ -271,7 +271,14 @@ interface BuildDeps {
 
 export function buildRecordAPI({ models, repositories, config }: BuildDeps): RecordAPI {
   const AccountModel = models.Account as Model<unknown>;
+  // Scope field — used by `resolveAccounts` to filter the chart of accounts
+  // (every collection is scoped under multiTenant). Set only when full
+  // multi-tenant is enabled.
   const orgField = config.multiTenant?.tenantField;
+  // Tag field — used by `postEntry` to stamp the JE doc with the originating
+  // organization. Falls back to `journalEntryOrgField` for hosts that want
+  // per-branch JE attribution without scoping the chart of accounts.
+  const journalTagField = orgField ?? config.journalEntryOrgField;
 
   // ── Account resolver (code → ObjectId, scoped by org) ──
   const resolveAccounts = async (
@@ -333,8 +340,12 @@ export function buildRecordAPI({ models, repositories, config }: BuildDeps): Rec
     payload: Record<string, unknown>,
     options?: RecordOptions,
   ): Promise<unknown> => {
-    if (orgField && organizationId != null) {
-      payload[orgField] = organizationId;
+    // Stamp the originating organization on the JE doc whenever we have a
+    // tag field configured — covers full multi-tenant (where the field also
+    // scopes every collection) and the lighter `journalEntryOrgField` mode
+    // (per-branch attribution only).
+    if (journalTagField && organizationId != null) {
+      payload[journalTagField] = organizationId;
     }
 
     // Resolve actorId: prefer explicit options.actorId, otherwise derive from user._id/id
@@ -357,6 +368,9 @@ export function buildRecordAPI({ models, repositories, config }: BuildDeps): Rec
       session: options?.session ?? undefined,
     };
     if (options?.user) ctx.user = options.user;
+    // ctx.organizationId only flows when full multi-tenant is on — it's the
+    // signal mongokit's multiTenantPlugin reads to filter writes/reads. The
+    // lighter `journalEntryOrgField` mode is a doc tag, not a scoping key.
     if (orgField && organizationId != null) ctx.organizationId = organizationId;
 
     // Forward any unknown keys (e.g. ctx.req, ctx.sourceSubledger) to mongokit.
