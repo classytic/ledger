@@ -8,7 +8,7 @@
 
 import type { Repository, RepositoryContext } from '@classytic/mongokit';
 import type { EventTransport } from '@classytic/primitives/events';
-import type { ClientSession } from 'mongoose';
+import type { ClientSession, Model } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack } from '../country/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
@@ -22,6 +22,15 @@ export interface AccountIntegrations {
   events?: EventTransport;
   bridges?: LedgerBridges;
   outboxStore?: OutboxStore;
+  /**
+   * JournalEntry model — when provided, the repository blocks hard deletion
+   * of accounts that are referenced by any posted journal item. Without
+   * this guard, deleting an in-use account orphans every JE that referenced
+   * it (silent data corruption — reports and aggregations stop matching
+   * those rows). Hosts seeking a rename/reorganize workflow should soft-
+   * delete via `active: false` and create a fresh account.
+   */
+  journalEntryModel?: Model<unknown>;
 }
 
 async function safePublish(
@@ -90,15 +99,59 @@ export function wireAccountMethods<TDoc = unknown>(
 ): AccountRepository<TDoc> {
   const events = integrations.events;
   const outboxStore = integrations.outboxStore;
+  const journalEntryModel = integrations.journalEntryModel;
   // Validate posting accounts on create
-  repository.on('before:create', (ctx: RepositoryContext) => {
+  repository.on('before:create', async (ctx: RepositoryContext) => {
     const code = ctx.data?.accountTypeCode as string | undefined;
     if (code && !country.isPostingAccount(code)) {
       throw Errors.validation(
         `Cannot create account with type "${code}" — it is a structural group or calculated total, not a posting account.`,
       );
     }
+
+    // Pre-check accountNumber uniqueness so users hitting "Add 1111 again" get
+    // a clear message ("Account number 1111 already exists. Use a custom
+    // accountNumber to create a sub-account.") instead of a raw E11000.
+    // The Mongo unique index remains the source of truth — this hook is for
+    // UX only; a true race still surfaces as the underlying validation error.
+    const data = ctx.data as Record<string, unknown> | undefined;
+    if (!data) return;
+    const accountNumber =
+      (data.accountNumber as string | undefined) ?? (code as string | undefined);
+    if (!accountNumber) return;
+    const filter: Record<string, unknown> = { accountNumber };
+    if (orgField) {
+      const orgId = data[orgField] ?? (ctx as { organizationId?: unknown }).organizationId;
+      if (orgId != null) filter[orgField] = orgId;
+    }
+    const existing = await repository.getByQuery(filter, {
+      throwOnNotFound: false,
+      lean: true,
+    });
+    if (existing) {
+      throw Errors.validation(
+        `Account number "${accountNumber}" already exists. Provide a custom accountNumber (e.g. "${accountNumber}-NORTH") to create a sub-account.`,
+      );
+    }
   });
+
+  // Block hard deletion of accounts referenced by any journal item — even
+  // a single posted entry orphans it. Hosts that want to retire an account
+  // should soft-delete via `active: false`. The check is a single
+  // `journalItems.account` index hit; cheap relative to the data-corruption
+  // risk it prevents.
+  if (journalEntryModel) {
+    repository.on('before:delete', async (ctx: RepositoryContext) => {
+      const id = ctx.id;
+      if (id == null) return;
+      const inUse = await journalEntryModel.exists({ 'journalItems.account': id });
+      if (inUse) {
+        throw Errors.validation(
+          `Cannot delete account ${String(id)} — it is referenced by one or more journal entries. Set active: false to retire it instead.`,
+        );
+      }
+    });
+  }
 
   /**
    * Seed standard posting accounts for an organization.

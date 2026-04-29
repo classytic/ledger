@@ -72,26 +72,38 @@ export function createRepositories(
   const strictness = config.strictness;
   const country = config.country;
   const { events, bridges, outboxStore } = integrations;
+  const tenantFieldType = config.tenantFieldType ?? 'objectId';
 
   // ── Optional tenant scoping plugin ──────────────────────────────────────
   // When enabled, mongokit injects the tenant filter at POLICY priority
-  // (before cache/audit/observability) whenever ctx.organizationId is present.
-  // `required: false` preserves historical behavior — calls without context
-  // still work. Existing manual `orgField` filters inside wireXxxMethods act
-  // as defense-in-depth and will be removed in 1.0.0.
+  // (before cache/audit/observability) whenever the configured tenant id
+  // is present on the call context. `required: false` preserves historical
+  // behavior — calls without context still work. Existing manual `orgField`
+  // filters inside wireXxxMethods act as defense-in-depth and will be
+  // removed in 1.0.0.
+  //
+  // contextKey cascade — explicit > 'organizationId'. Better Auth always
+  // emits `ctx.organizationId` regardless of the host's chosen DB field
+  // name, so 'organizationId' stays the default. Hosts that need a
+  // different runtime key (e.g. `ctx.business`, `ctx.tenantId`) set
+  // `multiTenant.contextKey` explicitly. Earlier this value was hardcoded
+  // — silently ignoring the configured `contextKey` and either leaking
+  // across tenants (`required: false`) or throwing on every call
+  // (`required: true`) when the host's runtime carried the id elsewhere.
   const tenantPlugins: PluginType[] = [];
   if (orgField && config.multiTenant?.plugin) {
+    const contextKey = config.multiTenant.contextKey ?? 'organizationId';
     tenantPlugins.push(
       multiTenantPlugin({
         tenantField: orgField,
-        contextKey: 'organizationId',
+        contextKey,
         required: config.multiTenant.required ?? false,
         // 0.9.0: `fieldType` arrived in mongokit 3.6.2. Pass through so the
         // plugin casts string tenant IDs to `ObjectId` when the schema
         // stores the tenant as `Schema.Types.ObjectId` (Better Auth
         // compatibility — enables `$lookup` and `.populate()` against the
         // `organization` collection). See PACKAGE_RULES §9.1 / §9.2.
-        fieldType: config.tenantFieldType ?? 'string',
+        fieldType: tenantFieldType,
       }),
     );
   }
@@ -114,6 +126,7 @@ export function createRepositories(
     events,
     bridges,
     outboxStore,
+    journalEntryModel: models.JournalEntry,
   });
 
   // ── Journal entry repository (with plugins) ─────────────────────────────

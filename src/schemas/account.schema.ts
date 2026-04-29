@@ -30,14 +30,19 @@ export function createAccountSchema(config: AccountingEngineConfig, options: Sch
           `"${props.value}" is not a valid account type code for ${country.name}.`,
       },
     },
+    // accountNumber and name are NOT marked `required: true` at the Mongoose
+    // layer because the schema's `pre('validate')` hook (below) auto-defaults
+    // them from `accountTypeCode` and `country.getAccountType(code).name` when
+    // omitted. Arc's createMongooseAdapter generates the Fastify body schema
+    // from this definition; making them required here would force callers to
+    // pass them on every POST and break the kernel's auto-default contract
+    // exposed in the SDK as `CreateAccountPayload.{accountNumber, name}?`.
     accountNumber: {
       type: String,
-      required: true,
       trim: true,
     },
     name: {
       type: String,
-      required: true,
       trim: true,
     },
     active: { type: Boolean, default: true },

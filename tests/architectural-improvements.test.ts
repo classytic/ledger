@@ -846,9 +846,11 @@ describe('Improvement 3: Account Schema Identity Split', () => {
     expect(schema.path('accountNumber')).toBeDefined();
     expect(schema.path('name')).toBeDefined();
 
-    // accountNumber should be required
+    // accountNumber is NOT mongoose-required — the pre-validate hook auto-
+    // defaults it from accountTypeCode, so requiring it would fire before
+    // the hook runs and fail clean creates that supply only accountTypeCode.
     const accountNumberPath = schema.path('accountNumber');
-    expect(accountNumberPath.isRequired).toBe(true);
+    expect(accountNumberPath.isRequired).toBeFalsy();
   });
 
   it('indexes use accountNumber for uniqueness (single-tenant)', async () => {

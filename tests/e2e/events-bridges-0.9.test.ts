@@ -353,6 +353,94 @@ describe('0.9.0 — multiTenantPlugin opt-in', () => {
     expect(scopedB.length).toBe(1);
     expect((scopedB[0] as { name: string }).name).toBe('Cash B');
   });
+
+  it('casts hex-string organizationId to match default ObjectId tenant fields', async () => {
+    const engine = createAccountingEngine({
+      mongoose: mongoose.connection,
+      country: testPack,
+      currency: 'USD',
+      multiTenant: { tenantField: 'business', ref: 'Business', plugin: true },
+    });
+    await engine.models.Account.createIndexes();
+
+    const orgA = new mongoose.Types.ObjectId();
+    const orgB = new mongoose.Types.ObjectId();
+
+    await engine.models.Account.create({
+      accountTypeCode: '1000',
+      accountNumber: 'A-HEX',
+      name: 'Cash A Hex',
+      business: orgA,
+    });
+    await engine.models.Account.create({
+      accountTypeCode: '1000',
+      accountNumber: 'B-HEX',
+      name: 'Cash B Hex',
+      business: orgB,
+    });
+
+    const scopedA = await engine.repositories.accounts.findAll(
+      {} as never,
+      { organizationId: orgA.toHexString() } as never,
+    );
+
+    expect(scopedA.length).toBe(1);
+    expect((scopedA[0] as { name: string }).name).toBe('Cash A Hex');
+  });
+
+  // Divergent runtime key — ctx.<custom> instead of ctx.organizationId.
+  // Earlier the factory hardcoded `contextKey: 'organizationId'`, silently
+  // ignoring `multiTenant.contextKey` and either leaking (required: false)
+  // or throwing on every call (required: true). This proves the explicit
+  // contextKey override now reaches the plugin.
+  it('honors explicit multiTenant.contextKey (e.g. ctx.businessId)', async () => {
+    const engine = createAccountingEngine({
+      mongoose: mongoose.connection,
+      country: testPack,
+      currency: 'USD',
+      multiTenant: {
+        tenantField: 'business',
+        ref: 'Business',
+        plugin: true,
+        contextKey: 'businessId',
+        required: true, // fail-closed proves the wiring fires
+      },
+    });
+    await engine.models.Account.createIndexes();
+
+    const orgA = new mongoose.Types.ObjectId();
+    const orgB = new mongoose.Types.ObjectId();
+
+    await engine.models.Account.create({
+      accountTypeCode: '1000',
+      accountNumber: 'CK-A',
+      name: 'Cash A CK',
+      business: orgA,
+    });
+    await engine.models.Account.create({
+      accountTypeCode: '1000',
+      accountNumber: 'CK-B',
+      name: 'Cash B CK',
+      business: orgB,
+    });
+
+    // ctx under the configured contextKey — must scope.
+    const scopedA = await engine.repositories.accounts.findAll(
+      {} as never,
+      { businessId: orgA } as never,
+    );
+    expect(scopedA.length).toBe(1);
+    expect((scopedA[0] as { name: string }).name).toBe('Cash A CK');
+
+    // ctx under the WRONG key — plugin can't find tenant; with required: true
+    // it must throw, proving the contextKey rename is what's being read.
+    await expect(
+      engine.repositories.accounts.findAll(
+        {} as never,
+        { organizationId: orgA } as never,
+      ),
+    ).rejects.toThrow();
+  });
 });
 
 // ── Scenario 4: arc drop-in structural test ─────────────────────────────────

@@ -269,14 +269,13 @@ export interface AccountingEngineConfig {
   /**
    * Mongoose type for the multi-tenant field on all ledger schemas.
    *
-   * - `'string'` (default, back-compat): stores tenant IDs as strings.
-   *   Accepts any external auth system (UUIDs, slugs, external identifiers).
-   * - `'objectId'`: stores tenant IDs as native MongoDB ObjectId with a
+   * - `'objectId'` (default): stores tenant IDs as native MongoDB ObjectId with a
    *   Mongoose ref to the organization collection. Enables `$lookup` and
    *   `.populate()` against Better Auth's `organization` collection.
+   * - `'string'`: stores tenant IDs as strings. Use this for UUID/slug-based
+   *   auth systems.
    *
-   * New hosts wiring Better Auth should pass `'objectId'`. See
-   * PACKAGE_RULES §9.1 and §9.2.
+   * See PACKAGE_RULES §9.1 and §9.2.
    *
    * Note: this field is plumbed into `multiTenantPlugin` when
    * `multiTenant.plugin: true`. Schema-level type switching is applied

@@ -44,6 +44,7 @@ import { generateAgedBalance } from './reports/aged-balance.js';
 import { generateBalanceSheet } from './reports/balance-sheet.js';
 import { generateBudgetVsActual } from './reports/budget-vs-actual.js';
 import { generateCashFlow } from './reports/cash-flow.js';
+import { type DaybookParams, generateDaybook } from './reports/daybook.js';
 import { generateDimensionBreakdown } from './reports/dimension-breakdown.js';
 import { generateGeneralLedger } from './reports/general-ledger.js';
 import { generateIncomeStatement } from './reports/income-statement.js';
@@ -329,6 +330,8 @@ export class AccountingEngine {
         businessName?: string;
         filters?: Record<string, unknown>;
       }) => generateCashFlow({ AccountModel, JournalEntryModel, country, orgField }, params),
+
+      daybook: (params: DaybookParams) => generateDaybook({ JournalEntryModel, orgField }, params),
 
       agedBalance: (params: {
         organizationId?: unknown;
