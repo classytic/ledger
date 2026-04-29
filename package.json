@@ -1,6 +1,6 @@
 {
   "name": "@classytic/ledger",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "Production-grade double-entry accounting engine for MongoDB — schemas, reports, tax, multi-tenant",
   "type": "module",
   "sideEffects": false,
@@ -94,7 +94,7 @@
   },
   "peerDependencies": {
     "@classytic/fin-io": ">=0.1.0",
-    "@classytic/mongokit": ">=3.11.0",
+    "@classytic/mongokit": ">=3.11.1",
     "@classytic/primitives": ">=0.1.0",
     "@classytic/repo-core": ">=0.2.0",
     "mongoose": ">=9.4.1",
@@ -109,7 +109,7 @@
     "@biomejs/biome": "^2.4.12",
     "@classytic/dev-tools": "^0.2.0",
     "@classytic/fin-io": ">=0.1.0",
-    "@classytic/mongokit": ">=3.11.0",
+    "@classytic/mongokit": "^3.11.1",
     "@classytic/primitives": ">=0.1.0",
     "@classytic/repo-core": ">=0.2.0",
     "@types/node": "^25.5.0",

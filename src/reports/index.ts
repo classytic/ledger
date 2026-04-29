@@ -22,6 +22,13 @@ export { generateBudgetVsActual } from './budget-vs-actual.js';
 export type { CashFlowOptions } from './cash-flow.js';
 export { generateCashFlow } from './cash-flow.js';
 export type {
+  DaybookLine,
+  DaybookOptions,
+  DaybookParams,
+  DaybookReport,
+} from './daybook.js';
+export { generateDaybook } from './daybook.js';
+export type {
   DimensionBreakdownOptions,
   DimensionBreakdownParams,
   DimensionBreakdownReport,
