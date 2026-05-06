@@ -9,7 +9,6 @@ export default defineConfig({
     'src/constants/index.ts',
     'src/country/index.ts',
     'src/exports/index.ts',
-    'src/sync/index.ts',
     'src/events/index.ts',
     'src/bridges/index.ts',
   ],

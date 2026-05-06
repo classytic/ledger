@@ -21,9 +21,9 @@
  * the reconciliation collection.
  */
 
-import type { Repository, RepositoryInstance } from '@classytic/mongokit';
+import { getNextSequence, type Repository, type RepositoryInstance } from '@classytic/mongokit';
 import type { EventTransport } from '@classytic/primitives/events';
-import type { ClientSession, Model } from 'mongoose';
+import type { ClientSession, Connection, Model } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
 import type { OutboxStore } from '../events/outbox-store.js';
@@ -106,62 +106,43 @@ interface JournalEntryDoc {
 }
 
 /**
- * Default matching-number generator — atomic counter stored in the
- * reconciliation collection. Uses a dedicated sentinel document keyed
- * `{ matchingNumber: '__counter__', [org]: orgId }` so each org has its
- * own counter, safe under concurrent match calls.
+ * Default matching-number generator — delegates to mongokit's
+ * `getNextSequence(counterKey, 1, connection, session)` which atomically
+ * bumps a counter row in the shared `_mongokit_counters` collection. Same
+ * primitive that backs `journalEntries.referenceNumber` allocation in this
+ * package (see `journal-entry.schema.ts:431`) and the per-package id
+ * generators in `@classytic/invoice`, `order`, `cart`, `revenue`.
  *
- * Routed through `repository.findOneAndUpdate` (mongokit 3.13+) so the
- * counter bump flows through the plugin pipeline — multi-tenant scope,
- * audit, cache invalidation. Previously `Model.findOneAndUpdate` was used
- * directly, which bypassed every plugin and silently leaked across tenants
- * if a stale ctx ever crept in.
+ * Why this replaced the in-collection sentinel pattern (pre-0.10.4): the
+ * sentinel approach stored the counter as a synthetic `matchingNumber:
+ * '__counter__'` doc in the reconciliation collection itself, with the
+ * counter slot as `seq`. After the 0.10.x refactor that routed the bump
+ * through `repository.findOneAndUpdate(...)` (to flow through the plugin
+ * pipeline), mongoose strict mode silently dropped `$inc: { seq: 1 }`
+ * because `seq` was never declared in the schema — every call returned
+ * `undefined`, fell back to `1`, and every match resolved to `RECN-000001`.
+ * The first match per engine succeeded; the second collided on the unique
+ * index. `getNextSequence` sidesteps this entirely: dedicated counter
+ * collection, no schema pollution, session-aware (counter rolls back if
+ * the calling transaction aborts), multi-tenant via key prefix.
  */
 async function nextMatchingNumber(
-  repository: Repository<unknown>,
+  connection: Connection,
   orgField: string | undefined,
   orgId: unknown,
   session: ClientSession | null,
 ): Promise<string> {
-  const counterQuery: Record<string, unknown> = { matchingNumber: '__counter__' };
-  if (orgField && orgId != null) counterQuery[orgField] = orgId;
-
-  // Sentinel doc — `matchingNumber: '__counter__'` is reserved and will
-  // never collide with a real `RECN-NNNNNN` value. The unique index covers
-  // it. `$setOnInsert` provides placeholder fields the schema marks
-  // required; `strict: false` keeps mongoose from rejecting the synthetic
-  // shape (validate on items ≥2 doesn't run on findOneAndUpdate).
-  const counterUpdate: Record<string, unknown> = {
-    $inc: { seq: 1 },
-    $setOnInsert: {
-      account: null,
-      items: [
-        { entry: null, itemIndex: 0 },
-        { entry: null, itemIndex: 1 },
-      ],
-      debitTotal: 0,
-      creditTotal: 0,
-    },
-  };
-
-  // `runValidators: false` is load-bearing — the synthetic counter doc
-  // intentionally violates the schema's `required` rules on `account` /
-  // `items.entry`. mongokit's findOneAndUpdate runs validators by default;
-  // disabling them here mirrors the prior `Model.findOneAndUpdate({...,
-  // strict: false})` behaviour without losing the plugin pipeline.
-  const opts: Record<string, unknown> = {
-    returnDocument: 'after',
-    upsert: true,
-    runValidators: false,
-  };
-  if (session) opts.session = session;
-  if (orgField && orgId != null) opts.organizationId = orgId;
-
-  const result = (await repository.findOneAndUpdate(counterQuery, counterUpdate, opts)) as {
-    seq?: number;
-  } | null;
-
-  const seq = result?.seq ?? 1;
+  let orgScope = 'global';
+  if (orgField && orgId != null) {
+    orgScope =
+      typeof (orgId as { toHexString?: () => string }).toHexString === 'function'
+        ? (orgId as { toHexString: () => string }).toHexString()
+        : String(orgId);
+  } else if (orgField) {
+    orgScope = 'unscoped';
+  }
+  const counterKey = `ledger:${orgScope}:matchingNumber`;
+  const seq = await getNextSequence(counterKey, 1, connection, session ?? undefined);
   return `RECN-${String(seq).padStart(6, '0')}`;
 }
 
@@ -278,7 +259,7 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
 
     if (!matchingNumber) {
       matchingNumber = await nextMatchingNumber(
-        repository as unknown as Repository<unknown>,
+        ReconciliationModel.db,
         orgField,
         organizationId,
         session,

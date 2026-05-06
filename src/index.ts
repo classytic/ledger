@@ -130,6 +130,25 @@ export type {
 } from './repositories/factory.js';
 export { createRepositories } from './repositories/factory.js';
 
+// ── Public input shapes + builders ─────────────────────────────────────────
+
+// `buildOpeningBalanceEntry` is a pure (no DB, no Mongoose) function that
+// turns a list of account balances into a balanced journal entry. Used
+// internally by `engine.record.openingBalance(...)` and exposed publicly
+// so cutover/migration tooling in hosts can call it without instantiating
+// the engine.
+export type {
+  OpeningBalanceInput,
+  OpeningBalanceResult,
+} from './builders/opening-balance.js';
+export { buildOpeningBalanceEntry } from './builders/opening-balance.js';
+// `JournalEntryInput` / `JournalItemInput` describe the shape accepted by
+// `journalEntries.create()`. Hosts that build journal entries from external
+// sources (CSV imports, third-party API mappers, etc.) populate this shape.
+// In 0.10.x these lived under `@classytic/ledger/sync`; that subpath was
+// removed in 0.11.0 — these types now ride the main entry.
+export type { JournalEntryInput, JournalItemInput } from './types/journal-input.js';
+
 // ── Semantic Primitives (for AI agents, MCP tools, apps) ──────────────────
 
 export type {

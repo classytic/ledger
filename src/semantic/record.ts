@@ -19,9 +19,9 @@
  */
 
 import type { ClientSession, Model, Types } from 'mongoose';
+import { buildOpeningBalanceEntry } from '../builders/opening-balance.js';
 import type { LedgerModels } from '../models/factory.js';
 import type { LedgerRepositories } from '../repositories/factory.js';
-import { buildOpeningBalanceEntry } from '../sync/builders/opening-balance.js';
 import type { AccountingEngineConfig } from '../types/engine.js';
 import { Errors } from '../utils/errors.js';
 
