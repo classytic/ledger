@@ -17,6 +17,7 @@
 import type { PluginFunction, RepositoryContext } from '@classytic/mongokit';
 import type { Model } from 'mongoose';
 import { ImmutableViolationError } from '../utils/errors.js';
+import { type ClaimRepositoryContext, isReverseMarkClaim } from './claim-context.js';
 
 export interface ImmutableGuardOptions {
   /** The JournalEntry Mongoose model, for looking up current state on update. */
@@ -79,6 +80,44 @@ export function immutableGuardPlugin(options: ImmutableGuardOptions): PluginFunc
       if (current?.state === 'posted') {
         throw new ImmutableViolationError(id);
       }
+    });
+
+    // ── before:claim — block claims that try to leave `posted` ─────────
+    //
+    // In strict mode, posted entries are append-only audit records — the
+    // only way to correct one is `reverse()`, which creates a counter-
+    // entry. Without this hook, a host calling `repo.claim(id, { from:
+    // 'posted', to: 'draft' })` directly would unpost an immutable entry,
+    // bypassing the `unpost()` strictness check.
+    //
+    // Reverse-mark is exempt — it's a state-noop (`from === to ===
+    // 'posted'`) with a `reversed: { $ne: true }` race guard; the
+    // mutation is already constrained to the legitimate audit-trail
+    // fingerprint (reversed/reversedBy/reversedByUser fields).
+    repo.on('before:claim', async (rawCtx: RepositoryContext) => {
+      const ctx = rawCtx as ClaimRepositoryContext & InternalCtx;
+      if (ctx._ledgerInternal) return;
+      if (isReverseMarkClaim(ctx)) return;
+
+      const transition = ctx.transition;
+      if (!transition) return;
+      const stateField = transition.field ?? 'state';
+      if (stateField !== 'state') return;
+
+      // Determine if the transition's `from` set includes 'posted'. When
+      // it does, the caller is asking to leave (or stay-on) posted via a
+      // direct claim — refuse in strict mode unless this is the exempt
+      // reverse-mark shape (handled above).
+      const fromSpec = transition.from;
+      const fromIncludesPosted = Array.isArray(fromSpec)
+        ? fromSpec.includes('posted')
+        : fromSpec === 'posted';
+      if (!fromIncludesPosted) return;
+
+      // `from === to === 'posted'` with a non-reverse-mark patch reaches
+      // here too — block it; arbitrary stamping on posted entries violates
+      // the audit-trail contract.
+      throw new ImmutableViolationError(ctx.id);
     });
   };
 }

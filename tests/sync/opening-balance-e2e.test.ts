@@ -20,6 +20,7 @@ import { createAccountingEngine } from '../../src/engine';
 import { defineCountryPack } from '../../src/country/index';
 import { buildOpeningBalanceEntry } from '../../src/sync/builders/opening-balance';
 import type { Cents } from '../../src/types/core';
+import { legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 // Inline Canadian-like country pack (self-contained — no ledger-ca dependency)
 const testPack = defineCountryPack({
@@ -152,18 +153,18 @@ describe('Opening Balance E2E — record.openingBalance()', () => {
     }) as { rows: Array<{ account: { accountTypeCode: string }; ending: { debit: number; credit: number } }> };
 
     expect(tb).toBeDefined();
-    expect(tb.rows.length).toBeGreaterThanOrEqual(8);
+    expect(legacyTrialBalance(tb).rows.length).toBeGreaterThanOrEqual(8);
 
     // Check specific accounts
-    const cash = tb.rows.find(r => r.account?.accountTypeCode === '1000');
+    const cash = legacyTrialBalance(tb).rows.find(r => r.account?.accountTypeCode === '1000');
     expect(cash).toBeDefined();
     expect(cash!.ending.debit).toBe(5000000); // $50,000
 
-    const ap = tb.rows.find(r => r.account?.accountTypeCode === '2620');
+    const ap = legacyTrialBalance(tb).rows.find(r => r.account?.accountTypeCode === '2620');
     expect(ap).toBeDefined();
     expect(ap!.ending.credit).toBe(1875000); // $18,750
 
-    const land = tb.rows.find(r => r.account?.accountTypeCode === '1600');
+    const land = legacyTrialBalance(tb).rows.find(r => r.account?.accountTypeCode === '1600');
     expect(land).toBeDefined();
     expect(land!.ending.debit).toBe(2500000); // $25,000
   });

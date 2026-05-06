@@ -20,6 +20,7 @@ import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { legacyBalanceSheet, legacyIncomeStatement, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 // =============================================================================
 // Generic Textbook Country Pack (no country-specific rules)
@@ -495,8 +496,8 @@ describe('O-Level: The Accounting Equation', () => {
       dateValue: '2024-01',
     });
 
-    const totalDebit = tb.rows.reduce((s, r) => s + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((s, r) => s + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
     expect(totalDebit).toBeGreaterThan(0);
   });
@@ -508,11 +509,11 @@ describe('O-Level: The Accounting Equation', () => {
     });
 
     // Revenue: $3,000
-    expect(is.revenue.total).toBe(300_000);
+    expect(legacyIncomeStatement(is).revenue.total).toBe(300_000);
     // Operating expenses: Rent $1,200 + Wages $1,500 = $2,700
-    expect(is.expenses.total).toBe(270_000);
+    expect(legacyIncomeStatement(is).expenses.total).toBe(270_000);
     // Net income: $3,000 - $2,700 = $300
-    expect(is.netIncome).toBe(30_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(30_000);
   });
 
   it('balance sheet is balanced (Assets = Liabilities + Equity)', async () => {
@@ -521,17 +522,17 @@ describe('O-Level: The Accounting Equation', () => {
       dateValue: '2024-01',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
 
     // Total Assets: Cash $8,300 + AR $1,000 + Supplies $500 = $9,800
-    expect(bs.summary.totalAssets).toBe(980_000);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(980_000);
 
     // Liabilities = $0
-    expect(bs.summary.totalLiabilities).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.totalLiabilities).toBe(0);
 
     // Equity = $9,800 (Capital $10,000 - Drawings $500 + Net Income $300)
-    expect(bs.summary.totalEquity).toBe(980_000);
+    expect(legacyBalanceSheet(bs).summary.totalEquity).toBe(980_000);
   });
 
   it('cash account shows correct balance via general ledger', async () => {
@@ -564,8 +565,8 @@ describe('O-Level: The Accounting Equation', () => {
       dateValue: '2024-01',
     });
 
-    const totalAssets = bs.summary.totalAssets;
-    const totalLiabilitiesAndEquity = bs.summary.totalLiabilities + bs.summary.totalEquity;
+    const totalAssets = legacyBalanceSheet(bs).summary.totalAssets;
+    const totalLiabilitiesAndEquity = legacyBalanceSheet(bs).summary.totalLiabilities + legacyBalanceSheet(bs).summary.totalEquity;
     expect(totalAssets).toBe(totalLiabilitiesAndEquity);
     expect(totalAssets).toBe(980_000); // $9,800
   });
@@ -712,7 +713,7 @@ describe('A-Level: Adjusting Entries', () => {
     });
 
     // Find Non-Current Assets group
-    const ncaGroup = bs.assets.groups.find((g) => g.name === 'Non-Current Assets');
+    const ncaGroup = legacyBalanceSheet(bs).assets.groups.find((g) => g.name === 'Non-Current Assets');
     expect(ncaGroup).toBeDefined();
 
     // Equipment $12,000 + Accum Depr -$200 = $11,800
@@ -736,7 +737,7 @@ describe('A-Level: Adjusting Entries', () => {
     });
 
     // Service Revenue: $8,000 (Dec 15) + $2,000 (adjusting) = $10,000
-    expect(is.revenue.total).toBe(1_000_000);
+    expect(legacyIncomeStatement(is).revenue.total).toBe(1_000_000);
   });
 
   it('total expenses = $4,400', async () => {
@@ -750,7 +751,7 @@ describe('A-Level: Adjusting Entries', () => {
     // Depreciation $200
     // Supplies $500
     // Total = $4,400
-    expect(is.expenses.total).toBe(440_000);
+    expect(legacyIncomeStatement(is).expenses.total).toBe(440_000);
   });
 
   it('net income is $5,600', async () => {
@@ -760,7 +761,7 @@ describe('A-Level: Adjusting Entries', () => {
     });
 
     // $10,000 revenue - $4,400 expenses = $5,600
-    expect(is.netIncome).toBe(560_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(560_000);
   });
 
   it('balance sheet balances after all adjustments', async () => {
@@ -769,8 +770,8 @@ describe('A-Level: Adjusting Entries', () => {
       dateValue: '2024-12',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
   });
 
   it('supplies balance after adjustment is $300', async () => {
@@ -873,7 +874,7 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
       dateValue: '2024-01',
     });
 
-    expect(is.revenue.total).toBe(3_500_000);
+    expect(legacyIncomeStatement(is).revenue.total).toBe(3_500_000);
   });
 
   it('cost of goods sold is $21,000', async () => {
@@ -882,7 +883,7 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
       dateValue: '2024-01',
     });
 
-    expect(is.costOfSales).toBe(2_100_000);
+    expect(legacyIncomeStatement(is).costOfSales).toBe(2_100_000);
   });
 
   it('gross profit is $14,000 (revenue - COGS)', async () => {
@@ -891,7 +892,7 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
       dateValue: '2024-01',
     });
 
-    expect(is.grossProfit).toBe(1_400_000);
+    expect(legacyIncomeStatement(is).grossProfit).toBe(1_400_000);
   });
 
   it('operating expenses total $7,500', async () => {
@@ -901,7 +902,7 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
     });
 
     // Rent $3,000 + Utilities $500 + Wages $4,000 = $7,500
-    const opEx = is.expenses.groups
+    const opEx = legacyIncomeStatement(is).expenses.groups
       .filter((g) => g.name !== 'Cost of Goods Sold')
       .reduce((s, g) => s + g.total, 0);
     expect(opEx).toBe(750_000);
@@ -914,7 +915,7 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
     });
 
     // $35,000 - $21,000 - $7,500 = $6,500
-    expect(is.netIncome).toBe(650_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(650_000);
   });
 
   it('inventory balance is $24,000', async () => {
@@ -967,17 +968,17 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
       dateValue: '2024-01',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
 
     // Total Assets: Cash $87,500 + AR $5,000 + Inventory $24,000 = $116,500
-    expect(bs.summary.totalAssets).toBe(11_650_000);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(11_650_000);
 
     // Liabilities: AP $10,000
-    expect(bs.summary.totalLiabilities).toBe(1_000_000);
+    expect(legacyBalanceSheet(bs).summary.totalLiabilities).toBe(1_000_000);
 
     // Equity: Capital $100,000 + Net Income $6,500 = $106,500
-    expect(bs.summary.totalEquity).toBe(10_650_000);
+    expect(legacyBalanceSheet(bs).summary.totalEquity).toBe(10_650_000);
   });
 
   it('COGS is separated from operating expenses on income statement', async () => {
@@ -987,8 +988,8 @@ describe('University: Merchandising Business — Perpetual Inventory', () => {
     });
 
     // COGS should appear as a separate group from Operating Expenses
-    const cogsGroup = is.expenses.groups.find((g) => g.name === 'Cost of Goods Sold');
-    const opExGroup = is.expenses.groups.find((g) => g.name === 'Operating Expenses');
+    const cogsGroup = legacyIncomeStatement(is).expenses.groups.find((g) => g.name === 'Cost of Goods Sold');
+    const opExGroup = legacyIncomeStatement(is).expenses.groups.find((g) => g.name === 'Operating Expenses');
 
     expect(cogsGroup).toBeDefined();
     expect(opExGroup).toBeDefined();
@@ -1074,9 +1075,9 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
       dateValue: 2024,
     });
 
-    expect(is.revenue.total).toBe(8_000_000); // $80,000
-    expect(is.expenses.total).toBe(6_000_000); // $60,000
-    expect(is.netIncome).toBe(2_000_000); // $20,000
+    expect(legacyIncomeStatement(is).revenue.total).toBe(8_000_000); // $80,000
+    expect(legacyIncomeStatement(is).expenses.total).toBe(6_000_000); // $60,000
+    expect(legacyIncomeStatement(is).netIncome).toBe(2_000_000); // $20,000
   });
 
   it('Year 1 balance sheet is balanced', async () => {
@@ -1085,11 +1086,11 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
       dateValue: 2024,
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
 
     // Total Equity = Capital $50,000 + Net Income $20,000 = $70,000
-    expect(bs.summary.totalEquity).toBe(7_000_000);
+    expect(legacyBalanceSheet(bs).summary.totalEquity).toBe(7_000_000);
   });
 
   it('Year 2 income statement shows net income of $30,000', async () => {
@@ -1098,9 +1099,9 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
       dateValue: 2025,
     });
 
-    expect(is.revenue.total).toBe(10_000_000); // $100,000
-    expect(is.expenses.total).toBe(7_000_000); // $70,000
-    expect(is.netIncome).toBe(3_000_000); // $30,000
+    expect(legacyIncomeStatement(is).revenue.total).toBe(10_000_000); // $100,000
+    expect(legacyIncomeStatement(is).expenses.total).toBe(7_000_000); // $70,000
+    expect(legacyIncomeStatement(is).netIncome).toBe(3_000_000); // $30,000
   });
 
   it('Year 2 balance sheet carries forward retained earnings from Year 1', async () => {
@@ -1109,11 +1110,11 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
       dateValue: 2025,
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
 
     // Find the Retained Earnings group in equity
-    const reGroup = bs.equity.groups.find((g) => g.name === 'Retained Earnings');
+    const reGroup = legacyBalanceSheet(bs).equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     // Previous Years Retained Earnings = $20,000 (Year 1 net income, carried forward)
@@ -1127,7 +1128,7 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
     expect(currentYearNI?.balance).toBe(3_000_000); // $30,000 from Year 2
 
     // Total Equity = Capital $50,000 + RE $20,000 + NI $30,000 = $100,000
-    expect(bs.summary.totalEquity).toBe(10_000_000);
+    expect(legacyBalanceSheet(bs).summary.totalEquity).toBe(10_000_000);
   });
 
   it('balance sheet stays balanced across both years', async () => {
@@ -1140,15 +1141,15 @@ describe('Multi-Period: Year-End Close and Carryforward', () => {
       dateValue: 2025,
     });
 
-    expect(bs2024.summary.isBalanced).toBe(true);
-    expect(bs2025.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs2024).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs2025).summary.isBalanced).toBe(true);
 
     // Year 2 total assets should be higher due to accumulated profits
     // Year 1: Cash = $50,000 + $80,000 - $60,000 = $70,000
-    expect(bs2024.summary.totalAssets).toBe(7_000_000);
+    expect(legacyBalanceSheet(bs2024).summary.totalAssets).toBe(7_000_000);
 
     // Year 2: Cash = $70,000 + $100,000 - $70,000 = $100,000
-    expect(bs2025.summary.totalAssets).toBe(10_000_000);
+    expect(legacyBalanceSheet(bs2025).summary.totalAssets).toBe(10_000_000);
   });
 });
 
@@ -1199,8 +1200,8 @@ describe('Accounting Concepts Validation', () => {
         dateValue: '2024-06',
       });
 
-      const totalDebit = tb.rows.reduce((s, r) => s + r.ending.debit, 0);
-      const totalCredit = tb.rows.reduce((s, r) => s + r.ending.credit, 0);
+      const totalDebit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.debit, 0);
+      const totalCredit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.credit, 0);
       expect(totalDebit).toBe(totalCredit);
       expect(totalDebit).toBeGreaterThan(0);
     });
@@ -1211,7 +1212,7 @@ describe('Accounting Concepts Validation', () => {
         dateValue: '2024-06',
       });
 
-      expect(bs.summary.isBalanced).toBe(true);
+      expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
     });
   });
 
@@ -1253,12 +1254,12 @@ describe('Accounting Concepts Validation', () => {
       });
 
       // Revenue recognized in January (accrual basis)
-      expect(janIS.revenue.total).toBe(500_000);
-      expect(janIS.netIncome).toBe(500_000);
+      expect(legacyIncomeStatement(janIS).revenue.total).toBe(500_000);
+      expect(legacyIncomeStatement(janIS).netIncome).toBe(500_000);
 
       // No new revenue in February (just cash collection)
-      expect(febIS.revenue.total).toBe(0);
-      expect(febIS.netIncome).toBe(0);
+      expect(legacyIncomeStatement(febIS).revenue.total).toBe(0);
+      expect(legacyIncomeStatement(febIS).netIncome).toBe(0);
     });
 
     it('cash increases in February but revenue does not', async () => {
@@ -1324,8 +1325,8 @@ describe('Accounting Concepts Validation', () => {
       });
 
       // Each month gets exactly $100 of insurance expense
-      expect(janIS.expenses.total).toBe(10_000); // $100
-      expect(febIS.expenses.total).toBe(10_000); // $100
+      expect(legacyIncomeStatement(janIS).expenses.total).toBe(10_000); // $100
+      expect(legacyIncomeStatement(febIS).expenses.total).toBe(10_000); // $100
     });
 
     it('prepaid insurance decreases each month', async () => {
@@ -1381,7 +1382,7 @@ describe('Accounting Concepts Validation', () => {
       });
 
       // Non-Current Assets group: Equipment $10,000 - Accum Depr $2,000 = $8,000
-      const ncaGroup = bs.assets.groups.find((g) => g.name === 'Non-Current Assets');
+      const ncaGroup = legacyBalanceSheet(bs).assets.groups.find((g) => g.name === 'Non-Current Assets');
       expect(ncaGroup).toBeDefined();
       expect(ncaGroup?.total).toBe(800_000); // $8,000 net book value
 
@@ -1427,8 +1428,8 @@ describe('Accounting Concepts Validation', () => {
         dateValue: '2024-01',
       });
 
-      const totalDebit = tb.rows.reduce((s, r) => s + r.ending.debit, 0);
-      const totalCredit = tb.rows.reduce((s, r) => s + r.ending.credit, 0);
+      const totalDebit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.debit, 0);
+      const totalCredit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.credit, 0);
       expect(totalDebit).toBe(totalCredit);
     });
 
@@ -1438,10 +1439,10 @@ describe('Accounting Concepts Validation', () => {
         dateValue: '2024-01',
       });
 
-      expect(bs.summary.isBalanced).toBe(true);
-      expect(bs.summary.difference).toBe(0);
+      expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+      expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
       // Cash: 1 + 1 - 1 = 1 cent
-      expect(bs.summary.totalAssets).toBe(1);
+      expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(1);
     });
 
     it('income statement correctly shows net income of $0.00', async () => {
@@ -1451,9 +1452,9 @@ describe('Accounting Concepts Validation', () => {
       });
 
       // Revenue $0.01 - Expense $0.01 = $0.00
-      expect(is.revenue.total).toBe(1);
-      expect(is.expenses.total).toBe(1);
-      expect(is.netIncome).toBe(0);
+      expect(legacyIncomeStatement(is).revenue.total).toBe(1);
+      expect(legacyIncomeStatement(is).expenses.total).toBe(1);
+      expect(legacyIncomeStatement(is).netIncome).toBe(0);
     });
   });
 });

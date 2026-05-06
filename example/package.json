@@ -11,7 +11,7 @@
     "@classytic/ledger": "file:..",
     "@classytic/ledger-bd": ">=0.2.1",
     "@classytic/ledger-ca": ">=0.2.0",
-    "@classytic/mongokit": ">=3.11.0",
+    "@classytic/mongokit": ">=3.13.0",
     "mongodb-memory-server": "^10.2.3",
     "mongoose": "^9.4.1"
   }

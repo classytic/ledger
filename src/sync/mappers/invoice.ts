@@ -14,6 +14,7 @@
  */
 
 import type { CanonicalInvoice } from '@classytic/fin-io';
+// `BankCounterparty.identifier` (was `CanonicalContact.reference` in fin-io 0.2)
 import type { Cents } from '../../types/core';
 import type { ImportMapper, JournalEntryInput } from '../../types/sync';
 

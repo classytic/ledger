@@ -3,9 +3,13 @@
  *
  * Creates a Mongoose schema for Chart of Accounts that is:
  * - Multi-tenant aware (adds org field + compound indexes when configured)
- * - Validates accountTypeCode against the country pack
  * - Supports accountNumber (unique per org) and name (user-facing display)
  * - Lean: no cached balances — always computed from journal entries
+ *
+ * Country-specific validation (accountTypeCode against the country pack) is
+ * intentionally NOT done at the schema layer — schema validators are baked in
+ * at model-registration time and would bleed across country engines that share
+ * the same connection. Validation lives in wireAccountMethods.before:create.
  */
 
 import mongoose from 'mongoose';
@@ -14,7 +18,6 @@ import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
 import { buildCurrencyField } from './currency-field.js';
 
 export function createAccountSchema(config: AccountingEngineConfig, options: SchemaOptions = {}) {
-  const { country } = config;
   const scope = resolveLedgerTenant(config);
   const { indexes = true, extraFields = {}, extraIndexes = [] } = options;
 
@@ -24,19 +27,21 @@ export function createAccountSchema(config: AccountingEngineConfig, options: Sch
     accountTypeCode: {
       type: String,
       required: true,
-      validate: {
-        validator: (code: string) => country.isValidAccountType(code),
-        message: (props: { value: string }) =>
-          `"${props.value}" is not a valid account type code for ${country.name}.`,
-      },
+      // No country-specific Mongoose validator here. Mongoose schema validators
+      // are baked into the schema at model-registration time. When multiple
+      // country engines share the same connection, only the first engine's model
+      // is registered — subsequent engines reuse it, so a CA validator would
+      // fire on AU writes and reject AU-only codes. Country validation lives
+      // in wireAccountMethods.before:create, which executes in the context of
+      // the calling repository instance and always uses the correct country pack.
     },
     // accountNumber and name are NOT marked `required: true` at the Mongoose
-    // layer because the schema's `pre('validate')` hook (below) auto-defaults
-    // them from `accountTypeCode` and `country.getAccountType(code).name` when
-    // omitted. Arc's createMongooseAdapter generates the Fastify body schema
-    // from this definition; making them required here would force callers to
-    // pass them on every POST and break the kernel's auto-default contract
-    // exposed in the SDK as `CreateAccountPayload.{accountNumber, name}?`.
+    // layer. The schema's `pre('validate')` hook auto-defaults accountNumber
+    // from accountTypeCode when omitted, and wireAccountMethods.before:create
+    // auto-defaults name from the country pack. Arc's createMongooseAdapter
+    // generates the Fastify body schema from this definition; making them
+    // required here would force callers to pass them on every POST and break
+    // the kernel's auto-default contract (CreateAccountPayload.{accountNumber, name}?).
     accountNumber: {
       type: String,
       trim: true,
@@ -47,6 +52,20 @@ export function createAccountSchema(config: AccountingEngineConfig, options: Sch
     },
     active: { type: Boolean, default: true },
     isCashAccount: { type: Boolean, default: false },
+    /**
+     * Optional per-account override for Cash Flow Statement classification.
+     * Wins over the country-pack `account_type` taxonomy. Use case: a
+     * "Long-term deferred revenue" account whose type would default to
+     * Financing but the business intent is Operating. Mirrors Xero's
+     * per-account Cash Flow category override; one of:
+     *   'operating' | 'investing' | 'financing' | 'excluded'
+     * `null` (default) → fall back to country-pack inference.
+     */
+    cashflowSection: {
+      type: String,
+      enum: ['operating', 'investing', 'financing', 'excluded'],
+      default: null,
+    },
   };
 
   // ── Multi-currency account field (opt-in) ──────────────────────────────
@@ -71,10 +90,9 @@ export function createAccountSchema(config: AccountingEngineConfig, options: Sch
     if (!this.accountNumber && this.accountTypeCode) {
       this.accountNumber = this.accountTypeCode;
     }
-    if (!this.name && this.accountTypeCode) {
-      const at = country.getAccountType(this.accountTypeCode);
-      this.name = at?.name ?? this.accountTypeCode;
-    }
+    // Name auto-default moved to wireAccountMethods.before:create — it needs
+    // the live country pack to resolve the human-readable name, and the correct
+    // pack is only available at the repository level, not at schema-definition time.
   });
 
   // ── Indexes ──────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema
 import type { AccountType } from '../../src/types/core.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 import { buildAccountTypeMap, isVirtualTaxAccount } from '../../src/utils/account-helpers.js';
+import { legacyBalanceSheet, legacyIncomeStatement } from '../helpers/legacy-report-view.js';
 
 // ── Mock US Country Pack ────────────────────────────────────────────────────
 
@@ -497,7 +498,7 @@ describe('Income Statement — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.revenue.name).toBe('Net Revenue');
+    expect(legacyIncomeStatement(report).revenue.name).toBe('Net Revenue');
   });
 
   it('detects "Cost of Goods Sold" as COGS (not "Cost of Sales")', async () => {
@@ -508,7 +509,8 @@ describe('Income Statement — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const cogsGroup = report.expenses.groups.find((g) => g.name === 'Cost of Goods Sold');
+    const view = legacyIncomeStatement(report);
+    const cogsGroup = view.expenses.groups.find((g) => g.name === 'Cost of Goods Sold');
     expect(cogsGroup).toBeDefined();
     expect(cogsGroup?.accounts).toHaveLength(2);
     expect(cogsGroup?.accounts.map((a) => a.code)).toContain('5000');
@@ -523,20 +525,21 @@ describe('Income Statement — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
+    const view = legacyIncomeStatement(report);
     // Revenue: 8,000,000 + 2,000,000 = 10,000,000
-    expect(report.revenue.total).toBe(10000000);
+    expect(view.revenue.total).toBe(10000000);
 
     // COGS: 3,000,000 + 1,500,000 = 4,500,000
-    expect(report.costOfSales).toBe(4500000);
+    expect(view.costOfSales).toBe(4500000);
 
     // Gross Profit: 10,000,000 - 4,500,000 = 5,500,000
-    expect(report.grossProfit).toBe(5500000);
+    expect(view.grossProfit).toBe(5500000);
 
     // OpEx: 500,000 + 2,000,000 + 200,000 = 2,700,000
-    expect(report.operatingIncome).toBe(2800000); // 5,500,000 - 2,700,000
+    expect(view.operatingIncome).toBe(2800000); // 5,500,000 - 2,700,000
 
     // Net Income: 10,000,000 - 7,200,000 = 2,800,000
-    expect(report.netIncome).toBe(2800000);
+    expect(view.netIncome).toBe(2800000);
   });
 
   it('COGS and OpEx accounts never mix', async () => {
@@ -547,10 +550,11 @@ describe('Income Statement — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const cogsCodes = report.expenses.groups
+    const view = legacyIncomeStatement(report);
+    const cogsCodes = view.expenses.groups
       .find((g) => g.name === 'Cost of Goods Sold')
       ?.accounts.map((a) => a.code);
-    const opexCodes = report.expenses.groups
+    const opexCodes = view.expenses.groups
       .find((g) => g.name === 'Operating Expenses')
       ?.accounts.map((a) => a.code);
 
@@ -558,7 +562,7 @@ describe('Income Statement — US Pack', () => {
     expect(opexCodes).toEqual(expect.arrayContaining(['6000', '6100', '6200']));
 
     // No overlap
-    const overlap = cogsCodes.filter((c) => opexCodes.includes(c));
+    const overlap = (cogsCodes ?? []).filter((c) => (opexCodes ?? []).includes(c));
     expect(overlap).toEqual([]);
   });
 });
@@ -602,7 +606,7 @@ describe('Balance Sheet — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const groupNames = report.assets.groups.map((g) => g.name);
+    const groupNames = legacyBalanceSheet(report).assets.groups.map((g) => g.name);
     expect(groupNames).toContain('Current Assets');
     expect(groupNames).toContain('Fixed Assets');
   });
@@ -615,7 +619,7 @@ describe('Balance Sheet — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const eqGroups = report.equity.groups.map((g) => g.name);
+    const eqGroups = legacyBalanceSheet(report).equity.groups.map((g) => g.name);
     expect(eqGroups).toContain("Stockholders' Equity");
   });
 
@@ -627,8 +631,9 @@ describe('Balance Sheet — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
-    expect(report.summary.difference).toBe(0);
+    const summary = legacyBalanceSheet(report).summary;
+    expect(summary.isBalanced).toBe(true);
+    expect(summary.difference).toBe(0);
   });
 
   it('net income flows into equity correctly', async () => {
@@ -641,7 +646,7 @@ describe('Balance Sheet — US Pack', () => {
 
     // Net income = 30K revenue - 10K rent = 20K
     // Equity = 200K stock + 20K net income = 220K
-    expect(report.equity.total).toBe(22000000);
+    expect(legacyBalanceSheet(report).equity.total).toBe(22000000);
   });
 
   it('virtual tax sub-accounts (no dots) are hidden from display', async () => {
@@ -660,12 +665,13 @@ describe('Balance Sheet — US Pack', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
+    const view = legacyBalanceSheet(report);
     // State tax (2101) should be hidden because its parent (2100) is isVirtualTotal
-    const allCodes = report.liabilities.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const allCodes = view.liabilities.groups.flatMap((g) => g.accounts.map((a) => a.code));
     expect(allCodes).not.toContain('2101');
 
     // But the balance should still be counted
-    expect(report.summary.isBalanced).toBe(true);
+    expect(view.summary.isBalanced).toBe(true);
   });
 });
 

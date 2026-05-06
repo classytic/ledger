@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { legacyBalanceSheet, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 // ── Test Country Pack ────────────────────────────────────────────────────────
 
@@ -444,7 +445,7 @@ describe('NorthStar Exports Ltd. — Multi-Currency Revaluation E2E', () => {
       // Sum all ending debits and credits
       let totalDebit = 0;
       let totalCredit = 0;
-      for (const row of tb.rows) {
+      for (const row of legacyTrialBalance(tb).rows) {
         totalDebit += row.ending.debit;
         totalCredit += row.ending.credit;
       }
@@ -611,8 +612,8 @@ describe('NorthStar Exports Ltd. — Multi-Currency Revaluation E2E', () => {
         dateValue: 2026,
       });
 
-      expect(bs.summary.isBalanced).toBe(true);
-      expect(bs.summary.difference).toBe(0);
+      expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+      expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
     });
   });
 
@@ -629,9 +630,9 @@ describe('NorthStar Exports Ltd. — Multi-Currency Revaluation E2E', () => {
 
       expect(bs.metadata.businessName).toBe('NorthStar Exports Ltd.');
       // All values should be integers (cents)
-      expect(Number.isInteger(bs.summary.totalAssets)).toBe(true);
-      expect(Number.isInteger(bs.summary.totalLiabilities)).toBe(true);
-      expect(Number.isInteger(bs.summary.totalEquity)).toBe(true);
+      expect(Number.isInteger(legacyBalanceSheet(bs).summary.totalAssets)).toBe(true);
+      expect(Number.isInteger(legacyBalanceSheet(bs).summary.totalLiabilities)).toBe(true);
+      expect(Number.isInteger(legacyBalanceSheet(bs).summary.totalEquity)).toBe(true);
     });
 
     it('Assets = Liabilities + Equity', async () => {
@@ -641,8 +642,8 @@ describe('NorthStar Exports Ltd. — Multi-Currency Revaluation E2E', () => {
         dateValue: 2026,
       });
 
-      expect(bs.summary.totalAssets).toBe(bs.summary.liabilitiesAndEquity);
-      expect(bs.summary.isBalanced).toBe(true);
+      expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(legacyBalanceSheet(bs).summary.liabilitiesAndEquity);
+      expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
 
       // Verify the actual amounts:
       // Assets:
@@ -651,21 +652,21 @@ describe('NorthStar Exports Ltd. — Multi-Currency Revaluation E2E', () => {
       //   Cash EUR: 0
       //   AR USD: 0
       //   Total Assets = 5,000,000 + 1,400,000 = 6,400,000
-      expect(bs.summary.totalAssets).toBe(6_400_000);
+      expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(6_400_000);
 
       // Liabilities:
       //   AP EUR: 735,000 (historical) - 10,000 (reval gain reduces liability) = 725,000
       //   Total Liabilities = 725,000
-      expect(bs.summary.totalLiabilities).toBe(725_000);
+      expect(legacyBalanceSheet(bs).summary.totalLiabilities).toBe(725_000);
 
       // Equity:
       //   Shares: 5,000,000
       //   Net Income: Revenue 1,350,000 - Expenses 735,000 + FX Gain 60,000 = 675,000
       //   Total Equity = 5,000,000 + 675,000 = 5,675,000
-      expect(bs.summary.totalEquity).toBe(5_675_000);
+      expect(legacyBalanceSheet(bs).summary.totalEquity).toBe(5_675_000);
 
       // A = L + E: 6,400,000 = 725,000 + 5,675,000
-      expect(bs.summary.totalAssets).toBe(725_000 + 5_675_000);
+      expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(725_000 + 5_675_000);
     });
 
     it('unrealized FX gain/loss is reflected in equity via net income', async () => {
@@ -677,7 +678,7 @@ describe('NorthStar Exports Ltd. — Multi-Currency Revaluation E2E', () => {
 
       // Find the current year net income in equity
       let currentYearNetIncome = 0;
-      for (const group of bs.equity.groups) {
+      for (const group of legacyBalanceSheet(bs).equity.groups) {
         for (const acct of group.accounts) {
           if (acct.id === 'current-year') {
             currentYearNetIncome = acct.balance;

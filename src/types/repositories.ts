@@ -33,6 +33,14 @@ export interface PostOptions {
 export interface ReverseOptions extends PostOptions {
   /** Date for the reversal entry (defaults to now) */
   reversalDate?: Date;
+  /**
+   * Post the reversal immediately after creating it. Defaults to `false` —
+   * matches ERPNext (`make_reverse_journal_entry` returns Draft) and Odoo
+   * (`_reverse_moves` creates Draft unless `cancel=True`). Pass `true` for
+   * Odoo's `cancel=True` semantic — cancellation reversals that should
+   * skip the review step.
+   */
+  autoPost?: boolean;
 }
 
 export interface SeedOptions {

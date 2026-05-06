@@ -18,6 +18,7 @@ import { dailyLockPlugin } from '../../src/plugins/lock/index.js';
 import { closeFiscalPeriod, reopenFiscalPeriod } from '../../src/reports/fiscal-close.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 import { buildDimensionFields } from '../../src/utils/dimensions.js';
+import { legacyBalanceSheet, legacyIncomeStatement, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 // ── Country Pack: TechVenture Labs ──────────────────────────────────────────
 
@@ -827,8 +828,8 @@ describe('Cross-Feature Integration', () => {
       dateValue: 2025,
     });
 
-    const totalDebits = tb.rows.reduce((s, r) => s + r.ending.debit, 0);
-    const totalCredits = tb.rows.reduce((s, r) => s + r.ending.credit, 0);
+    const totalDebits = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.debit, 0);
+    const totalCredits = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.credit, 0);
 
     expect(totalDebits).toBe(totalCredits);
     expect(totalDebits).toBeGreaterThan(0);
@@ -836,19 +837,20 @@ describe('Cross-Feature Integration', () => {
 
   it('balance sheet is balanced (assets = liabilities + equity)', async () => {
     const reports = engine.reports;
-    const bs = (await reports.balanceSheet({
+    const bs = await reports.balanceSheet({
       dateOption: 'year',
       dateValue: 2025,
-    })) as any;
+    });
 
+    const view = legacyBalanceSheet(bs);
     // Balance sheet has assets, liabilities, equity as top-level categories
-    expect(bs.assets).toBeDefined();
-    expect(bs.liabilities).toBeDefined();
-    expect(bs.equity).toBeDefined();
+    expect(view.assets).toBeDefined();
+    expect(view.liabilities).toBeDefined();
+    expect(view.equity).toBeDefined();
 
     // The balance sheet should be balanced: totalAssets === liabilitiesAndEquity
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.totalAssets).toBe(bs.summary.liabilitiesAndEquity);
+    expect(view.summary.isBalanced).toBe(true);
+    expect(view.summary.totalAssets).toBe(view.summary.liabilitiesAndEquity);
   });
 
   it('income statement net income is consistent', async () => {
@@ -859,12 +861,12 @@ describe('Cross-Feature Integration', () => {
     });
 
     // Income statement should have a net income figure
-    expect(is.netIncome).toBeDefined();
+    expect(legacyIncomeStatement(is).netIncome).toBeDefined();
     // Net income = revenue - expenses
     // Revenue entries: 10,000,000 + 100,000 + 10,000,000 = 20,100,000
     // Expense entries: 2,000,000 + 500,000 + 1,500,000 + 300,000 + 1,000,000 + 200,000 = 5,500,000
     // Net income = 20,100,000 - 5,500,000 = 14,600,000
-    expect(is.netIncome).toBe(14_600_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(14_600_000);
   });
 
   it('all reports generate without errors', async () => {
@@ -878,12 +880,14 @@ describe('Cross-Feature Integration', () => {
       reports.budgetVsActual({ dateOption: 'quarter', dateValue: { quarter: 1, year: 2025 } }),
     ]);
 
-    expect(tb.rows.length).toBeGreaterThan(0);
-    expect((bs as any).assets).toBeDefined();
-    expect((bs as any).liabilities).toBeDefined();
-    expect((bs as any).equity).toBeDefined();
-    expect((incStmt as any).revenue).toBeDefined();
-    expect((incStmt as any).expenses).toBeDefined();
+    expect(legacyTrialBalance(tb).rows.length).toBeGreaterThan(0);
+    const bsView = legacyBalanceSheet(bs);
+    expect(bsView.assets).toBeDefined();
+    expect(bsView.liabilities).toBeDefined();
+    expect(bsView.equity).toBeDefined();
+    const isView = legacyIncomeStatement(incStmt);
+    expect(isView.revenue).toBeDefined();
+    expect(isView.expenses).toBeDefined();
     expect(bva.rows.length).toBeGreaterThan(0);
   });
 
@@ -902,8 +906,8 @@ describe('Cross-Feature Integration', () => {
 
     // Sum expense account balances from trial balance
     const expenseAccountCodes = ['6000', '6100', '6200', '6300'];
-    const tbExpenseTotal = tb.rows
-      .filter((r) => expenseAccountCodes.includes((r.account as any).accountNumber))
+    const tbExpenseTotal = legacyTrialBalance(tb).rows
+      .filter((r) => expenseAccountCodes.includes((r.account as { accountNumber?: string }).accountNumber ?? ''))
       .reduce((s, r) => s + (r.ending.debit - r.ending.credit), 0);
 
     // Dimension breakdown only captures items WITH a departmentId dimension.

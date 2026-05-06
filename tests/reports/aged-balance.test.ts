@@ -218,15 +218,16 @@ describe('Aged Balance Report', () => {
         { type: 'receivable', asOfDate },
       );
 
-      expect(report.bucketLabels).toEqual(['Current', '31-60', '61-90', '90+']);
+      expect(report.periods.map((p) => p.key)).toEqual(['Current', '31-60', '61-90', '90+']);
+      expect(report.periods.every((p) => p.isAgeBucket)).toBe(true);
 
       // AR account row (only AR has due-dated items; cash has none)
       const arRow = report.rows.find((r) => String(r.accountId) === String(arId));
       expect(arRow).toBeDefined();
-      expect(arRow?.buckets.Current).toBe(10000);
-      expect(arRow?.buckets['31-60']).toBe(20000);
-      expect(arRow?.buckets['61-90']).toBe(30000);
-      expect(arRow?.buckets['90+']).toBe(40000);
+      expect(arRow?.amounts.Current).toBe(10000);
+      expect(arRow?.amounts['31-60']).toBe(20000);
+      expect(arRow?.amounts['61-90']).toBe(30000);
+      expect(arRow?.amounts['90+']).toBe(40000);
       expect(arRow?.total).toBe(100000);
     });
   });
@@ -262,13 +263,13 @@ describe('Aged Balance Report', () => {
         { type: 'receivable', asOfDate, buckets: customBuckets },
       );
 
-      expect(report.bucketLabels).toEqual(['0-15', '16-45', '46+']);
+      expect(report.periods.map((p) => p.key)).toEqual(['0-15', '16-45', '46+']);
 
       const arRow = report.rows.find((r) => String(r.accountId) === String(arId));
       expect(arRow).toBeDefined();
-      expect(arRow?.buckets['0-15']).toBe(5000);
-      expect(arRow?.buckets['16-45']).toBe(7000);
-      expect(arRow?.buckets['46+']).toBe(9000);
+      expect(arRow?.amounts['0-15']).toBe(5000);
+      expect(arRow?.amounts['16-45']).toBe(7000);
+      expect(arRow?.amounts['46+']).toBe(9000);
     });
   });
 
@@ -458,7 +459,7 @@ describe('Aged Balance Report', () => {
 
       const arRow = report.rows.find((r) => String(r.accountId) === String(arId));
       expect(arRow).toBeDefined();
-      expect(arRow?.buckets.Current).toBe(12000);
+      expect(arRow?.amounts.Current).toBe(12000);
       expect(arRow?.total).toBe(12000);
     });
   });

@@ -18,40 +18,16 @@ import type { EventTransport } from '@classytic/primitives/events';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack, JournalTemplate } from '../country/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
-import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
 import type { JournalRepository, SeedResult } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
+import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface JournalIntegrations {
   events?: EventTransport;
   bridges?: LedgerBridges;
   outboxStore?: OutboxStore;
-}
-
-async function safePublish(
-  events: EventTransport | undefined,
-  outboxStore: OutboxStore | undefined,
-  type: string,
-  payload: unknown,
-  ctx?: { organizationId?: unknown },
-): Promise<void> {
-  const event = createEvent(type, payload, ctx);
-  if (outboxStore) {
-    try {
-      await outboxStore.save(event);
-    } catch {
-      /* outbox failures must not break mutations */
-    }
-  }
-  if (events) {
-    try {
-      await events.publish(event);
-    } catch {
-      /* transport failures must not break mutations */
-    }
-  }
 }
 
 /**
@@ -138,7 +114,7 @@ export function wireJournalMethods<TDoc = Record<string, unknown>>(
     const query: Record<string, unknown> = { _id: journalId };
     if (orgField && orgId != null) query[orgField] = orgId;
 
-    // Atomic findOneAndUpdate($inc) — the sequence counter is the single
+    // Atomic $inc counter — the sequence counter is the single
     // source of truth per journal, no race against concurrent posts.
     const updated = (await repository._executeQuery(async (Model) =>
       Model.findOneAndUpdate(

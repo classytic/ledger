@@ -113,19 +113,19 @@ describe('Account Schema', () => {
     expect(schema.path('accountTypeCode')).toBeDefined();
   });
 
-  it('validates accountTypeCode against country pack', async () => {
+  it('accepts any accountTypeCode at schema level (country-pack validation is at repository layer)', async () => {
     const schema = createAccountSchema(stConfig);
     // Clear any previous model registrations for this test
     if (mongoose.models.TestAccount) delete mongoose.models.TestAccount;
     const Model = mongoose.model('TestAccount', schema);
 
-    // Valid code
+    // Schema accepts any string — country pack validation happens in the repository,
+    // not in Mongoose schema validators (see account.schema.ts comment).
     const valid = new Model({ accountTypeCode: '1000' });
     await expect(valid.validate()).resolves.toBeUndefined();
 
-    // Invalid code
-    const invalid = new Model({ accountTypeCode: 'NONEXISTENT' });
-    await expect(invalid.validate()).rejects.toThrow();
+    const unknown = new Model({ accountTypeCode: 'NONEXISTENT' });
+    await expect(unknown.validate()).resolves.toBeUndefined();
   });
 
   it('enforces unique accountTypeCode per org in multi-tenant mode', async () => {

@@ -17,6 +17,7 @@ import { generateIncomeStatement } from '../../src/reports/income-statement.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { legacyBalanceSheet, legacyIncomeStatement } from '../helpers/legacy-report-view.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INCOME STATEMENT — resolveGroupName deep parent chains
@@ -213,7 +214,7 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
     );
 
     // Telephone and Internet should be in "Operating Expenses" group, NOT "Admin Expenses"
-    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses');
+    const opexGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Operating Expenses');
     expect(opexGroup).toBeDefined();
 
     const codes = opexGroup?.accounts.map((a) => a.code);
@@ -221,7 +222,7 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
     expect(codes).toContain('9200'); // Internet
 
     // There should NOT be a separate "Admin Expenses" group
-    const adminGroup = report.expenses.groups.find((g) => g.name === 'Admin Expenses');
+    const adminGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Admin Expenses');
     expect(adminGroup).toBeUndefined();
   });
 
@@ -242,7 +243,7 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses');
+    const opexGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Operating Expenses');
     expect(opexGroup).toBeDefined();
 
     const codes = opexGroup?.accounts.map((a) => a.code);
@@ -275,10 +276,10 @@ describe('Income Statement — resolveGroupName deep parent chains', () => {
     );
 
     // Should have exactly one expense group
-    expect(report.expenses.groups).toHaveLength(1);
-    expect(report.expenses.groups[0].name).toBe('Operating Expenses');
-    expect(report.expenses.groups[0].accounts).toHaveLength(3);
-    expect(report.expenses.groups[0].total).toBe(100000); // 50k + 30k + 20k
+    expect(legacyIncomeStatement(report).expenses.groups).toHaveLength(1);
+    expect(legacyIncomeStatement(report).expenses.groups[0].name).toBe('Operating Expenses');
+    expect(legacyIncomeStatement(report).expenses.groups[0].accounts).toHaveLength(3);
+    expect(legacyIncomeStatement(report).expenses.groups[0].total).toBe(100000); // 50k + 30k + 20k
   });
 });
 
@@ -430,10 +431,10 @@ describe('Income Statement — resolveGroupName circular parentCode safety', () 
     );
 
     expect(report).toBeDefined();
-    expect(report.expenses.groups.length).toBeGreaterThanOrEqual(1);
+    expect(legacyIncomeStatement(report).expenses.groups.length).toBeGreaterThanOrEqual(1);
 
     // The expense should appear in some group (fallback name since no group is found)
-    const allExpenseAccounts = report.expenses.groups.flatMap((g) => g.accounts);
+    const allExpenseAccounts = legacyIncomeStatement(report).expenses.groups.flatMap((g) => g.accounts);
     const miscExpense = allExpenseAccounts.find((a) => a.code === '9000');
     expect(miscExpense).toBeDefined();
     expect(miscExpense?.balance).toBe(10000);
@@ -643,7 +644,7 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // Current Assets group should only contain Cash, not AR (zero balance)
-    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets');
+    const currentAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Current Assets');
     expect(currentAssets).toBeDefined();
     const codes = currentAssets?.accounts.map((a) => a.code);
     expect(codes).toContain('1000'); // Cash has balance
@@ -663,7 +664,7 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // Capital Assets group should be removed entirely (Equipment has zero balance)
-    const capitalAssets = report.assets.groups.find((g) => g.name === 'Capital Assets');
+    const capitalAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Capital Assets');
     expect(capitalAssets).toBeUndefined();
   });
 
@@ -684,7 +685,7 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // Current Assets should have Cash and AR, both non-zero
-    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets')!;
+    const currentAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Current Assets')!;
     expect(currentAssets.accounts).toHaveLength(2);
     expect(currentAssets.accounts.map((a) => a.code).sort()).toEqual(['1000', '1100']);
   });
@@ -702,8 +703,8 @@ describe('Balance Sheet — pruneGroups', () => {
     );
 
     // AP has zero balance, so Liabilities group should be empty/pruned
-    expect(report.liabilities.groups.length).toBe(0);
-    expect(report.liabilities.total).toBe(0);
+    expect(legacyBalanceSheet(report).liabilities.groups.length).toBe(0);
+    expect(legacyBalanceSheet(report).liabilities.total).toBe(0);
   });
 });
 
@@ -823,7 +824,7 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
     );
 
     // Equity section should have a "Retained Earnings" group even with zero balances
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings');
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     // It should contain the prior-retained and current-year accounts
@@ -888,7 +889,7 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
       { dateOption: 'month', dateValue: '2025-01' },
     );
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     expect(reGroup).toBeDefined();
 
     // Net income = 50000 - 20000 = 30000
@@ -901,7 +902,7 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
     expect(priorRE?.balance).toBe(0);
 
     // Balance sheet should be balanced
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
   });
 
   it('equity groups are NOT pruned even when they contain zero-balance accounts', async () => {
@@ -928,9 +929,9 @@ describe('Balance Sheet — equity retained earnings always shown', () => {
 
     // Equity should NOT be pruned — it uses Object.values directly (no pruneGroups)
     // The Retained Earnings group should still be present
-    expect(report.equity.groups.length).toBeGreaterThanOrEqual(1);
+    expect(legacyBalanceSheet(report).equity.groups.length).toBeGreaterThanOrEqual(1);
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings');
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     // Even though retained earnings are 0, the accounts should still be listed
@@ -1119,7 +1120,7 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     );
 
     // 1. Shareholder Equity should contain ONLY Common Shares, not RE
-    const shGroup = report.equity.groups.find((g) => g.name === 'Shareholder Equity')!;
+    const shGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Shareholder Equity')!;
     expect(shGroup).toBeDefined();
     const shCodes = shGroup.accounts.map((a) => a.code);
     expect(shCodes).toContain('3500');
@@ -1127,7 +1128,7 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     expect(shGroup.total).toBe(1000); // Only Common Shares
 
     // 2. Retained Earnings section should include 3600's balance + prior P&L
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     expect(reGroup).toBeDefined();
 
     const priorLine = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
@@ -1145,9 +1146,9 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     expect(currentLine.isCalculated).toBe(true);
 
     // 3. Balance sheet must still balance
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
     // Total equity = Shareholder Equity (1000) + RE (129000 + 30000) = 160000
-    expect(report.equity.total).toBe(160000);
+    expect(legacyBalanceSheet(report).equity.total).toBe(160000);
   });
 
   it('works correctly when year-end closing entries have been posted', async () => {
@@ -1185,7 +1186,7 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
       { dateOption: 'year', dateValue: 2025 },
     );
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     const priorLine = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
     const currentLine = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
@@ -1197,7 +1198,7 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     // Current year = 20000
     expect(currentLine.balance).toBe(20000);
 
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
   });
 
   it('without retainedEarningsAccountCode, 3600 shows in normal equity grouping (backward compat)', async () => {
@@ -1242,10 +1243,10 @@ describe('Balance Sheet — retainedEarningsAccountCode exclusion', () => {
     );
 
     // Without retainedEarningsAccountCode, 3600 should appear in Shareholder Equity (old behavior)
-    const shGroup = report.equity.groups.find((g) => g.name === 'Shareholder Equity')!;
+    const shGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Shareholder Equity')!;
     const shCodes = shGroup.accounts.map((a) => a.code);
     expect(shCodes).toContain('3600');
 
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
   });
 });

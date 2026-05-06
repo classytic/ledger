@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
 import { testPack } from '../helpers/scenario-setup.js';
+import { legacyBalanceSheet, legacyIncomeStatement, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 let mongod: MongoMemoryServer;
 let engine: ReturnType<typeof createAccountingEngine>;
@@ -144,8 +145,8 @@ describe('2. Report Isolation', () => {
       organizationId: alphaOrg,
     });
 
-    const totalDebit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
     // Alpha: Cash net (10M-2M)=8M debit + Salaries 2M debit = 10M
     // Credits: Revenue 10M = 10M  → balanced
@@ -159,8 +160,8 @@ describe('2. Report Isolation', () => {
       organizationId: betaOrg,
     });
 
-    const totalDebit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
     // Beta: Cash net (3M-500K)=2.5M debit + Rent 500K debit = 3M
     // Credits: Revenue 3M = 3M → balanced
@@ -175,7 +176,7 @@ describe('2. Report Isolation', () => {
     });
 
     // Revenue $100K - Salaries $20K = $80K
-    expect(is.netIncome).toBe(8_000_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(8_000_000);
   });
 
   it('BetaLLC income statement shows $25K net income', async () => {
@@ -186,7 +187,7 @@ describe('2. Report Isolation', () => {
     });
 
     // Revenue $30K - Rent $5K = $25K
-    expect(is.netIncome).toBe(2_500_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(2_500_000);
   });
 
   it('AlphaCorp balance sheet isolated from Beta', async () => {
@@ -196,9 +197,9 @@ describe('2. Report Isolation', () => {
       organizationId: alphaOrg,
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
     // Alpha total assets = Cash ($100K - $20K) = $80K = 8,000,000
-    expect(bs.summary.totalAssets).toBe(8_000_000);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(8_000_000);
   });
 
   it('BetaLLC balance sheet isolated from Alpha', async () => {
@@ -208,9 +209,9 @@ describe('2. Report Isolation', () => {
       organizationId: betaOrg,
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
     // Beta total assets = Cash ($30K - $5K) = $25K = 2,500,000
-    expect(bs.summary.totalAssets).toBe(2_500_000);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(2_500_000);
   });
 });
 

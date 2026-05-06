@@ -6,9 +6,20 @@
  * All monetary amounts are in integer cents.
  */
 
+import type { ApprovalChain } from '@classytic/primitives/approval';
 import mongoose from 'mongoose';
 import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.js';
 import type { AccountingEngineConfig, SchemaOptions } from '../types/engine.js';
+
+/**
+ * The Budget document carries an optional `approvals` value object when the
+ * host wires the maker-checker workflow. Per `PACKAGE_RULES.md §P7`, every
+ * package that supports a review step uses `approvals?: ApprovalChain` from
+ * `@classytic/primitives/approval` — no parallel chain shape, no engine
+ * opt-in flag. Hosts that don't approve budgets simply leave the field
+ * undefined; Mongoose treats it as absent.
+ */
+export type BudgetApprovals = ApprovalChain;
 
 export function createBudgetSchema(config: AccountingEngineConfig, options: SchemaOptions = {}) {
   const scope = resolveLedgerTenant(config);
@@ -31,6 +42,11 @@ export function createBudgetSchema(config: AccountingEngineConfig, options: Sche
       },
     },
     label: { type: String, default: null },
+    // P7 — embedded ApprovalChain VO (primitives owns the shape). Hosts
+    // running a maker-checker workflow attach a chain via `createChain()`
+    // and gate `approve` on `isApproved(doc.approvals)`. Hosts that don't
+    // use approvals leave it undefined — no behavioural impact.
+    approvals: { type: mongoose.Schema.Types.Mixed, default: null },
     ...extraFields,
   };
 

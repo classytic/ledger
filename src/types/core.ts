@@ -59,6 +59,28 @@ export type NormalBalance = 'debit' | 'credit';
 /** Cash flow classification */
 export type CashFlowCategory = 'Operating' | 'Investing' | 'Financing';
 
+/**
+ * Non-cash adjustment tag — flags an Income-Statement account whose
+ * movement should be added back to Net Income in the Operating section
+ * of the Cash Flow Statement (Indirect Method, IAS 7 / ASC 230).
+ *
+ * Without this tag, an Income/Expense account is fully subsumed in Net
+ * Income; the CFS does not list it separately.
+ *
+ * Adopted from Odoo Enterprise's CF-IM tag taxonomy (PR #35522). Generic
+ * — country packs add new tags by string. The CFS algorithm groups all
+ * accounts sharing a tag onto a single labelled adjustment line.
+ */
+export type NonCashAdjustmentTag =
+  | 'depreciation'
+  | 'amortization'
+  | 'impairment'
+  | 'gain_on_disposal'
+  | 'loss_on_disposal'
+  | 'unrealized_fx'
+  | 'stock_based_compensation'
+  | (string & {}); // escape hatch for country-specific tags
+
 // ─── Account Types ───────────────────────────────────────────────────────────
 
 /** Roll-up operation for total accounts */
@@ -92,6 +114,18 @@ export interface AccountType {
   readonly isGroup?: boolean;
   readonly totalAccountTypes?: readonly TotalAccountOp[];
   readonly cashFlowCategory?: CashFlowCategory | null;
+  /**
+   * Non-cash adjustment tag for Cash Flow Statement (Indirect Method).
+   * Set ONLY on Income-Statement accounts whose movement should be added
+   * back to Net Income in the Operating section. Tagging a Balance-Sheet
+   * account with this is a country-pack bug — the algorithm ignores it
+   * there because B/S movements already feed the working-capital path.
+   *
+   * Common values: 'depreciation', 'amortization', 'impairment',
+   * 'gain_on_disposal' (negative), 'loss_on_disposal' (positive). See
+   * NonCashAdjustmentTag type for the canonical set.
+   */
+  readonly nonCashAdjustmentTag?: NonCashAdjustmentTag | null;
   readonly taxMetadata?: TaxMetadata;
   readonly deprecated?: boolean;
   readonly replacedBy?: string;

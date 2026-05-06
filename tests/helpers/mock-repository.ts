@@ -57,6 +57,43 @@ export function mockRepository(overrides: Record<string, unknown> = {}): Reposit
       _id,
       ...patch,
     })),
+    // mongokit 3.13's `claim()` — atomic state-machine CAS. The mock
+    // mirrors mongokit's auto-injection behaviour: for non-noop
+    // transitions (`from !== to`), the state field is automatically
+    // applied to `$set` from `transition.to`. State-noop transitions
+    // (e.g. reverseMark) leave the state field untouched. The mock also
+    // returns null when the from-state on the cached doc doesn't match
+    // (basic CAS simulation).
+    claim: vi.fn().mockImplementation(
+      async (
+        id: unknown,
+        transition: { field?: string; from?: unknown; to?: unknown; where?: unknown },
+        patch: Record<string, unknown> = {},
+      ) => {
+        const stateField = transition.field ?? 'state';
+        const $set = { ...((patch.$set ?? {}) as Record<string, unknown>) };
+        const isStateNoop = !Array.isArray(transition.from) && transition.from === transition.to;
+        if (!isStateNoop && transition.to !== undefined) {
+          $set[stateField] = transition.to;
+        }
+        return { _id: id, ...$set };
+      },
+    ),
+    // mongokit 3.13's atomic `findOneAndUpdate` — used by the
+    // reconciliation matching-number counter so the counter bump goes
+    // through the plugin pipeline (multi-tenant, audit, cache).
+    findOneAndUpdate: vi
+      .fn()
+      .mockImplementation(
+        async (
+          _filter: Record<string, unknown>,
+          update: Record<string, unknown>,
+        ) => {
+          const $inc = (update.$inc ?? {}) as Record<string, number>;
+          const seq = ($inc.seq ?? 0) + 1;
+          return { seq };
+        },
+      ),
     delete: vi.fn().mockResolvedValue({ success: true, message: 'deleted' }),
     findAll: vi.fn().mockResolvedValue([]),
     getOne: vi.fn().mockResolvedValue(null),

@@ -77,8 +77,8 @@ describe('Journal resource — seedDefaults', () => {
     expect(result.skipped).toBe(0);
 
     const journals = await engine.repositories.journals.getAll();
-    expect(journals.docs.length).toBe(5);
-    const codes = journals.docs.map((j: Record<string, unknown>) => j.code).sort();
+    expect(journals.data.length).toBe(5);
+    const codes = journals.data.map((j: Record<string, unknown>) => j.code).sort();
     expect(codes).toEqual(['BANK', 'CASH', 'MISC', 'PURCHASE', 'SALES']);
   });
 
@@ -93,7 +93,7 @@ describe('Journal resource — seedDefaults', () => {
     expect(result.created).toBe(2);
 
     const journals = await engine.repositories.journals.getAll();
-    const codes = journals.docs.map((j: Record<string, unknown>) => j.code).sort();
+    const codes = journals.data.map((j: Record<string, unknown>) => j.code).sort();
     expect(codes).toEqual(['CORP_SALES', 'INTERCO']);
   });
 
@@ -120,7 +120,7 @@ describe('Journal resource — nextSequenceNumber', () => {
     });
     await engine.repositories.journals.seedDefaults('org-1');
     const journals = await engine.repositories.journals.getAll();
-    const sales = journals.docs.find((j: Record<string, unknown>) => j.code === 'SALES') as { _id: unknown };
+    const sales = journals.data.find((j: Record<string, unknown>) => j.code === 'SALES') as { _id: unknown };
 
     const a = await engine.repositories.journals.nextSequenceNumber(sales._id);
     const b = await engine.repositories.journals.nextSequenceNumber(sales._id);

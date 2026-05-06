@@ -7,7 +7,7 @@
 
 import type { PaginationConfig, PluginType } from '@classytic/mongokit';
 import type { EventTransport } from '@classytic/primitives/events';
-import type { TenantConfig } from '@classytic/primitives/tenant';
+import type { TenantConfig } from '@classytic/repo-core/tenant';
 import type { Connection } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack } from '../country/index.js';
@@ -41,7 +41,7 @@ export interface LedgerPaginationConfig {
 /**
  * Multi-tenant configuration.
  *
- * Extends `@classytic/primitives/tenant` `TenantConfig` — field names match
+ * Extends `@classytic/repo-core/tenant` `TenantConfig` — field names match
  * across primitives, mongokit's `MultiTenantOptions`, and ledger so hosts
  * don't learn three shapes for the same idea. Ledger tightens the
  * primitives' optional `tenantField` and `ref` into required (ledger has
@@ -246,13 +246,6 @@ export interface AccountingEngineConfig {
   audit?: AuditConfig | undefined;
   /** Enable built-in idempotency key field on journal entries */
   idempotency?: boolean | undefined;
-  /**
-   * TTL in seconds for idempotency records — stale replay keys auto-expire
-   * via a partial TTL index so they don't collide with legitimate reuse
-   * after the window closes. Default: 86400 (24h). Matches Stripe / Saleor
-   * convention. Only applies when `idempotency: true`.
-   */
-  idempotencyTtlSeconds?: number | undefined;
   /**
    * Automatically call `Model.syncIndexes()` on every managed model right
    * after the engine boots. Ensures new partial/TTL indexes (0.9.0+) are

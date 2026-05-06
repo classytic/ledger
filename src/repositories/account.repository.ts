@@ -12,10 +12,10 @@ import type { ClientSession, Model } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import type { CountryPack } from '../country/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
-import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
 import type { AccountRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
+import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface AccountIntegrations {
@@ -31,30 +31,6 @@ export interface AccountIntegrations {
    * delete via `active: false` and create a fresh account.
    */
   journalEntryModel?: Model<unknown>;
-}
-
-async function safePublish(
-  events: EventTransport | undefined,
-  outboxStore: OutboxStore | undefined,
-  type: string,
-  payload: unknown,
-  ctx?: { organizationId?: unknown; session?: ClientSession | null },
-): Promise<void> {
-  const event = createEvent(type, payload, ctx);
-  if (outboxStore) {
-    try {
-      await outboxStore.save(event, { session: ctx?.session ?? undefined });
-    } catch {
-      /* outbox failures must not break mutations */
-    }
-  }
-  if (events) {
-    try {
-      await events.publish(event);
-    } catch {
-      /* transport failures must not break mutations */
-    }
-  }
 }
 
 interface MongoBulkWriteError extends Error {
@@ -100,13 +76,25 @@ export function wireAccountMethods<TDoc = unknown>(
   const events = integrations.events;
   const outboxStore = integrations.outboxStore;
   const journalEntryModel = integrations.journalEntryModel;
-  // Validate posting accounts on create
+  // Validate posting accounts on create and auto-default name from country pack.
+  // Both checks live here (not in the Mongoose schema) because schema validators
+  // capture country at model-registration time — on a shared connection the first
+  // engine's country pack would fire for every subsequent engine's writes.
   repository.on('before:create', async (ctx: RepositoryContext) => {
-    const code = ctx.data?.accountTypeCode as string | undefined;
+    const data = ctx.data as Record<string, unknown> | undefined;
+    const code = data?.accountTypeCode as string | undefined;
+
     if (code && !country.isPostingAccount(code)) {
       throw Errors.validation(
         `Cannot create account with type "${code}" — it is a structural group or calculated total, not a posting account.`,
       );
+    }
+
+    // Auto-default name from country pack when omitted (was previously done in
+    // schema pre('validate') which captured the wrong pack for later engines).
+    if (data && !data.name && code) {
+      const at = country.getAccountType(code);
+      if (at) data.name = at.name ?? code;
     }
 
     // Pre-check accountNumber uniqueness so users hitting "Add 1111 again" get
@@ -114,7 +102,6 @@ export function wireAccountMethods<TDoc = unknown>(
     // accountNumber to create a sub-account.") instead of a raw E11000.
     // The Mongo unique index remains the source of truth — this hook is for
     // UX only; a true race still surfaces as the underlying validation error.
-    const data = ctx.data as Record<string, unknown> | undefined;
     if (!data) return;
     const accountNumber =
       (data.accountNumber as string | undefined) ?? (code as string | undefined);

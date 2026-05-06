@@ -1,10 +1,10 @@
 /**
- * Bank statement mapper — converts fin-io CanonicalTransaction into a
+ * Bank statement mapper — converts fin-io BankTransaction into a
  * two-line JournalEntry (debit Cash / credit Suspense for inflows, reverse
  * for outflows).
  *
  * This is the reference mapper for all bank-statement parsers: OFX, CAMT.053,
- * MT940, CSV, and Plaid. They all produce CanonicalTransaction, so one mapper
+ * MT940, CSV, and Plaid. They all produce BankTransaction, so one mapper
  * handles all of them.
  *
  * Example consumer usage:
@@ -25,7 +25,7 @@
  *   });
  */
 
-import type { CanonicalTransaction } from '@classytic/fin-io';
+import type { BankTransaction } from '@classytic/primitives/bank-transaction';
 import type { Cents } from '../../types/core';
 import type { ImportMapper, JournalEntryInput } from '../../types/sync';
 
@@ -35,20 +35,20 @@ export interface BankStatementMapperConfig {
   /** ObjectId of the suspense/unclassified account (the other side). */
   suspenseAccountId: unknown;
   /**
-   * Optional categorization callback. Given a CanonicalTransaction, return
+   * Optional categorization callback. Given a BankTransaction, return
    * the ObjectId of a more specific counter-account (e.g. rent, utilities,
    * payroll). If returns undefined, suspenseAccountId is used.
    *
    * This is where AI categorization or a rules engine plugs in.
    */
-  categorize?: (txn: CanonicalTransaction) => unknown | undefined;
+  categorize?: (txn: BankTransaction) => unknown | undefined;
   /** Label prefix for imported entries. Default: 'Import'. */
   labelPrefix?: string;
 }
 
 export function bankStatementMapper(
   config: BankStatementMapperConfig,
-): ImportMapper<CanonicalTransaction> {
+): ImportMapper<BankTransaction> {
   return {
     externalId: (txn) => txn.externalId,
 

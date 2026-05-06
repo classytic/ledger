@@ -15,6 +15,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
+import { legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 const accountTypes: readonly AccountType[] = [
   {
@@ -301,9 +302,9 @@ describe('3. Engine ownership — reports', () => {
       dateValue: 2025,
     });
 
-    expect(tb.rows.length).toBeGreaterThan(0);
-    const totalD = tb.rows.reduce((s: number, r: any) => s + r.ending.debit, 0);
-    const totalC = tb.rows.reduce((s: number, r: any) => s + r.ending.credit, 0);
+    expect(legacyTrialBalance(tb).rows.length).toBeGreaterThan(0);
+    const totalD = legacyTrialBalance(tb).rows.reduce((s: number, r: any) => s + r.ending.debit, 0);
+    const totalC = legacyTrialBalance(tb).rows.reduce((s: number, r: any) => s + r.ending.credit, 0);
     expect(totalD).toBe(totalC);
   });
 

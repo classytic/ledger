@@ -86,7 +86,7 @@ beforeEach(async () => {
 // 1. Plugin pipeline fires on post()/unpost()/archive()
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('post()/unpost()/archive() route through update() so plugins fire', () => {
+describe('post()/unpost()/archive() route through repo.claim() so plugins fire (0.10.6+)', () => {
   it('fiscalLockPlugin blocks post() into a closed period', async () => {
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
@@ -134,20 +134,26 @@ describe('post()/unpost()/archive() route through update() so plugins fire', () 
     expect((reread as { state: string }).state).toBe('draft');
   });
 
-  it('post() fires before:update hook with state=posted in the patch', async () => {
+  it('post() fires before:claim with transition draft → posted (atomic CAS)', async () => {
+    // 0.10.6 — post() routes the state mutation through mongokit's
+    // `repo.claim()` for race-safe transitions. Plugins that previously
+    // listened on `before:update` now also fire on `before:claim`; the
+    // hook context carries `transition.{from,to}` and an operator-form
+    // `data.$set` patch instead of the flat update shape.
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
       country: testPack,
       currency: 'USD',
     });
 
-    const captured: Array<{ data: Record<string, unknown> | undefined }> = [];
-    engine.repositories.journalEntries.on(
-      'before:update',
-      (ctx: { data?: Record<string, unknown> }) => {
-        captured.push({ data: ctx.data });
-      },
-    );
+    type ClaimCtx = {
+      data?: { $set?: Record<string, unknown> };
+      transition?: { from?: unknown; to?: unknown };
+    };
+    const captured: ClaimCtx[] = [];
+    engine.repositories.journalEntries.on('before:claim', (ctx: ClaimCtx) => {
+      captured.push({ data: ctx.data, transition: ctx.transition });
+    });
 
     const accounts = await engine.repositories.accounts.bulkCreate([
       { accountTypeCode: '1001' },
@@ -168,13 +174,14 @@ describe('post()/unpost()/archive() route through update() so plugins fire', () 
 
     await engine.repositories.journalEntries.post((draft as { _id: unknown })._id);
 
-    expect(captured.length).toBeGreaterThanOrEqual(1);
-    const postPatch = captured.find((c) => c.data?.state === 'posted');
-    expect(postPatch).toBeDefined();
-    expect(postPatch?.data?.stateChangedAt).toBeInstanceOf(Date);
+    const postCtx = captured.find(
+      (c) => c.transition?.from === 'draft' && c.transition?.to === 'posted',
+    );
+    expect(postCtx).toBeDefined();
+    expect(postCtx?.data?.$set?.stateChangedAt).toBeInstanceOf(Date);
   });
 
-  it('unpost() fires before:update hook with state=draft', async () => {
+  it('unpost() fires before:claim with transition posted → draft (atomic CAS)', async () => {
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
       country: testPack,
@@ -199,19 +206,26 @@ describe('post()/unpost()/archive() route through update() so plugins fire', () 
     } as never);
     await engine.repositories.journalEntries.post((draft as { _id: unknown })._id);
 
-    const seen: string[] = [];
+    const seen: Array<{ from?: unknown; to?: unknown }> = [];
     engine.repositories.journalEntries.on(
-      'before:update',
-      (ctx: { data?: Record<string, unknown> }) => {
-        if (ctx.data?.state) seen.push(String(ctx.data.state));
+      'before:claim',
+      (ctx: { transition?: { from?: unknown; to?: unknown } }) => {
+        if (ctx.transition) seen.push({ from: ctx.transition.from, to: ctx.transition.to });
       },
     );
 
     await engine.repositories.journalEntries.unpost((draft as { _id: unknown })._id);
-    expect(seen).toContain('draft');
+    expect(seen).toContainEqual({ from: 'posted', to: 'draft' });
   });
 
-  it('reverse() fires before:update on the original with reversed=true (reverseMark)', async () => {
+  it('reverse() fires before:claim on the original with reversed=true (atomic CAS)', async () => {
+    // 0.10.6 — reverse() routes the mark-as-reversed step through
+    // mongokit's `repo.claim()` (atomic state-machine CAS) instead of
+    // `repo.update()`. The plugin pipeline still observes the mutation
+    // via `before:claim` (mongokit fires this hook per-op); the previous
+    // `_ledgerInternal: 'reverseMark'` bypass flag is gone because claim
+    // doesn't fire `before:update` and so the immutability guard is not
+    // triggered.
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
       country: testPack,
@@ -237,26 +251,33 @@ describe('post()/unpost()/archive() route through update() so plugins fire', () 
     const draftId = (draft as { _id: unknown })._id;
     await engine.repositories.journalEntries.post(draftId);
 
-    const markHooks: Array<Record<string, unknown>> = [];
-    engine.repositories.journalEntries.on(
-      'before:update',
-      (ctx: { data?: Record<string, unknown>; _ledgerInternal?: string }) => {
-        if (ctx._ledgerInternal === 'reverseMark') markHooks.push(ctx.data ?? {});
-      },
-    );
+    type ClaimCtx = {
+      id?: unknown;
+      data?: Record<string, unknown>;
+      transition?: { from?: unknown; to?: unknown; where?: Record<string, unknown> };
+    };
+    const markHooks: ClaimCtx[] = [];
+    engine.repositories.journalEntries.on('before:claim', (ctx: ClaimCtx) => {
+      // The reverseMark CAS uses a state-noop transition (posted → posted)
+      // with `where: { reversed: { $ne: true } }` as the race guard.
+      if (ctx.transition?.where && 'reversed' in ctx.transition.where) {
+        markHooks.push(ctx);
+      }
+    });
 
     await engine.repositories.journalEntries.reverse(draftId);
 
     expect(markHooks.length).toBe(1);
-    expect(markHooks[0]).toMatchObject({ reversed: true });
-    expect(markHooks[0].reversedBy).toBeDefined();
+    const $set = (markHooks[0].data?.$set ?? {}) as Record<string, unknown>;
+    expect($set.reversed).toBe(true);
+    expect($set.reversedBy).toBeDefined();
 
     // Persisted state: original is now reversed=true
     const reread = await engine.repositories.journalEntries.getById(draftId as never);
     expect((reread as { reversed: boolean }).reversed).toBe(true);
   });
 
-  it('archive() fires before:update hook with state=archived', async () => {
+  it('archive() fires before:claim with transition draft → archived (atomic CAS)', async () => {
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
       country: testPack,
@@ -280,16 +301,16 @@ describe('post()/unpost()/archive() route through update() so plugins fire', () 
       ],
     } as never);
 
-    const seen: string[] = [];
+    const seen: Array<{ from?: unknown; to?: unknown }> = [];
     engine.repositories.journalEntries.on(
-      'before:update',
-      (ctx: { data?: Record<string, unknown> }) => {
-        if (ctx.data?.state) seen.push(String(ctx.data.state));
+      'before:claim',
+      (ctx: { transition?: { from?: unknown; to?: unknown } }) => {
+        if (ctx.transition) seen.push({ from: ctx.transition.from, to: ctx.transition.to });
       },
     );
 
     await engine.repositories.journalEntries.archive((draft as { _id: unknown })._id);
-    expect(seen).toContain('archived');
+    expect(seen).toContainEqual({ from: 'draft', to: 'archived' });
   });
 });
 
