@@ -1,6 +1,6 @@
 /**
  * Mongoose-specific adapter around `resolveTenantConfig()` from
- * `@classytic/primitives/tenant`. The pure resolution lives in primitives
+ * `@classytic/repo-core/tenant`. The pure resolution lives in primitives
  * (zero runtime deps) — this file only handles the Mongoose schema
  * mutations (add field, prepend tenant onto compound indexes) that
  * primitives can't own without a mongoose dependency.
@@ -13,7 +13,7 @@
  * `ResolvedTenantConfig` produced by `resolveLedgerTenant()`.
  */
 
-import { type ResolvedTenantConfig, resolveTenantConfig } from '@classytic/primitives/tenant';
+import { type ResolvedTenantConfig, resolveTenantConfig } from '@classytic/repo-core/tenant';
 import mongoose, { type Schema } from 'mongoose';
 import type { AccountingEngineConfig, MultiTenantConfig } from '../types/engine.js';
 

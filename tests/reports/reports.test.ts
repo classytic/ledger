@@ -28,7 +28,7 @@ const testPack = defineCountryPack({
       description: 'Cash',
       parentCode: null,
       isTotal: false,
-      cashFlowCategory: 'operating',
+      cashFlowCategory: null, // Cash accounts are the report TARGET, not a line item
     },
     {
       code: '1200',
@@ -37,7 +37,7 @@ const testPack = defineCountryPack({
       description: 'AR',
       parentCode: null,
       isTotal: false,
-      cashFlowCategory: 'operating',
+      cashFlowCategory: 'Operating',
     },
     {
       code: '2000',
@@ -46,7 +46,7 @@ const testPack = defineCountryPack({
       description: 'AP',
       parentCode: null,
       isTotal: false,
-      cashFlowCategory: 'operating',
+      cashFlowCategory: 'Operating',
     },
     {
       code: '3000',
@@ -91,7 +91,7 @@ const testPack = defineCountryPack({
       description: 'Equipment',
       parentCode: null,
       isTotal: false,
-      cashFlowCategory: 'Investing' as any,
+      cashFlowCategory: 'Investing',
     },
     {
       code: '2500',
@@ -100,7 +100,7 @@ const testPack = defineCountryPack({
       description: 'Loan',
       parentCode: null,
       isTotal: false,
-      cashFlowCategory: 'Financing' as any,
+      cashFlowCategory: 'Financing',
     },
     {
       code: '3660',
@@ -167,8 +167,9 @@ beforeEach(async () => {
   await AccountModel.deleteMany({});
   await JEModel.deleteMany({});
 
-  // Seed accounts
-  const cash = await AccountModel.create({ accountTypeCode: '1000' });
+  // Seed accounts. `isCashAccount: true` flags the cash & cash-equivalents
+  // pool — the boundary the CFS reports flow into and out of.
+  const cash = await AccountModel.create({ accountTypeCode: '1000', isCashAccount: true });
   const ar = await AccountModel.create({ accountTypeCode: '1200' });
   const ap = await AccountModel.create({ accountTypeCode: '2000' });
   const eq = await AccountModel.create({ accountTypeCode: '3000' });
@@ -227,15 +228,17 @@ describe('Trial Balance', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.rows.length).toBeGreaterThan(0);
+    expect(report.columnarRows.length).toBeGreaterThan(0);
     expect(report.period.startDate.getMonth()).toBe(2); // March
 
     // Cash should have initial 100000 debit, current 50000 debit
-    const cashRow = report.rows.find((r) => String((r.account as any)._id) === String(cashId));
+    const cashRow = report.columnarRows.find(
+      (r) => String((r.account as any)._id) === String(cashId),
+    );
     expect(cashRow).toBeDefined();
-    expect(cashRow?.initial.debit).toBe(100000);
-    expect(cashRow?.current.debit).toBe(50000);
-    expect(cashRow?.ending.debit).toBe(150000);
+    expect(cashRow?.initial.debit.total).toBe(100000);
+    expect(cashRow?.current.debit.total).toBe(50000);
+    expect(cashRow?.ending.debit.total).toBe(150000);
   });
 
   it('returns empty rows when no posted entries exist', async () => {
@@ -244,7 +247,7 @@ describe('Trial Balance', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.rows).toHaveLength(0);
+    expect(report.columnarRows).toHaveLength(0);
   });
 });
 
@@ -275,9 +278,9 @@ describe('Balance Sheet', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
-    expect(report.summary.totalAssets).toBe(580000); // 480000 cash + 100000 AR
-    expect(report.summary.difference).toBe(0);
+    expect(report.summaryByPeriod.isBalanced.total).toBe(true);
+    expect(report.summaryByPeriod.totalAssets.total).toBe(580000); // 480000 cash + 100000 AR
+    expect(report.summaryByPeriod.difference.total).toBe(0);
   });
 
   it('includes net income in equity', async () => {
@@ -297,8 +300,8 @@ describe('Balance Sheet', () => {
     );
 
     // Net income (50000 revenue) should be in equity
-    expect(report.equity.total).toBe(150000); // 100000 share capital + 50000 net income
-    expect(report.summary.isBalanced).toBe(true);
+    expect(report.equitySection.totals.total).toBe(150000); // 100000 share capital + 50000 net income
+    expect(report.summaryByPeriod.isBalanced.total).toBe(true);
   });
 });
 
@@ -329,11 +332,11 @@ describe('Income Statement', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.revenue.total).toBe(200000);
-    expect(report.costOfSales).toBe(80000);
-    expect(report.grossProfit).toBe(120000);
-    expect(report.expenses.total).toBe(110000); // 80000 COGS + 30000 rent
-    expect(report.netIncome).toBe(90000); // 200000 - 110000
+    expect(report.revenueSection.totals.total).toBe(200000);
+    expect(report.costOfSalesByPeriod.total).toBe(80000);
+    expect(report.grossProfitByPeriod.total).toBe(120000);
+    expect(report.expensesSection.totals.total).toBe(110000); // 80000 COGS + 30000 rent
+    expect(report.netIncomeByPeriod.total).toBe(90000); // 200000 - 110000
   });
 
   it('returns zero net income when no entries exist in period', async () => {
@@ -348,8 +351,40 @@ describe('Income Statement', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.revenue.total).toBe(0);
-    expect(report.netIncome).toBe(0);
+    expect(report.revenueSection.totals.total).toBe(0);
+    expect(report.netIncomeByPeriod.total).toBe(0);
+  });
+
+  it('comparative monthly uses the shared period envelope and clamps custom dates', async () => {
+    await postEntry('2025-01-10', [
+      { account: cashId, debit: 999999, credit: 0 },
+      { account: revenueId, debit: 0, credit: 999999 },
+    ]);
+    await postEntry('2025-01-20', [
+      { account: cashId, debit: 100000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 100000 },
+    ]);
+    await postEntry('2025-02-05', [
+      { account: rentId, debit: 20000, credit: 0 },
+      { account: cashId, debit: 0, credit: 20000 },
+    ]);
+
+    const report = await generateIncomeStatement(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      {
+        dateOption: 'custom',
+        dateValue: { startDate: '2025-01-15', endDate: '2025-02-10' },
+        comparative: 'monthly',
+      },
+    );
+
+    expect(report.periods.map((p) => p.key)).toEqual(['2025-01', '2025-02', 'total']);
+    expect(report.periods[0].startDate).toBe('2025-01-15');
+    expect(report.periods[1].endDate).toBe('2025-02-10');
+    expect(report.revenueSection.totals['2025-01']).toBe(100000);
+    expect(report.revenueSection.totals['2025-02']).toBe(0);
+    expect(report.expensesSection.totals['2025-02']).toBe(20000);
+    expect(report.netIncomeByPeriod.total).toBe(80000);
   });
 });
 
@@ -415,8 +450,8 @@ describe('General Ledger', () => {
 // ── Cash Flow Statement ─────────────────────────────────────────────────────
 
 describe('Cash Flow Statement', () => {
-  it('categorizes cash flows into Operating, Investing, Financing', async () => {
-    // Operating: cash received from customer
+  it('builds an Indirect-Method statement with Net Income, ΔWC, Investing, Financing', async () => {
+    // Operating: cash received from a customer (settles A/R)
     await postEntry('2025-03-01', [
       { account: cashId, debit: 200000, credit: 0 },
       { account: arId, debit: 0, credit: 200000 },
@@ -439,21 +474,41 @@ describe('Cash Flow Statement', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    // Operating: Cash +2000 debit, AR -2000 credit → net movement from operating accounts
-    expect(report.operating.accounts.length).toBeGreaterThan(0);
+    // Single-period report → one column keyed 'total'.
+    expect(report.periods).toHaveLength(1);
+    expect(report.periods[0].key).toBe('total');
+    const k = 'total';
 
-    // Investing: Equipment +800 debit
-    expect(report.investing.total).not.toBe(0);
-    expect(report.investing.accounts.length).toBe(1);
+    // Operating section: Net Income line (always present) + ΔA/R from
+    // settling the receivable. No P&L revenue/expense lines.
+    const opSources = report.operating.lines.map((l) => l.source.kind);
+    expect(opSources).toContain('netIncome');
+    expect(opSources).toContain('workingCapital');
+    expect(report.operating.lines.every((l) => l.source.kind !== 'directMovement')).toBe(true);
 
-    // Financing: Loan +3000 credit
-    expect(report.financing.total).not.toBe(0);
-    expect(report.financing.accounts.length).toBe(1);
+    // Investing: Equipment direct movement (purchase = use of cash → negative)
+    expect(report.investing.totals[k]).toBe(-80000);
+    expect(report.investing.lines).toHaveLength(1);
+    expect(report.investing.lines[0].source.kind).toBe('directMovement');
 
-    // Net cash flow should sum all three
-    expect(report.netCashFlow).toBe(
-      report.operating.total + report.investing.total + report.financing.total,
+    // Financing: Loan drawdown (credit movement = source of cash → positive)
+    expect(report.financing.totals[k]).toBe(300000);
+    expect(report.financing.lines).toHaveLength(1);
+    expect(report.financing.lines[0].source.kind).toBe('directMovement');
+
+    // Net = Operating + Investing + Financing + FX
+    expect(report.netCashFlow[k]).toBe(
+      report.operating.totals[k] +
+        report.investing.totals[k] +
+        report.financing.totals[k] +
+        report.fxEffect[k],
     );
+
+    // Cash reconciliation should tie to the actual cash account delta:
+    // +200k − 80k + 300k = +420k. Within 1 cent tolerance.
+    const recon = report.cashReconciliation[k];
+    expect(recon.tieOutOk).toBe(true);
+    expect(recon.closingCash - recon.openingCash).toBe(420000);
   });
 
   it('returns zero flows when no entries in period', async () => {
@@ -467,10 +522,115 @@ describe('Cash Flow Statement', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.operating.total).toBe(0);
-    expect(report.investing.total).toBe(0);
-    expect(report.financing.total).toBe(0);
-    expect(report.netCashFlow).toBe(0);
+    const k = 'total';
+    expect(report.operating.totals[k]).toBe(0);
+    expect(report.operating.lines.some((l) => l.source.kind === 'netIncome')).toBe(true);
+    expect(report.investing.totals[k]).toBe(0);
+    expect(report.investing.lines).toHaveLength(0);
+    expect(report.financing.totals[k]).toBe(0);
+    expect(report.financing.lines).toHaveLength(0);
+    expect(report.netCashFlow[k]).toBe(0);
+  });
+
+  it('does NOT list Income/Expense accounts as direct line items', async () => {
+    await postEntry('2025-03-15', [
+      { account: cashId, debit: 50000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 50000 },
+    ]);
+
+    const report = await generateCashFlow(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'month', dateValue: '2025-03' },
+    );
+
+    const allLines = [
+      ...report.operating.lines,
+      ...report.investing.lines,
+      ...report.financing.lines,
+    ];
+    expect(allLines.some((l) => l.label.toLowerCase().includes('revenue'))).toBe(false);
+    expect(allLines.some((l) => l.label.toLowerCase().includes('sales'))).toBe(false);
+
+    const netIncomeLine = report.operating.lines.find((l) => l.source.kind === 'netIncome');
+    expect(netIncomeLine?.amounts.total).toBe(50000);
+  });
+
+  it('comparative monthly: 12 columns + YTD total, all tie out', async () => {
+    // Q1 activity: simulate distinct months so each column carries its own delta.
+    await postEntry('2025-01-10', [
+      { account: cashId, debit: 100000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 100000 },
+    ]);
+    await postEntry('2025-02-15', [
+      { account: cashId, debit: 200000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 200000 },
+    ]);
+    await postEntry('2025-03-20', [
+      { account: equipId, debit: 50000, credit: 0 },
+      { account: cashId, debit: 0, credit: 50000 },
+    ]);
+
+    const report = await generateCashFlow(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'year', dateValue: 2025, comparative: 'monthly' },
+    );
+
+    // 12 monthly columns + final YTD total.
+    expect(report.periods).toHaveLength(13);
+    expect(report.periods[0].key).toBe('2025-01');
+    expect(report.periods[11].key).toBe('2025-12');
+    expect(report.periods[12].key).toBe('total');
+    expect(report.periods[12].isTotal).toBe(true);
+
+    // Net Income line carries one amount per column.
+    const netIncomeLine = report.operating.lines.find((l) => l.source.kind === 'netIncome');
+    expect(netIncomeLine).toBeDefined();
+    expect(netIncomeLine?.amounts['2025-01']).toBe(100000);
+    expect(netIncomeLine?.amounts['2025-02']).toBe(200000);
+    expect(netIncomeLine?.amounts['2025-03']).toBe(0);
+    expect(netIncomeLine?.amounts.total).toBe(300000);
+
+    // Per-column investing: Q1 buy, Q2-Q4 nothing.
+    expect(report.investing.totals['2025-01']).toBe(0);
+    expect(report.investing.totals['2025-03']).toBe(-50000);
+    expect(report.investing.totals['2025-04']).toBe(0);
+    expect(report.investing.totals.total).toBe(-50000);
+
+    // Cash reconciliation per column ties out everywhere.
+    for (const col of report.periods) {
+      expect(report.cashReconciliation[col.key].tieOutOk).toBe(true);
+    }
+
+    // YTD total of net cash flow = sum of all 12 monthly columns.
+    const monthlySum = report.periods
+      .filter((p) => !p.isTotal)
+      .reduce((s, p) => s + report.netCashFlow[p.key], 0);
+    expect(report.netCashFlow.total).toBe(monthlySum);
+  });
+
+  it('comparative quarterly: 4 columns + YTD total', async () => {
+    await postEntry('2025-02-01', [
+      { account: cashId, debit: 100000, credit: 0 },
+      { account: loanId, debit: 0, credit: 100000 },
+    ]);
+
+    const report = await generateCashFlow(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'year', dateValue: 2025, comparative: 'quarterly' },
+    );
+
+    expect(report.periods).toHaveLength(5);
+    expect(report.periods.map((p) => p.key)).toEqual([
+      '2025-Q1',
+      '2025-Q2',
+      '2025-Q3',
+      '2025-Q4',
+      'total',
+    ]);
+
+    expect(report.financing.totals['2025-Q1']).toBe(100000);
+    expect(report.financing.totals['2025-Q2']).toBe(0);
+    expect(report.financing.totals.total).toBe(100000);
   });
 
   it('includes metadata with period info', async () => {
@@ -482,6 +642,7 @@ describe('Cash Flow Statement', () => {
     expect(report.metadata.businessName).toBe('Test Corp');
     expect(report.metadata.periodStart).toBeDefined();
     expect(report.metadata.periodEnd).toBeDefined();
+    expect(report.metadata.comparative).toBeNull();
   });
 });
 
@@ -635,17 +796,23 @@ describe('Multi-Tenant Report Isolation', () => {
     );
 
     // Org1: Cash initial 100000
-    const cash1 = report1.rows.find((r) => String((r.account as any)._id) === String(org1Cash));
+    const cash1 = report1.columnarRows.find(
+      (r) => String((r.account as any)._id) === String(org1Cash),
+    );
     expect(cash1).toBeDefined();
-    expect(cash1?.initial.debit).toBe(100000);
+    expect(cash1?.initial.debit.total).toBe(100000);
 
     // Org2: Cash initial 300000
-    const cash2 = report2.rows.find((r) => String((r.account as any)._id) === String(org2Cash));
+    const cash2 = report2.columnarRows.find(
+      (r) => String((r.account as any)._id) === String(org2Cash),
+    );
     expect(cash2).toBeDefined();
-    expect(cash2?.initial.debit).toBe(300000);
+    expect(cash2?.initial.debit.total).toBe(300000);
 
     // Org1 should NOT see org2 accounts
-    const cross = report1.rows.find((r) => String((r.account as any)._id) === String(org2Cash));
+    const cross = report1.columnarRows.find(
+      (r) => String((r.account as any)._id) === String(org2Cash),
+    );
     expect(cross).toBeUndefined();
   });
 
@@ -670,14 +837,14 @@ describe('Multi-Tenant Report Isolation', () => {
     );
 
     // Org1: assets = 130000 (100000 + 50000 - 20000)
-    expect(bs1.summary.totalAssets).toBe(130000);
-    expect(bs1.summary.isBalanced).toBe(true);
+    expect(bs1.summaryByPeriod.totalAssets.total).toBe(130000);
+    expect(bs1.summaryByPeriod.isBalanced.total).toBe(true);
 
     // Org2: assets = 380000 (300000 + 80000)
-    expect(bs2.summary.totalAssets).toBe(380000);
-    expect(bs2.summary.isBalanced).toBe(true);
+    expect(bs2.summaryByPeriod.totalAssets.total).toBe(380000);
+    expect(bs2.summaryByPeriod.isBalanced.total).toBe(true);
 
-    expect(bs1.summary.totalAssets).not.toBe(bs2.summary.totalAssets);
+    expect(bs1.summaryByPeriod.totalAssets.total).not.toBe(bs2.summaryByPeriod.totalAssets.total);
   });
 
   it('income statement isolates data by organization', async () => {
@@ -701,12 +868,12 @@ describe('Multi-Tenant Report Isolation', () => {
     );
 
     // Org1: revenue 50000, rent 20000, net income 30000
-    expect(is1.revenue.total).toBe(50000);
-    expect(is1.netIncome).toBe(30000);
+    expect(is1.revenueSection.totals.total).toBe(50000);
+    expect(is1.netIncomeByPeriod.total).toBe(30000);
 
     // Org2: revenue 80000, no expenses, net income 80000
-    expect(is2.revenue.total).toBe(80000);
-    expect(is2.netIncome).toBe(80000);
+    expect(is2.revenueSection.totals.total).toBe(80000);
+    expect(is2.netIncomeByPeriod.total).toBe(80000);
   });
 
   it('general ledger isolates data by organization', async () => {

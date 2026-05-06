@@ -253,10 +253,13 @@ try {
       closedAt: new Date(),
     });
 
+    // 0.10.x: reverse() defaults to draft (ERPNext/Odoo parity) so finance can
+    // review before the books move. Pass autoPost: true to assert the
+    // through-the-fiscal-lock flow this section is testing.
     const { original, reversal } = await engine.repositories.journalEntries.reverse(
       postedId,
       undefined,
-      { reversalDate: new Date('2026-03-15') },
+      { reversalDate: new Date('2026-03-15'), autoPost: true },
     );
 
     assert.ok(original, 'reverse should return original');
@@ -441,7 +444,7 @@ try {
 
   await step('nextSequenceNumber atomically increments per journal', async () => {
     const journals = await journalEngine.repositories.journals.getAll();
-    const sales = journals.docs.find((j) => j.code === 'SALES');
+    const sales = journals.data.find((j) => j.code === 'SALES');
     const a = await journalEngine.repositories.journals.nextSequenceNumber(sales._id);
     const b = await journalEngine.repositories.journals.nextSequenceNumber(sales._id);
     assert.match(a, /^INV\/\d{4}\/\d{2}\/0001$/);
@@ -989,11 +992,11 @@ try {
 
   await step('⑫ Audit chain — every entry has a referenceNumber', async () => {
     const all = await acme.repositories.journalEntries.getAll();
-    const refs = all.docs.map((d) => d.referenceNumber);
+    const refs = all.data.map((d) => d.referenceNumber);
     assert.ok(refs.every((r) => typeof r === 'string' && r.length > 0));
     // 6 entries: bill-A, bill-B, invoice, cust-payment, sup-pay-1, sup-pay-2
     // (the failed second sale was rejected by credit limit)
-    assert.equal(all.docs.length, 6);
+    assert.equal(all.data.length, 6);
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1063,7 +1066,7 @@ try {
     const seed = await bdEngine.repositories.journals.seedDefaults('bd-org');
     assert.ok(seed.created >= 5, 'BD pack should seed at least 5 default journals');
     const journals = await bdEngine.repositories.journals.getAll();
-    const codes = journals.docs.map((j) => j.code).sort();
+    const codes = journals.data.map((j) => j.code).sort();
     assert.ok(codes.includes('SALES'));
     assert.ok(codes.includes('PURCHASE'));
     assert.ok(codes.includes('VDS') || codes.includes('TDS'), 'BD pack should ship VDS/TDS withholding journals');
@@ -1071,9 +1074,9 @@ try {
 
   await step('post a BD credit purchase + match against payment via 2111', async () => {
     const accts = await bdEngine.repositories.accounts.getAll();
-    const ap = accts.docs.find((a) => a.accountTypeCode === '2111');
-    const cash = accts.docs.find((a) => a.accountTypeCode === '1111');
-    const inv = accts.docs.find((a) => a.accountTypeCode === '1161');
+    const ap = accts.data.find((a) => a.accountTypeCode === '2111');
+    const cash = accts.data.find((a) => a.accountTypeCode === '1111');
+    const inv = accts.data.find((a) => a.accountTypeCode === '1161');
 
     const bill = await bdEngine.repositories.journalEntries.create({
       journalType: 'PURCHASES',
@@ -1120,7 +1123,7 @@ try {
 
   await step('generatePartnerLedger against BFRS 2111 returns the BD supplier statement', async () => {
     const accts = await bdEngine.repositories.accounts.getAll();
-    const ap = accts.docs.find((a) => a.accountTypeCode === '2111');
+    const ap = accts.data.find((a) => a.accountTypeCode === '2111');
     const statement = await generatePartnerLedger(
       { AccountModel: bdEngine.models.Account, JournalEntryModel: bdEngine.models.JournalEntry },
       {
@@ -1204,15 +1207,15 @@ try {
     const seed = await caEngine.repositories.journals.seedDefaults('ca-org');
     assert.ok(seed.created >= 5);
     const journals = await caEngine.repositories.journals.getAll();
-    const codes = journals.docs.map((j) => j.code);
+    const codes = journals.data.map((j) => j.code);
     assert.ok(codes.includes('PAYROLL'), 'CA pack should include the Payroll journal');
   });
 
   await step('full credit-sale → partial-payment → match → partner statement against GIFI A/R', async () => {
     const accts = await caEngine.repositories.accounts.getAll();
-    const ar = accts.docs.find((a) => /receivable/i.test(a.name));
-    const cash = accts.docs.find((a) => /cash/i.test(a.name));
-    const rev = accts.docs.find((a) => /sales/i.test(a.name));
+    const ar = accts.data.find((a) => /receivable/i.test(a.name));
+    const cash = accts.data.find((a) => /cash/i.test(a.name));
+    const rev = accts.data.find((a) => /sales/i.test(a.name));
 
     const inv = await caEngine.repositories.journalEntries.create({
       journalType: 'SALES',

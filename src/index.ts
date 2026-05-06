@@ -266,6 +266,12 @@ export {
   JOURNAL_TYPES,
   registerJournalType,
 } from './constants/journals.js';
+// Opt-in index recommendations for line-level source provenance fields.
+// Spread into `schemaOptions.journalEntry.extraIndexes` to enable indexed
+// `/by-source` lookups against `journalItems.sourceRef.*` and
+// `journalItems.linkedRefs.*`. Hosts that don't query by line-level
+// provenance can omit them and pay no per-insert index cost.
+export { LINE_SOURCE_INDEXES } from './schemas/journal-entry.schema.js';
 
 // ── Country Pack ───────────────────────────────────────────────────────────
 
@@ -329,20 +335,25 @@ export type {
   AccountingEngineConfig,
   AccountType,
   AuditConfig,
+  BalanceSheetLineSource,
   BalanceSheetReport,
+  BalanceSheetSection,
   CashFlowCategory,
   CashFlowReport,
   CashFlowSection,
   CategoryKey,
   // Core
   Cents,
+  ComparativeMode,
   Currency,
   DateOption,
   DateRange,
   EntryState,
   GeneralLedgerAccount,
   GeneralLedgerReport,
+  IncomeStatementLineSource,
   IncomeStatementReport,
+  IncomeStatementSection,
   JournalItem,
   JournalSchemaOptions,
   JournalType,
@@ -352,11 +363,14 @@ export type {
   MultiCurrencyConfig,
   MultiTenantConfig,
   NormalBalance,
+  PeriodColumn,
   PostingContract,
   PostingResult,
   ReportAccount,
   ReportCategory,
   ReportGroup,
+  ReportLine,
+  ReportSection,
   SchemaOptions,
   StatementType,
   StrictnessConfig,
@@ -367,6 +381,7 @@ export type {
   TaxMetadata,
   TotalAccountOp,
   // Reports
+  TrialBalanceColumnRow,
   TrialBalanceReport,
   TrialBalanceRow,
 } from './types/index.js';

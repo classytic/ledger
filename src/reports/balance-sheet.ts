@@ -9,7 +9,13 @@ import type { Model } from 'mongoose';
 import { extractMainType } from '../constants/categories.js';
 import type { CountryPack } from '../country/index.js';
 import type { CategoryKey } from '../types/core.js';
-import type { BalanceSheetReport, ReportCategory, ReportGroup } from '../types/report.js';
+import type {
+  BalanceSheetLineSource,
+  BalanceSheetReport,
+  BalanceSheetSection,
+  ReportCategory,
+  ReportGroup,
+} from '../types/report.js';
 import {
   buildAccountTypeMap,
   computeEndingBalance,
@@ -17,6 +23,7 @@ import {
 } from '../utils/account-helpers.js';
 import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { buildPeriodColumns, isoDate } from '../utils/period-columns.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface BalanceSheetOptions {
@@ -37,12 +44,27 @@ export interface BalanceSheetOptions {
   currentYearEarningsCode?: string;
 }
 
+interface BalanceSheetSnapshot {
+  assets: ReportCategory;
+  liabilities: ReportCategory;
+  equity: ReportCategory;
+  summary: {
+    totalAssets: number;
+    totalLiabilities: number;
+    totalEquity: number;
+    liabilitiesAndEquity: number;
+    difference: number;
+    isBalanced: boolean;
+  };
+}
+
 export async function generateBalanceSheet(
   opts: BalanceSheetOptions,
   params: {
     organizationId?: unknown;
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
+    comparative?: 'monthly' | 'quarterly' | null;
     businessName?: string;
     filters?: Record<string, unknown>;
   },
@@ -59,7 +81,8 @@ export async function generateBalanceSheet(
     currentYearEarningsCode = country.currentYearEarningsCode ?? '3680',
   } = opts;
   requireOrgScope(orgField, params.organizationId);
-  const { endDate } = getDateRange(params.dateOption, params.dateValue);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
+  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null);
   const fiscalYearStart = getFiscalYearStart(endDate, fiscalYearStartMonth);
   const itemFilters = buildItemFilters(params.filters);
 
@@ -305,13 +328,7 @@ export async function generateBalanceSheet(
 
   const liabilitiesAndEquity = liabilities.total + equity.total;
 
-  return {
-    metadata: {
-      businessName: params.businessName,
-      generatedAt: new Date().toISOString(),
-      asOfDate: endDate.toISOString().split('T')[0],
-      displayDate: `As of ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
-    },
+  const currentSnapshot: BalanceSheetSnapshot = {
     assets,
     liabilities,
     equity,
@@ -323,5 +340,166 @@ export async function generateBalanceSheet(
       difference: assets.total - liabilitiesAndEquity,
       isBalanced: assets.total === liabilitiesAndEquity,
     },
+  };
+
+  const summaryByPeriod: BalanceSheetReport['summaryByPeriod'] = {
+    totalAssets: {},
+    totalLiabilities: {},
+    totalEquity: {},
+    liabilitiesAndEquity: {},
+    difference: {},
+    isBalanced: {},
+  };
+  const snapshotSections = new Map<
+    string,
+    Pick<BalanceSheetReport, 'assetsSection' | 'liabilitiesSection' | 'equitySection'>
+  >();
+
+  for (const period of periods) {
+    if (period.column.key === 'total') {
+      summaryByPeriod.totalAssets[period.column.key] = currentSnapshot.summary.totalAssets;
+      summaryByPeriod.totalLiabilities[period.column.key] =
+        currentSnapshot.summary.totalLiabilities;
+      summaryByPeriod.totalEquity[period.column.key] = currentSnapshot.summary.totalEquity;
+      summaryByPeriod.liabilitiesAndEquity[period.column.key] =
+        currentSnapshot.summary.liabilitiesAndEquity;
+      summaryByPeriod.difference[period.column.key] = currentSnapshot.summary.difference;
+      summaryByPeriod.isBalanced[period.column.key] = currentSnapshot.summary.isBalanced;
+
+      snapshotSections.set(period.column.key, {
+        assetsSection: buildBalanceSheetSectionFromCategory('assets', period.column.key, assets),
+        liabilitiesSection: buildBalanceSheetSectionFromCategory(
+          'liabilities',
+          period.column.key,
+          liabilities,
+        ),
+        equitySection: buildBalanceSheetSectionFromCategory('equity', period.column.key, equity),
+      });
+      continue;
+    }
+
+    const snapshot = await generateBalanceSheet(opts, {
+      ...params,
+      dateOption: 'custom',
+      dateValue: { startDate: period.start, endDate: period.end },
+      comparative: null,
+    });
+
+    summaryByPeriod.totalAssets[period.column.key] =
+      snapshot.summaryByPeriod.totalAssets.total ?? 0;
+    summaryByPeriod.totalLiabilities[period.column.key] =
+      snapshot.summaryByPeriod.totalLiabilities.total ?? 0;
+    summaryByPeriod.totalEquity[period.column.key] =
+      snapshot.summaryByPeriod.totalEquity.total ?? 0;
+    summaryByPeriod.liabilitiesAndEquity[period.column.key] =
+      snapshot.summaryByPeriod.liabilitiesAndEquity.total ?? 0;
+    summaryByPeriod.difference[period.column.key] = snapshot.summaryByPeriod.difference.total ?? 0;
+    summaryByPeriod.isBalanced[period.column.key] =
+      snapshot.summaryByPeriod.isBalanced.total ?? false;
+
+    snapshotSections.set(period.column.key, {
+      assetsSection: snapshot.assetsSection,
+      liabilitiesSection: snapshot.liabilitiesSection,
+      equitySection: snapshot.equitySection,
+    });
+  }
+
+  return {
+    metadata: {
+      businessName: params.businessName,
+      generatedAt: new Date().toISOString(),
+      asOfDate: isoDate(endDate),
+      displayDate: `As of ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+      comparative: params.comparative ?? null,
+      // Country-pack display labels — same projection as the IS report.
+      labels: {
+        assets: labels.assets,
+        liabilities: labels.liabilities,
+        equity: labels.equity,
+      },
+    },
+    periods: periods.map((p) => p.column),
+    summaryByPeriod,
+    assetsSection: mergeBalanceSheetSections('assetsSection', periods, snapshotSections),
+    liabilitiesSection: mergeBalanceSheetSections('liabilitiesSection', periods, snapshotSections),
+    equitySection: mergeBalanceSheetSections('equitySection', periods, snapshotSections),
+  };
+}
+
+function buildBalanceSheetSectionFromCategory(
+  section: 'assets' | 'liabilities' | 'equity',
+  periodKey: string,
+  category: ReportCategory,
+): BalanceSheetSection {
+  const totals: Record<string, number> = { [periodKey]: category.total };
+  const lines: BalanceSheetSection['lines'] = [];
+
+  for (const group of category.groups) {
+    for (const account of group.accounts) {
+      const accountId = String(account.id);
+      lines.push({
+        label: account.name,
+        code: account.code,
+        amounts: { [periodKey]: account.balance },
+        source: account.isCalculated
+          ? { kind: 'calculated', accountId, group: group.name, section: 'equity' }
+          : { kind: 'account', accountId, group: group.name, section },
+      });
+    }
+  }
+
+  return {
+    totals,
+    lines: lines.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
+  };
+}
+
+function mergeBalanceSheetSections(
+  key: 'assetsSection' | 'liabilitiesSection' | 'equitySection',
+  periods: ReturnType<typeof buildPeriodColumns>,
+  snapshots: Map<
+    string,
+    Pick<BalanceSheetReport, 'assetsSection' | 'liabilitiesSection' | 'equitySection'>
+  >,
+): BalanceSheetSection {
+  const totals: Record<string, number> = Object.fromEntries(periods.map((p) => [p.column.key, 0]));
+  const lines = new Map<
+    string,
+    {
+      label: string;
+      code: string;
+      amounts: Record<string, number>;
+      source: BalanceSheetLineSource;
+    }
+  >();
+
+  for (const period of periods) {
+    const snapshot = snapshots.get(period.column.key);
+    if (!snapshot) continue;
+    const section = snapshot[key];
+    totals[period.column.key] = section.totals.total ?? section.totals[period.column.key] ?? 0;
+
+    for (const sourceLine of section.lines) {
+      const lineKey =
+        'accountId' in sourceLine.source
+          ? String(sourceLine.source.accountId)
+          : `${sourceLine.code}:${sourceLine.label}`;
+      const line = lines.get(lineKey) ?? {
+        label: sourceLine.label,
+        code: sourceLine.code,
+        amounts: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+        source: sourceLine.source,
+      };
+      line.amounts[period.column.key] =
+        sourceLine.amounts.total ?? sourceLine.amounts[period.column.key] ?? 0;
+      lines.set(lineKey, line);
+    }
+  }
+
+  return {
+    totals,
+    lines: [...lines.values()].sort((a, b) =>
+      a.code.localeCompare(b.code, undefined, { numeric: true }),
+    ),
   };
 }

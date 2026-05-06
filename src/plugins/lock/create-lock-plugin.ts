@@ -24,6 +24,11 @@
 import type { RepositoryContext, RepositoryInstance } from '@classytic/mongokit';
 import type { ClientSession } from 'mongoose';
 import { Errors } from '../../utils/errors.js';
+import {
+  type ClaimRepositoryContext,
+  flattenClaimData,
+  isReverseMarkClaim,
+} from '../claim-context.js';
 import type { CreateLockPluginOptions, LockHit } from './types.js';
 
 type DataBag = Record<string, unknown>;
@@ -180,9 +185,38 @@ export function createLockPlugin(options: CreateLockPluginOptions) {
         }
       };
 
+      // ── before:claim — atomic state-machine CAS ────────────────────────
+      //
+      // Lock checks must fire on `repo.claim(id, { from: 'draft', to:
+      // 'posted' })` — the post() verb migrated to claim() in 0.10.6 for
+      // race-safe state transitions, and without this hook the fiscal /
+      // daily / custom locks would silently let posts into closed periods
+      // through.
+      //
+      // Reverse-mark (the state-noop CAS that stamps `reversed: true` on
+      // the original entry) is exempt for the same reason `_ledgerInternal
+      // === 'reverseMark'` was exempt on update: the original entry's date
+      // may legitimately sit in a closed period, and the new counter-entry
+      // hits this pipeline on its own (reversal-date-driven) lock check.
+      const runClaim = async (rawCtx: RepositoryContext) => {
+        const ctx = rawCtx as ClaimRepositoryContext;
+        if (isReverseMarkClaim(ctx)) return;
+        // Lock checks only matter for transitions to `posted`.
+        if (ctx.transition?.to !== 'posted') return;
+        // Build an update-shaped synthetic context so the existing `run`
+        // logic (date resolution, scope resolution, account selector,
+        // resolver call) works unchanged.
+        const syntheticCtx: RepositoryContext = {
+          ...ctx,
+          data: flattenClaimData(ctx),
+        } as unknown as RepositoryContext;
+        await run(syntheticCtx, true);
+      };
+
       repo.on('before:create', (ctx: RepositoryContext) => run(ctx, false));
       repo.on('before:createMany', runMany);
       repo.on('before:update', (ctx: RepositoryContext) => run(ctx, true));
+      repo.on('before:claim', runClaim);
     },
   };
 }

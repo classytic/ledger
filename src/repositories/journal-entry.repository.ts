@@ -11,11 +11,10 @@
 
 import type { Repository, UpdateOptions, WithTransactionOptions } from '@classytic/mongokit';
 import { withTransaction as mongokitWithTransaction } from '@classytic/mongokit';
-import type { DomainEvent, EventTransport } from '@classytic/primitives/events';
+import type { EventTransport } from '@classytic/primitives/events';
 import type { ClientSession, Types } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
-import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
 import type { StrictnessConfig } from '../types/engine.js';
 // Side-effect import: activates the `_ledgerInternal` typing on
@@ -24,11 +23,13 @@ import type { LedgerInternalOp } from '../types/mongokit-augmentation.js';
 import '../types/mongokit-augmentation.js';
 import type { JournalEntryRepository } from '../types/repositories.js';
 import {
+  ConcurrencyError,
   classifyDuplicateKey,
   DuplicateReferenceError,
   Errors,
   IdempotencyConflictError,
 } from '../utils/errors.js';
+import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface JournalEntryIntegrations {
@@ -42,48 +43,6 @@ export interface JournalEntryIntegrations {
    * if the transport is down or the process crashes.
    */
   outboxStore?: OutboxStore;
-}
-
-/**
- * Publish a domain event. When an outbox store is provided, first persist
- * the event inside the caller's session (so outbox + ledger write commit
- * atomically), then fire-and-forget publish to the transport. Without an
- * outbox, publish-only, still fire-and-forget — transport errors never
- * propagate into ledger mutations.
- *
- * Tracks PACKAGE_RULES §16 (host-composed transactional outbox) and §14
- * (domain verbs publish via injected transport).
- */
-async function safePublish(
-  events: EventTransport | undefined,
-  outboxStore: OutboxStore | undefined,
-  type: string,
-  payload: unknown,
-  ctx?: { actorId?: unknown; organizationId?: unknown; session?: ClientSession | null },
-  meta?: { resource?: string; resourceId?: string },
-): Promise<void> {
-  const event: DomainEvent = createEvent(type, payload, ctx, meta);
-
-  // 1. Outbox write (atomic with host's session, if provided).
-  if (outboxStore) {
-    try {
-      await outboxStore.save(event, { session: ctx?.session ?? undefined });
-    } catch {
-      // Outbox failures during write-path publish must not break the
-      // ledger write. Host-side relay workers catch anything missed here
-      // via the retry-on-pending path, as long as the previous call to
-      // the ledger repo wrote its outbox row successfully.
-    }
-  }
-
-  // 2. Transport publish (fire-and-forget).
-  if (events) {
-    try {
-      await events.publish(event);
-    } catch {
-      // Transport failures must not propagate into ledger mutations.
-    }
-  }
 }
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -152,6 +111,8 @@ interface InternalUpdateOptions extends UpdateOptions {
 interface ReverseOptions extends PostOptions {
   /** Date for the reversal entry (defaults to now) */
   reversalDate?: Date;
+  /** Post the reversal immediately. Defaults to false (ERPNext/Odoo standard — reversal is Draft). */
+  autoPost?: boolean;
 }
 
 /**
@@ -178,6 +139,12 @@ export function wireJournalEntryMethods<TDoc = unknown>(
   const getByQuery = repository.getByQuery.bind(repository);
   const baseCreate = repository.create.bind(repository);
   const update = repository.update.bind(repository);
+  // mongokit 3.13's atomic state-machine CAS. We use it for the `reverseMark`
+  // step (set `reversed: true` on the original) so two concurrent reverses
+  // can't both succeed — the `where: { reversed: { $ne: true } }` predicate
+  // is the natural contract. claim() goes through the plugin pipeline for
+  // multi-tenant scope, audit, and cache invalidation.
+  const claim = repository.claim.bind(repository);
   // Session-based standalone helper — callback threads session into create/update/publish
   // calls on OTHER repos + event publisher. The instance-method `repository.withTransaction`
   // passes a tx-bound repo instead (mongokit 3.10), which doesn't match this multi-collaborator
@@ -382,6 +349,38 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     return (await getByQuery(query, opts)) as JournalEntryDoc | null;
   }
 
+  /**
+   * Build the options bag passed to `repo.claim()` from the call's
+   * org/actor/session context. mongokit's `multiTenantPlugin` reads
+   * `options.organizationId`, audit plugins read `options.userId`, and
+   * the transaction layer reads `options.session` — same shape we'd
+   * forward via `repoOptionsFromCtx(ctx)` from a host route.
+   */
+  function buildClaimOptions(
+    orgId: unknown,
+    actorId: unknown,
+    session: ClientSession | null | undefined,
+  ): Record<string, unknown> {
+    const opts: Record<string, unknown> = {};
+    if (session) opts.session = session;
+    if (orgField && orgId != null) opts.organizationId = orgId;
+    if (actorId !== undefined && actorId !== null) opts.userId = actorId;
+    return opts;
+  }
+
+  /**
+   * Build the `where` predicate for a state-transition claim. Encodes the
+   * tenant-scope guard so the CAS only matches docs in the caller's org.
+   */
+  function buildClaimWhere(
+    orgId: unknown,
+    extra?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const where: Record<string, unknown> = { ...(extra ?? {}) };
+    if (orgField && orgId != null) where[orgField] = orgId;
+    return where;
+  }
+
   // ── post() ──────────────────────────────────────────────────────────────
 
   /**
@@ -495,22 +494,51 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       );
     }
 
-    // Route the state mutation through repository.update() so plugins
-    // (fiscalLockPlugin, dateLockPlugin, audit, observability) fire on the
-    // draft → posted transition. Direct entry.save() bypasses the plugin
-    // pipeline and silently breaks period locks.
-    const patch: Record<string, unknown> = {
-      state: 'posted',
-      stateChangedAt: new Date(),
-    };
-    if (options.actorId) patch.postedBy = options.actorId;
+    // Route the state mutation through mongokit's atomic `claim()` —
+    // single round-trip CAS (`{ _id, state: 'draft' }` → `{ state:
+    // 'posted', ... }`) means two concurrent post() calls can never both
+    // emit ENTRY_POSTED, and the race window between validation and write
+    // is closed at the database level.
+    //
+    // Plugins still fire — `before:claim` listeners on the double-entry
+    // and lock plugins (added in 0.10.6) re-run their item / fiscal-lock
+    // / daily-lock checks against a synthesized flat-data view of the
+    // claim ctx. Audit + observability + cache-invalidation plugins from
+    // mongokit's bundle iterate `OP_REGISTRY` and pick up `claim`
+    // automatically.
+    const $set: Record<string, unknown> = { stateChangedAt: new Date() };
+    if (options.actorId) $set.postedBy = options.actorId;
 
-    const updateOptions: InternalUpdateOptions = {
-      _ledgerInternal: 'post',
-      ...(options.session ? { session: options.session } : {}),
-    };
-    const updated = (await update(entry._id, patch, updateOptions)) as JournalEntryDoc | null;
-    const final = updated ?? entry;
+    const claimed = (await claim(
+      entry._id,
+      {
+        field: 'state',
+        from: 'draft',
+        to: 'posted',
+        where: buildClaimWhere(orgId),
+      },
+      { $set },
+      buildClaimOptions(orgId, options.actorId, options.session ?? null),
+    )) as JournalEntryDoc | null;
+
+    // CAS lost the race — re-fetch to distinguish "another writer posted
+    // first" (idempotent — return the now-posted doc) from "state moved
+    // to something else entirely" (concurrency error). Without this branch
+    // a parallel post() winner would surface as a generic null, swallowing
+    // the legitimate idempotent-replay case.
+    let final: JournalEntryDoc;
+    if (!claimed) {
+      const reread = await findEntry(query, { session: options.session });
+      if (reread && reread.state === 'posted') {
+        final = reread; // someone else won the post — idempotent replay
+      } else if (reread) {
+        throw new ConcurrencyError('JournalEntry', String(entry._id));
+      } else {
+        throw Errors.notFound('Entry not found');
+      }
+    } else {
+      final = claimed;
+    }
 
     await safePublish(
       events,
@@ -569,16 +597,35 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       );
     }
 
-    const updateOptions: InternalUpdateOptions = {
-      _ledgerInternal: 'unpost',
-      ...(options.session ? { session: options.session } : {}),
-    };
-    const updated = (await update(
+    // Atomic state CAS — `where: { reversed: { $ne: true } }` is encoded
+    // into the predicate so a reverse() call landing concurrently can't
+    // undo this guard. claim returns null if state is no longer 'posted'
+    // OR `reversed` was just stamped — both are race-loss signals.
+    const claimed = (await claim(
       entry._id,
-      { state: 'draft', stateChangedAt: new Date() },
-      updateOptions,
+      {
+        field: 'state',
+        from: 'posted',
+        to: 'draft',
+        where: buildClaimWhere(orgId, { reversed: { $ne: true } }),
+      },
+      { $set: { stateChangedAt: new Date() } },
+      buildClaimOptions(orgId, options.actorId, options.session ?? null),
     )) as JournalEntryDoc | null;
-    const final = updated ?? entry;
+
+    let final: JournalEntryDoc;
+    if (!claimed) {
+      const reread = await findEntry(query, { session: options.session });
+      if (reread && reread.state === 'draft') {
+        final = reread; // already unposted — idempotent
+      } else if (reread) {
+        throw new ConcurrencyError('JournalEntry', String(entry._id));
+      } else {
+        throw Errors.notFound('Entry not found');
+      }
+    } else {
+      final = claimed;
+    }
 
     await safePublish(
       events,
@@ -615,16 +662,32 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       throw Errors.validation('Only draft entries can be archived');
     }
 
-    const updateOptions: InternalUpdateOptions = {
-      _ledgerInternal: 'archive',
-      ...(options.session ? { session: options.session } : {}),
-    };
-    const updated = (await update(
+    // Atomic state CAS — race-safe across concurrent archive calls.
+    const claimed = (await claim(
       entry._id,
-      { state: 'archived', stateChangedAt: new Date() },
-      updateOptions,
+      {
+        field: 'state',
+        from: 'draft',
+        to: 'archived',
+        where: buildClaimWhere(orgId),
+      },
+      { $set: { stateChangedAt: new Date() } },
+      buildClaimOptions(orgId, options.actorId, options.session ?? null),
     )) as JournalEntryDoc | null;
-    const final = updated ?? entry;
+
+    let final: JournalEntryDoc;
+    if (!claimed) {
+      const reread = await findEntry(query, { session: options.session });
+      if (reread && reread.state === 'archived') {
+        final = reread; // already archived — idempotent
+      } else if (reread) {
+        throw new ConcurrencyError('JournalEntry', String(entry._id));
+      } else {
+        throw Errors.notFound('Entry not found');
+      }
+    } else {
+      final = claimed;
+    }
 
     await safePublish(
       events,
@@ -775,17 +838,19 @@ export function wireJournalEntryMethods<TDoc = unknown>(
         0,
       );
 
-      // Build reversal entry data
+      // Build reversal entry data. State is omitted so the schema default
+      // (`draft`) applies — matches ERPNext (`make_reverse_journal_entry`
+      // returns Draft, docstatus=0) and Odoo (`_reverse_moves` creates
+      // Draft via `.copy()`). Callers wanting Odoo's `cancel=True` semantic
+      // pass `options.autoPost: true` to post via the `post()` action below.
       const reversalData: Record<string, unknown> = {
         journalType: entry.journalType ?? 'MISC',
-        state: 'posted',
         date: options.reversalDate ?? new Date(),
         label: `Reversal of ${entry.referenceNumber ?? entry._id}`,
         journalItems: reversalItems,
         totalDebit,
         totalCredit,
         reversalOf: entry._id,
-        stateChangedAt: new Date(),
       };
 
       // Propagate every consumer-defined top-level field (extraFields,
@@ -794,33 +859,66 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       // reports, plugin hooks, and audit trails all see the right data.
       copyExtraTopLevel(entry as unknown as Record<string, unknown>, reversalData);
 
-      // Stamp actor on reversal entry
-      if (options.actorId) {
-        reversalData.postedBy = options.actorId;
-      }
-
       // Create reversal via repository so plugins (fiscal-lock, double-entry) run
-      const reversalEntry = (await create(reversalData, session ? { session } : {})) as Record<
+      let reversalEntry = (await create(reversalData, session ? { session } : {})) as Record<
         string,
         unknown
       >;
 
-      // Mark original as reversed (bidirectional link). Route through
-      // repository.update() with _ledgerInternal: 'reverseMark' so plugins
-      // (audit, observability, notifications) see the reversal event. The
-      // double-entry immutability guard honours the internal flag so this
-      // legitimate mutation is permitted.
-      const markPatch: Record<string, unknown> = {
+      // Optional auto-post for Odoo `cancel=True` parity. Routes through
+      // repository.post() so fiscal-lock/day-close/double-entry plugins
+      // validate the post, postedBy/postedAt are stamped correctly, and
+      // the entry-posted event fires. Default is draft (no auto-post) so
+      // finance can review the reversal before it hits the books.
+      //
+      // The post() result becomes the returned `reversal` so callers see
+      // the authoritative post-state doc — `state: 'posted'`, `postedBy`,
+      // and `stateChangedAt` all populated. Falling back to the create
+      // result silently returned a stale draft snapshot.
+      const postFn = (repository as JournalEntryRepository<TDoc>).post;
+      if (options.autoPost && postFn) {
+        const posted = (await postFn(reversalEntry._id, orgId, {
+          actorId: options.actorId,
+          ...(session ? { session } : {}),
+        })) as Record<string, unknown> | null;
+        if (posted) reversalEntry = posted;
+      }
+
+      // Mark original as reversed (bidirectional link) via mongokit's
+      // atomic claim(). Two concurrent `reverse()` calls on the same entry
+      // can't both succeed — `where: { reversed: { $ne: true } }` is the
+      // CAS predicate that admits exactly one winner. The transition is a
+      // state-noop (`from === to === 'posted'`) so the state field stays
+      // unchanged; we're using claim purely as a `findOneAndUpdate` with
+      // race-safe predicate that flows through the plugin pipeline (audit,
+      // observability, multi-tenant scope). Replaces the previous
+      // `update(...)` + `_ledgerInternal: 'reverseMark'` workaround that
+      // existed solely to bypass the double-entry immutability guard.
+      const $set: Record<string, unknown> = {
         reversed: true,
         reversedBy: reversalEntry._id,
       };
-      if (options.actorId) markPatch.reversedByUser = options.actorId;
+      if (options.actorId) $set.reversedByUser = options.actorId;
 
-      const markOptions: InternalUpdateOptions = {
-        _ledgerInternal: 'reverseMark',
-        ...(session ? { session } : {}),
-      };
-      const marked = (await update(entry._id, markPatch, markOptions)) as JournalEntryDoc | null;
+      const claimOpts: Record<string, unknown> = {};
+      if (session) claimOpts.session = session;
+      if (orgField && orgId != null) claimOpts.organizationId = orgId;
+      if (options.actorId) claimOpts.userId = options.actorId;
+
+      const marked = (await claim(
+        entry._id,
+        {
+          field: 'state',
+          from: 'posted',
+          to: 'posted',
+          where: { reversed: { $ne: true } },
+        },
+        { $set },
+        claimOpts,
+      )) as JournalEntryDoc | null;
+      // claim returns null when the original was already reversed (race) or
+      // its state changed under our feet. Fall back to the read snapshot —
+      // event emission below will still fire with the right reversalEntryId.
       const original = marked ?? entry;
 
       await safePublish(

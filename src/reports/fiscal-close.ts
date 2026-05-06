@@ -197,7 +197,7 @@ export async function closeFiscalPeriod(
     const closedAt = new Date();
     await FiscalPeriodModel.findOneAndUpdate(
       periodQuery,
-      { closed: true, closedAt, closedBy: closedBy ?? null, closingEntryId },
+      { $set: { closed: true, closedAt, closedBy: closedBy ?? null, closingEntryId } },
       queryOpts,
     );
 
@@ -286,12 +286,14 @@ export async function reopenFiscalPeriod(
     await FiscalPeriodModel.findOneAndUpdate(
       periodQuery,
       {
-        closed: false,
-        closedAt: null,
-        closedBy: null,
-        closingEntryId: null,
-        reopenedAt,
-        reopenedBy: reopenedBy ?? null,
+        $set: {
+          closed: false,
+          closedAt: null,
+          closedBy: null,
+          closingEntryId: null,
+          reopenedAt,
+          reopenedBy: reopenedBy ?? null,
+        },
       },
       queryOpts,
     );

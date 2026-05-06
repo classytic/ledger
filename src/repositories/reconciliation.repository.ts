@@ -26,40 +26,16 @@ import type { EventTransport } from '@classytic/primitives/events';
 import type { ClientSession, Model } from 'mongoose';
 import type { LedgerBridges } from '../bridges/index.js';
 import { LEDGER_EVENTS } from '../events/event-constants.js';
-import { createEvent } from '../events/helpers.js';
 import type { OutboxStore } from '../events/outbox-store.js';
 import type { MatchInput, OpenItem, ReconciliationRepository } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
+import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface ReconciliationIntegrations {
   events?: EventTransport;
   bridges?: LedgerBridges;
   outboxStore?: OutboxStore;
-}
-
-async function safePublish(
-  events: EventTransport | undefined,
-  outboxStore: OutboxStore | undefined,
-  type: string,
-  payload: unknown,
-  ctx?: { organizationId?: unknown; session?: ClientSession | null },
-): Promise<void> {
-  const event = createEvent(type, payload, ctx);
-  if (outboxStore) {
-    try {
-      await outboxStore.save(event, { session: ctx?.session ?? undefined });
-    } catch {
-      /* outbox failures must not break mutations */
-    }
-  }
-  if (events) {
-    try {
-      await events.publish(event);
-    } catch {
-      /* transport failures must not break mutations */
-    }
-  }
 }
 
 // ─── Hook context types (exported for plugin consumers) ─────────────────────
@@ -134,9 +110,15 @@ interface JournalEntryDoc {
  * reconciliation collection. Uses a dedicated sentinel document keyed
  * `{ matchingNumber: '__counter__', [org]: orgId }` so each org has its
  * own counter, safe under concurrent match calls.
+ *
+ * Routed through `repository.findOneAndUpdate` (mongokit 3.13+) so the
+ * counter bump flows through the plugin pipeline — multi-tenant scope,
+ * audit, cache invalidation. Previously `Model.findOneAndUpdate` was used
+ * directly, which bypassed every plugin and silently leaked across tenants
+ * if a stale ctx ever crept in.
  */
 async function nextMatchingNumber(
-  ReconciliationModel: Model<unknown>,
+  repository: Repository<unknown>,
   orgField: string | undefined,
   orgId: unknown,
   session: ClientSession | null,
@@ -144,9 +126,11 @@ async function nextMatchingNumber(
   const counterQuery: Record<string, unknown> = { matchingNumber: '__counter__' };
   if (orgField && orgId != null) counterQuery[orgField] = orgId;
 
-  // We abuse findOneAndUpdate($inc) on a synthetic doc that lives alongside
-  // real reconciliations. The unique index covers it because the sentinel
-  // string is reserved.
+  // Sentinel doc — `matchingNumber: '__counter__'` is reserved and will
+  // never collide with a real `RECN-NNNNNN` value. The unique index covers
+  // it. `$setOnInsert` provides placeholder fields the schema marks
+  // required; `strict: false` keeps mongoose from rejecting the synthetic
+  // shape (validate on items ≥2 doesn't run on findOneAndUpdate).
   const counterUpdate: Record<string, unknown> = {
     $inc: { seq: 1 },
     $setOnInsert: {
@@ -159,16 +143,23 @@ async function nextMatchingNumber(
       creditTotal: 0,
     },
   };
-  // The schema requires `account`, `items`, `debitTotal`, `creditTotal` —
-  // setOnInsert provides placeholders. But the validate on items (≥2)
-  // won't run on findOneAndUpdate, so this is safe. We'll never read
-  // these fields; they exist purely to satisfy the insert path.
-  const result = (await ReconciliationModel.findOneAndUpdate(counterQuery, counterUpdate, {
-    new: true,
+
+  // `runValidators: false` is load-bearing — the synthetic counter doc
+  // intentionally violates the schema's `required` rules on `account` /
+  // `items.entry`. mongokit's findOneAndUpdate runs validators by default;
+  // disabling them here mirrors the prior `Model.findOneAndUpdate({...,
+  // strict: false})` behaviour without losing the plugin pipeline.
+  const opts: Record<string, unknown> = {
+    returnDocument: 'after',
     upsert: true,
-    session,
-    strict: false,
-  }).lean()) as { seq?: number } | null;
+    runValidators: false,
+  };
+  if (session) opts.session = session;
+  if (orgField && orgId != null) opts.organizationId = orgId;
+
+  const result = (await repository.findOneAndUpdate(counterQuery, counterUpdate, opts)) as {
+    seq?: number;
+  } | null;
 
   const seq = result?.seq ?? 1;
   return `RECN-${String(seq).padStart(6, '0')}`;
@@ -287,7 +278,7 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
 
     if (!matchingNumber) {
       matchingNumber = await nextMatchingNumber(
-        ReconciliationModel,
+        repository as unknown as Repository<unknown>,
         orgField,
         organizationId,
         session,
@@ -444,7 +435,7 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
 
     // Route through repository.delete so hooks fire.
     const result = await deleteById(String((existing as { _id: unknown })._id));
-    if (!result.success) {
+    if (!result) {
       throw Errors.notFound('Failed to delete reconciliation record');
     }
 

@@ -10,6 +10,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { legacyBalanceSheet, legacyIncomeStatement, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 import {
   assertConservation,
   postEntry,
@@ -68,7 +69,7 @@ describe('2. The Mistake', () => {
       dateOption: 'month',
       dateValue: '2025-01',
     });
-    expect(is.netIncome).toBe(5_000_000); // $50,000 — wrong!
+    expect(legacyIncomeStatement(is).netIncome).toBe(5_000_000); // $50,000 — wrong!
   });
 });
 
@@ -99,7 +100,7 @@ describe('3. The Reversal', () => {
       dateValue: '2025-01',
     });
     // $50K mistake + $50K reversal = $0 net revenue
-    expect(is.netIncome).toBe(0);
+    expect(legacyIncomeStatement(is).netIncome).toBe(0);
   });
 });
 
@@ -136,7 +137,7 @@ describe('5. Post-Correction Reports', () => {
     });
 
     // Net revenue: $50K mistake - $50K reversal + $5K correct = $5,000
-    expect(is.netIncome).toBe(500_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(500_000);
   });
 
   it('trial balance still balanced after 4 entries', async () => {
@@ -145,8 +146,8 @@ describe('5. Post-Correction Reports', () => {
       dateValue: '2025-01',
     });
 
-    const totalDebit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
   });
 
@@ -156,10 +157,10 @@ describe('5. Post-Correction Reports', () => {
       dateValue: '2025-01',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
     // Assets = Cash = $100K + $5K net = $105K
-    expect(bs.summary.totalAssets).toBe(10_500_000);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(10_500_000);
   });
 
   it('general ledger revenue account shows all 3 entries', async () => {

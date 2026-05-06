@@ -21,6 +21,7 @@ import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import type { AccountType } from '../../src/types/core.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { legacyBalanceSheet, legacyIncomeStatement, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Inline Canada-like Country Pack (self-contained — no ledger-ca dependency)
@@ -387,8 +388,8 @@ describe('Opening Balances — Migration from QuickBooks', () => {
       dateValue: '2025-01',
     });
 
-    const totalDebit = tb.rows.reduce((s, r) => s + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((s, r) => s + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
     expect(totalDebit).toBeGreaterThan(0);
   });
@@ -400,9 +401,9 @@ describe('Opening Balances — Migration from QuickBooks', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
-    expect(bs.summary.totalAssets).toBe(7_000_000); // $50k + $20k
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(7_000_000); // $50k + $20k
   });
 });
 
@@ -435,7 +436,7 @@ describe('Monthly Operations — Q1 2025', () => {
       dateValue: '2025-01',
     });
 
-    expect(janIS.revenue.total).toBe(1_500_000);
+    expect(legacyIncomeStatement(janIS).revenue.total).toBe(1_500_000);
   });
 
   it('records February operations: revenue, office supplies, salary', async () => {
@@ -462,7 +463,7 @@ describe('Monthly Operations — Q1 2025', () => {
       dateValue: '2025-02',
     });
 
-    expect(febIS.revenue.total).toBe(1_800_000);
+    expect(legacyIncomeStatement(febIS).revenue.total).toBe(1_800_000);
   });
 
   it('records March operations: revenue, equipment purchase, salary', async () => {
@@ -489,7 +490,7 @@ describe('Monthly Operations — Q1 2025', () => {
       dateValue: '2025-03',
     });
 
-    expect(marIS.revenue.total).toBe(1_200_000);
+    expect(legacyIncomeStatement(marIS).revenue.total).toBe(1_200_000);
   });
 
   it('Q1 income statement shows correct gross profit and net income', async () => {
@@ -500,16 +501,16 @@ describe('Monthly Operations — Q1 2025', () => {
 
     // Q1 Revenue: $15k + $18k + $12k = $45,000
     const expectedRevenue = 4_500_000;
-    expect(q1IS.revenue.total).toBe(expectedRevenue);
+    expect(legacyIncomeStatement(q1IS).revenue.total).toBe(expectedRevenue);
 
     // Q1 Gross Profit = Revenue - COGS (no COGS posted, so grossProfit = revenue)
-    expect(q1IS.grossProfit).toBe(expectedRevenue);
+    expect(legacyIncomeStatement(q1IS).grossProfit).toBe(expectedRevenue);
 
     // Q1 Expenses: Rent $2k + Salaries $24k (3x $8k) + Supplies $500 = $26,500
     const expectedExpenses = 2_650_000;
 
     // Net income = Revenue - all expenses
-    expect(q1IS.netIncome).toBe(expectedRevenue - expectedExpenses);
+    expect(legacyIncomeStatement(q1IS).netIncome).toBe(expectedRevenue - expectedExpenses);
   });
 
   it('Q1 trial balance has all accounts with activity', async () => {
@@ -518,15 +519,15 @@ describe('Monthly Operations — Q1 2025', () => {
       dateValue: { quarter: 1, year: 2025 },
     });
 
-    expect(q1TB.rows.length).toBeGreaterThan(0);
+    expect(legacyTrialBalance(q1TB).rows.length).toBeGreaterThan(0);
 
     // Every row with activity should have non-zero ending balance
-    const activeRows = q1TB.rows.filter((r) => r.ending.debit > 0 || r.ending.credit > 0);
+    const activeRows = legacyTrialBalance(q1TB).rows.filter((r) => r.ending.debit > 0 || r.ending.credit > 0);
     expect(activeRows.length).toBeGreaterThanOrEqual(5);
 
     // Trial balance must be balanced
-    const totalDebit = q1TB.rows.reduce((s, r) => s + r.ending.debit, 0);
-    const totalCredit = q1TB.rows.reduce((s, r) => s + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(q1TB).rows.reduce((s, r) => s + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(q1TB).rows.reduce((s, r) => s + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
   });
 });
@@ -567,14 +568,14 @@ describe('Tax Collection — HST', () => {
     });
 
     // HST Collected (2300) should have a credit balance of $5,850
-    const hstCollectedRow = tb.rows.find(
+    const hstCollectedRow = legacyTrialBalance(tb).rows.find(
       (r) => String((r.account as any)._id) === String(acctIds['2300']),
     );
     expect(hstCollectedRow).toBeDefined();
     expect(hstCollectedRow?.ending.credit).toBe(585_000);
 
     // HST Paid (2400) should have a debit balance of $325
-    const hstPaidRow = tb.rows.find(
+    const hstPaidRow = legacyTrialBalance(tb).rows.find(
       (r) => String((r.account as any)._id) === String(acctIds['2400']),
     );
     expect(hstPaidRow).toBeDefined();
@@ -610,11 +611,11 @@ describe('Balance Sheet — Mid-Year', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
-    expect(bs.summary.totalAssets).toBeGreaterThan(0);
-    expect(bs.summary.totalLiabilities).toBeGreaterThanOrEqual(0);
-    expect(bs.summary.totalEquity).toBeGreaterThan(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBeGreaterThan(0);
+    expect(legacyBalanceSheet(bs).summary.totalLiabilities).toBeGreaterThanOrEqual(0);
+    expect(legacyBalanceSheet(bs).summary.totalEquity).toBeGreaterThan(0);
   });
 
   it('equity section includes retained earnings from migration', async () => {
@@ -625,7 +626,7 @@ describe('Balance Sheet — Mid-Year', () => {
     });
 
     // Total equity should include the $60k RE from migration + shares + current year income
-    expect(bs.equity.total).toBeGreaterThan(6_000_000);
+    expect(legacyBalanceSheet(bs).equity.total).toBeGreaterThan(6_000_000);
   });
 
   it('3600 (Retained Earnings) is NOT in Shareholder Equity group', async () => {
@@ -636,7 +637,7 @@ describe('Balance Sheet — Mid-Year', () => {
     });
 
     // Find the Shareholder Equity group in equity categories
-    const shareholderGroup = bs.equity.groups.find((g) => g.name === 'Shareholder Equity');
+    const shareholderGroup = legacyBalanceSheet(bs).equity.groups.find((g) => g.name === 'Shareholder Equity');
 
     if (shareholderGroup) {
       // 3600 should NOT appear in the Shareholder Equity group —
@@ -695,9 +696,9 @@ describe('Income Statement — Full Year', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    expect(is.revenue.total).toBeGreaterThan(0);
-    expect(is.netIncome).toBeGreaterThan(0);
-    expect(is.revenue.total).toBeGreaterThan(is.expenses.total);
+    expect(legacyIncomeStatement(is).revenue.total).toBeGreaterThan(0);
+    expect(legacyIncomeStatement(is).netIncome).toBeGreaterThan(0);
+    expect(legacyIncomeStatement(is).revenue.total).toBeGreaterThan(legacyIncomeStatement(is).expenses.total);
   });
 
   it('full year revenue matches sum of all monthly revenue', async () => {
@@ -709,7 +710,7 @@ describe('Income Statement — Full Year', () => {
 
     // Q1: $45k + Q2: $45k + Q3-Q4: $14k x 6 = $84k = Total $174,000
     const expectedRevenue = 17_400_000;
-    expect(is.revenue.total).toBe(expectedRevenue);
+    expect(legacyIncomeStatement(is).revenue.total).toBe(expectedRevenue);
   });
 
   it('COGS is separated from operating expenses', async () => {
@@ -720,10 +721,10 @@ describe('Income Statement — Full Year', () => {
     });
 
     // costOfSales should capture the $10k subcontractor cost
-    expect(is.costOfSales).toBe(1_000_000);
+    expect(legacyIncomeStatement(is).costOfSales).toBe(1_000_000);
 
     // grossProfit = revenue - COGS
-    expect(is.grossProfit).toBe(is.revenue.total - is.costOfSales);
+    expect(legacyIncomeStatement(is).grossProfit).toBe(legacyIncomeStatement(is).revenue.total - legacyIncomeStatement(is).costOfSales);
   });
 
   it('expense groups are present and contain correct accounts', async () => {
@@ -734,10 +735,10 @@ describe('Income Statement — Full Year', () => {
     });
 
     // The expenses category should have groups
-    expect(is.expenses.groups.length).toBeGreaterThan(0);
+    expect(legacyIncomeStatement(is).expenses.groups.length).toBeGreaterThan(0);
 
     // All accounts within groups should have codes
-    for (const group of is.expenses.groups) {
+    for (const group of legacyIncomeStatement(is).expenses.groups) {
       for (const account of group.accounts) {
         expect(account.code).toBeDefined();
         expect(account.code.length).toBeGreaterThan(0);
@@ -848,11 +849,13 @@ describe('Cash Flow Statement', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    // Operating should have activity (revenue, expenses)
-    expect(cf.operating.accounts.length).toBeGreaterThan(0);
+    const k = cf.periods[0].key;
+    expect(cf.operating.lines.length).toBeGreaterThan(0);
+    expect(cf.operating.lines.some((l) => l.source.kind === 'netIncome')).toBe(true);
 
-    // Net cash flow = operating + investing + financing
-    expect(cf.netCashFlow).toBe(cf.operating.total + cf.investing.total + cf.financing.total);
+    expect(cf.netCashFlow[k]).toBe(
+      cf.operating.totals[k] + cf.investing.totals[k] + cf.financing.totals[k] + cf.fxEffect[k],
+    );
   });
 
   it('equipment purchase appears in Investing activities', async () => {
@@ -862,11 +865,11 @@ describe('Cash Flow Statement', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    // Equipment (1500) has cashFlowCategory 'Investing'
-    const equipmentEntry = cf.investing.accounts.find((a) => a.code === '1500');
-    expect(equipmentEntry).toBeDefined();
-    // Equipment was purchased (debited), so investing shows outflow
-    expect(equipmentEntry?.amount).not.toBe(0);
+    const k = cf.periods[0].key;
+    const equipmentLine = cf.investing.lines.find((l) => l.code === '1500');
+    expect(equipmentLine).toBeDefined();
+    expect(equipmentLine?.amounts[k]).toBeLessThan(0);
+    expect(equipmentLine?.source.kind).toBe('directMovement');
   });
 
   it('has correct metadata', async () => {
@@ -921,7 +924,8 @@ describe('Report Data Quality', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    for (const category of [bs.assets, bs.liabilities, bs.equity]) {
+    const view = legacyBalanceSheet(bs);
+    for (const category of [view.assets, view.liabilities, view.equity]) {
       for (const group of category.groups) {
         const codes = group.accounts.map((a) => a.code);
         const sorted = [...codes].sort();
@@ -937,9 +941,9 @@ describe('Report Data Quality', () => {
       businessName: 'Maple Consulting Inc.',
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
-    expect(bs.summary.totalAssets).toBe(bs.summary.liabilitiesAndEquity);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBe(legacyBalanceSheet(bs).summary.liabilitiesAndEquity);
   });
 
   it('income statement net income matches balance sheet current year earnings', async () => {
@@ -964,7 +968,7 @@ describe('Report Data Quality', () => {
     const openingRE = 6_000_000; // $60k from migration
 
     // Total equity should be shares + opening RE + current year net income
-    expect(bs.equity.total).toBe(sharesBalance + openingRE + is.netIncome);
+    expect(legacyBalanceSheet(bs).equity.total).toBe(sharesBalance + openingRE + legacyIncomeStatement(is).netIncome);
   });
 
   it('trial balance totals are balanced for the full year', async () => {
@@ -973,8 +977,8 @@ describe('Report Data Quality', () => {
       dateValue: 2025,
     });
 
-    const totalDebit = tb.rows.reduce((s, r) => s + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((s, r) => s + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((s, r) => s + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
     expect(totalDebit).toBeGreaterThan(0);
   });
@@ -997,7 +1001,7 @@ describe('Report Data Quality', () => {
 
     // Find cash in the balance sheet
     let bsCashBalance = 0;
-    for (const group of bs.assets.groups) {
+    for (const group of legacyBalanceSheet(bs).assets.groups) {
       const cashAcct = group.accounts.find((a) => a.code === '1001');
       if (cashAcct) {
         bsCashBalance = cashAcct.balance;

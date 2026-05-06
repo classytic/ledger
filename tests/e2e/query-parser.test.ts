@@ -125,7 +125,7 @@ describe('engine.createQueryParser()', () => {
     // Should return paginated docs
     expect(result).toBeDefined();
     // getAll returns either { docs } or an array depending on pagination
-    const docs = Array.isArray(result) ? result : result.docs;
+    const docs = Array.isArray(result) ? result : result.data;
     expect(docs.length).toBe(2); // 2 accounts from testPack
   });
 
@@ -143,7 +143,7 @@ describe('engine.createQueryParser()', () => {
       filters: { ...parsed.filters, organizationId: orgId },
     });
 
-    const docs = Array.isArray(result) ? result : result.docs;
+    const docs = Array.isArray(result) ? result : result.data;
     expect(docs.length).toBeGreaterThan(0);
   });
 

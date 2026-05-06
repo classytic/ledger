@@ -13,6 +13,11 @@ import type { ClientSession, Model } from 'mongoose';
 // RepositoryContext so this plugin can read the flag without casts.
 import '../types/mongokit-augmentation.js';
 import { Errors } from '../utils/errors.js';
+import {
+  type ClaimRepositoryContext,
+  flattenClaimData,
+  isReverseMarkClaim,
+} from './claim-context.js';
 
 export interface DoubleEntryPluginOptions {
   /** Only enforce on posted entries (default: true) */
@@ -327,9 +332,86 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         }
       };
 
+      // ── before:claim — atomic state-machine CAS validation ─────────────
+      //
+      // mongokit 3.13's `repo.claim()` is a separate op in OP_REGISTRY; it
+      // fires `before:claim`, NOT `before:update`. To preserve double-entry
+      // coverage on ledger's state-transition verbs (post / unpost /
+      // archive) we re-run the items+balance validation against a
+      // synthesized flat-data view when the transition targets `posted`.
+      //
+      // We deliberately DO NOT re-run the immutability guard from
+      // `validateUpdate` here — claim's CAS predicate (`{ _id, state: from
+      // }`) is atomic; if the entry is already in a different state, the
+      // CAS returns null and no mutation lands. State machine semantics
+      // are stronger than the read-then-block immutability heuristic, so
+      // running the guard would just add a redundant DB lookup AND throw
+      // ImmutableViolationError on legitimate transitions like unpost
+      // (posted → draft).
+      //
+      // Reverse-mark (state-noop with `where: { reversed: { $ne: true } }`)
+      // is exempt — it's the only legitimate write to a posted entry and
+      // doesn't change the journal items.
+      const validateClaim = async (rawCtx: RepositoryContext) => {
+        const ctx = rawCtx as ClaimRepositoryContext;
+        if (isReverseMarkClaim(ctx)) return;
+
+        const targetState = ctx.transition?.to;
+        if (targetState !== 'posted') return; // unpost / archive — no item validation needed
+
+        const flatData = flattenClaimData(ctx);
+
+        // The double-entry validation needs to see the journal items.
+        // For state-only transitions (draft → posted), `journalItems` won't
+        // be in the patch — the existing `validateUpdate` already handles
+        // this by fetching the persisted doc when `state → posted`. Reuse
+        // that path; pass through `id` and `session` from the claim ctx.
+        if (!JournalEntryModel) {
+          throw new Error(
+            'doubleEntryPlugin: JournalEntryModel is required to validate claim transitions to "posted". ' +
+              'Pass JournalEntryModel in plugin options.',
+          );
+        }
+        if (!ctx.id) {
+          throw new Error(
+            'doubleEntryPlugin: claim context is missing "id". Cannot validate transition to "posted" without document ID.',
+          );
+        }
+
+        const persisted = (await JournalEntryModel.findById(ctx.id)
+          .select('journalItems')
+          .session((ctx.session as ClientSession) ?? null)
+          .lean()) as Record<string, unknown> | null;
+        if (!persisted) return; // will 404 downstream / CAS will return null
+
+        const persistedItems = persisted.journalItems as
+          | Array<{ debit?: number; credit?: number; account?: unknown }>
+          | undefined;
+        if (!persistedItems || persistedItems.length < 2) {
+          throw Errors.validation(
+            `Cannot post entry: at least 2 journal items required, got ${persistedItems?.length ?? 0}.`,
+          );
+        }
+        validateItems(persistedItems, flatData);
+
+        // Propagate totalDebit/totalCredit back into the actual $set payload so
+        // mongokit writes them to the document. flatData is a local copy from
+        // flattenClaimData — mutations to it do NOT flow through to the DB write
+        // unless we explicitly mirror them back onto ctx.data.$set.
+        if (ctx.data?.$set) {
+          ctx.data.$set.totalDebit = flatData.totalDebit;
+          ctx.data.$set.totalCredit = flatData.totalCredit;
+        }
+
+        if (AccountModel) {
+          await validateAccounts(persistedItems, { ...flatData, ...persisted }, ctx);
+        }
+      };
+
       repo.on('before:create', validate);
       repo.on('before:createMany', validateMany);
       repo.on('before:update', validateUpdate);
+      repo.on('before:claim', validateClaim);
     },
   };
 }

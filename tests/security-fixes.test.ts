@@ -29,6 +29,7 @@ import { createFiscalPeriodSchema } from '../src/schemas/fiscal-period.schema.js
 import { createJournalEntrySchema } from '../src/schemas/journal-entry.schema.js';
 import type { AccountingEngineConfig } from '../src/types/engine.js';
 import { AccountingError } from '../src/utils/errors.js';
+import { legacyTrialBalance } from './helpers/legacy-report-view.js';
 import { mockRepository } from './helpers/mock-repository.js';
 
 // ── Test country pack ────────────────────────────────────────────────────────
@@ -230,7 +231,7 @@ describe('Fix 1: requireOrgScope prevents unscoped multi-tenant queries', () => 
       dateOption: 'month',
       dateValue: '2025-03',
     });
-    expect(report.rows).toHaveLength(0);
+    expect(legacyTrialBalance(report).rows).toHaveLength(0);
   });
 });
 
@@ -927,12 +928,22 @@ describe('Fix 7: post() verifies populated accounts belong to the same org', () 
 
     const result = await repo.post('entry-1', org1);
     expect(result.state).toBe('posted');
-    // post() routes through repository.update() so the plugin pipeline fires;
-    // assert update was called instead of the legacy direct entry.save().
-    expect(repo.update).toHaveBeenCalledWith(
+    // post() routes through mongokit's atomic `repo.claim()` (0.10.6+)
+    // so the state CAS is race-safe AND the plugin pipeline still fires
+    // — `before:claim` handlers were added alongside this migration.
+    // Tenant scope flows through `transition.where[orgField]`.
+    expect(repo.claim).toHaveBeenCalledWith(
       'entry-1',
-      expect.objectContaining({ state: 'posted' }),
-      expect.objectContaining({ _ledgerInternal: 'post' }),
+      expect.objectContaining({
+        field: 'state',
+        from: 'draft',
+        to: 'posted',
+        where: expect.objectContaining({ business: org1 }),
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ stateChangedAt: expect.any(Date) }),
+      }),
+      expect.objectContaining({ organizationId: org1 }),
     );
   });
 

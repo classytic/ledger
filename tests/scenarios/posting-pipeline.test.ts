@@ -9,6 +9,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { legacyBalanceSheet, legacyIncomeStatement, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 import {
   assertConservation,
   postEntry,
@@ -230,8 +231,8 @@ describe('5. Q1 Reports Verification', () => {
       dateValue: { quarter: 1, year: 2025 },
     });
 
-    const totalDebit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
-    const totalCredit = tb.rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
+    const totalDebit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.debit, 0);
+    const totalCredit = legacyTrialBalance(tb).rows.reduce((sum: number, r: any) => sum + r.ending.credit, 0);
     expect(totalDebit).toBe(totalCredit);
     expect(totalDebit).toBeGreaterThan(0);
   });
@@ -246,7 +247,7 @@ describe('5. Q1 Reports Verification', () => {
     // Expenses: Rent 3x$5K=$15K, Salaries 2x$8K=$16K, COGS $3K, Utilities $400
     // Total expenses: $34,400 = 3,440,000 cents
     // Net income: $25,600 = 2,560,000 cents
-    expect(is.netIncome).toBe(2_560_000);
+    expect(legacyIncomeStatement(is).netIncome).toBe(2_560_000);
   });
 
   it('balance sheet balances (A = L + E)', async () => {
@@ -255,9 +256,9 @@ describe('5. Q1 Reports Verification', () => {
       dateValue: { quarter: 1, year: 2025 },
     });
 
-    expect(bs.summary.isBalanced).toBe(true);
-    expect(bs.summary.difference).toBe(0);
-    expect(bs.summary.totalAssets).toBeGreaterThan(0);
+    expect(legacyBalanceSheet(bs).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(bs).summary.difference).toBe(0);
+    expect(legacyBalanceSheet(bs).summary.totalAssets).toBeGreaterThan(0);
   });
 
   it('general ledger cash account shows correct ending balance', async () => {

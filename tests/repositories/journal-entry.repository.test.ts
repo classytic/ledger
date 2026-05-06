@@ -51,6 +51,26 @@ function setup(
       ...(doc as Record<string, unknown>),
       ...patch,
     })),
+    // mongokit 3.13's `claim()` — atomic state-machine CAS. The mock
+    // mirrors mongokit's auto-injection behaviour: non-noop transitions
+    // apply `transition.to` onto `$set` automatically; state-noop
+    // (reverseMark) leaves the state field untouched. The cached doc is
+    // merged with $set so callers see the final post-CAS shape.
+    claim: vi.fn().mockImplementation(
+      async (
+        _id: unknown,
+        transition: { field?: string; from?: unknown; to?: unknown; where?: unknown },
+        patch: Record<string, unknown> = {},
+      ) => {
+        const stateField = transition.field ?? 'state';
+        const $set = { ...((patch.$set ?? {}) as Record<string, unknown>) };
+        const isStateNoop = !Array.isArray(transition.from) && transition.from === transition.to;
+        if (!isStateNoop && transition.to !== undefined) {
+          $set[stateField] = transition.to;
+        }
+        return { ...(doc as Record<string, unknown>), ...$set };
+      },
+    ),
     // `reverse()` builds its own session-threading helper from
     // `mongokitWithTransaction(repository.Model.db, ...)`. Expose a fake
     // `Model.db` so the helper's `startSession()` returns a stub session
@@ -354,11 +374,22 @@ describe('wireJournalEntryMethods — reverse()', () => {
     expect(createCall.journalItems[1].debit).toBe(1000); // was credit: 1000 → debit: 1000
     expect(createCall.journalItems[1].credit).toBe(0); // was debit: 0 → credit: 0
     expect(createCall.label).toBe('Reversal of JE-001');
-    expect(createCall.state).toBe('posted');
+    // 0.10 draft-first reversal — matches Odoo `cancel=False` default and ERPNext
+    // (returns Draft, docstatus=0). The reversal entry is created without a state
+    // field (mongoose default 'draft' applies) and only auto-posts when the
+    // caller passes `options.autoPost: true`. Pre-0.10 this auto-posted by
+    // default; tests asserting `state: 'posted'` are stale.
+    expect(createCall.state).toBeUndefined();
     expect(createCall.reversalOf).toBe('entry-1');
   });
 
-  it('stamps actorId on reversal entry and original', async () => {
+  it('stamps reversedByUser on the original via the update() patch', async () => {
+    // 0.10: actorId tracking on the reversal entry itself only happens when
+    // the caller opts into `autoPost: true` (which routes through `post()`,
+    // which stamps `postedBy`). The unconditional half — marking the original
+    // as reversed via repository.update() — always stamps `reversedByUser`.
+    // This test asserts that always-on half. The autoPost flow is covered
+    // separately by the integration tests.
     const entry = createEntryDoc({
       state: 'posted',
       journalItems: [
@@ -370,15 +401,25 @@ describe('wireJournalEntryMethods — reverse()', () => {
 
     await (repo.reverse as Function)('entry-1', undefined, { actorId: 'user-99' });
 
+    // Reversal entry is DRAFT — no postedBy stamped (would only land via
+    // auto-post). The create call carries no postedBy field.
     const createCall = (createSpy as any).mock.calls[0][0];
-    expect(createCall.postedBy).toBe('user-99');
+    expect(createCall.postedBy).toBeUndefined();
 
-    // The reverse-mark step now routes through repository.update() — assert
-    // the actor stamp was in the patch instead of on the raw mongoose doc.
-    expect(repo.update).toHaveBeenCalledWith(
+    // The reverse-mark step routes through mongokit's atomic claim() —
+    // assert the actor stamp lands in the `$set` operator patch.
+    expect(repo.claim).toHaveBeenCalledWith(
       'entry-1',
-      expect.objectContaining({ reversedByUser: 'user-99' }),
-      expect.objectContaining({ _ledgerInternal: 'reverseMark' }),
+      expect.objectContaining({
+        field: 'state',
+        from: 'posted',
+        to: 'posted',
+        where: { reversed: { $ne: true } },
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ reversedByUser: 'user-99' }),
+      }),
+      expect.any(Object),
     );
   });
 

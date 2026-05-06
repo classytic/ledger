@@ -26,7 +26,7 @@ import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import { LEDGER_EVENTS } from '../../src/events/event-constants.js';
 import { InProcessLedgerBus } from '../../src/events/in-process-bus.js';
-import type { DomainEvent, EventTransport } from '../../src/events/transport.js';
+import type { DomainEvent, EventTransport } from '@classytic/primitives/events';
 import type { AccountType } from '../../src/types/core.js';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────

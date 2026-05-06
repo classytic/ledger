@@ -9,6 +9,8 @@
 
 import type { Model } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
+import type { PeriodColumn } from '../types/report.js';
+import { buildAgeBucketColumns } from '../utils/period-columns.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -49,12 +51,12 @@ export interface AgedBalanceRow {
   accountCode: string;
   contactId?: unknown;
   total: number; // integer cents
-  buckets: Record<string, number>; // bucket label -> cents
+  amounts: Record<string, number>; // bucket label -> cents, aligned with PeriodColumn.key
 }
 
 export interface AgedBalanceReport {
   metadata: { generatedAt: string; asOfDate: string; type: string };
-  bucketLabels: string[];
+  periods: PeriodColumn[];
   rows: AgedBalanceRow[];
   totals: Record<string, number>; // bucket label -> total cents
   grandTotal: number;
@@ -71,6 +73,7 @@ export async function generateAgedBalance(
 
   const asOfDate = params.asOfDate ?? new Date();
   const buckets = params.buckets ?? DEFAULT_BUCKETS;
+  const periods = buildAgeBucketColumns(buckets, asOfDate);
   const bucketLabels = buckets.map((b) => b.label);
   const dueDateField = params.dueDateField ?? 'journalItems.dueDate';
   const contactField = params.contactField;
@@ -106,7 +109,7 @@ export async function generateAgedBalance(
         asOfDate: asOfDate.toISOString().split('T')[0],
         type: params.type,
       },
-      bucketLabels,
+      periods,
       rows: [],
       totals: Object.fromEntries(bucketLabels.map((l) => [l, 0])),
       grandTotal: 0,
@@ -227,13 +230,14 @@ export async function generateAgedBalance(
         accountCode: (acc?.accountNumber as string) ?? '',
         ...(contactField ? { contactId: r._id.contact } : {}),
         total: 0,
-        buckets: Object.fromEntries(bucketLabels.map((l) => [l, 0])),
+        amounts: Object.fromEntries(bucketLabels.map((l) => [l, 0])),
       });
     }
 
-    const row = rowMap.get(key)!;
-    if (row.buckets[r._id.bucket] !== undefined) {
-      row.buckets[r._id.bucket] += r.amount;
+    const row = rowMap.get(key);
+    if (!row) continue;
+    if (row.amounts[r._id.bucket] !== undefined) {
+      row.amounts[r._id.bucket] += r.amount;
     }
     row.total += r.amount;
   }
@@ -251,7 +255,7 @@ export async function generateAgedBalance(
 
   for (const row of rows) {
     for (const label of bucketLabels) {
-      totals[label] += row.buckets[label];
+      totals[label] += row.amounts[label];
     }
     grandTotal += row.total;
   }
@@ -262,7 +266,7 @@ export async function generateAgedBalance(
       asOfDate: asOfDate.toISOString().split('T')[0],
       type: params.type,
     },
-    bucketLabels,
+    periods,
     rows,
     totals,
     grandTotal,

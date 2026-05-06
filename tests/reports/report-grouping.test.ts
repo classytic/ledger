@@ -19,6 +19,7 @@ import { generateIncomeStatement } from '../../src/reports/income-statement.js';
 import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { legacyBalanceSheet, legacyIncomeStatement } from '../helpers/legacy-report-view.js';
 
 // ── Realistic Canada-like pack with parentCode hierarchy ────────────────────
 
@@ -556,9 +557,9 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.revenue.name).toBe('Revenue');
-    expect(report.revenue.groups.length).toBe(1);
-    expect(report.revenue.groups[0].name).toBe('Revenue');
+    expect(legacyIncomeStatement(report).revenue.name).toBe('Revenue');
+    expect(legacyIncomeStatement(report).revenue.groups.length).toBe(1);
+    expect(legacyIncomeStatement(report).revenue.groups[0].name).toBe('Revenue');
   });
 
   it('revenue group contains all 4 revenue accounts with correct balances', async () => {
@@ -569,7 +570,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const revenueGroup = report.revenue.groups[0];
+    const revenueGroup = legacyIncomeStatement(report).revenue.groups[0];
     const codes = revenueGroup.accounts.map((a) => a.code);
 
     expect(codes).toContain('8000'); // Trade Sales
@@ -593,7 +594,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.revenue.total).toBe(5600000);
+    expect(legacyIncomeStatement(report).revenue.total).toBe(5600000);
   });
 
   // ── Cost of Sales Section ───────────────────────────────────────────────
@@ -606,7 +607,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const cogsGroup = report.expenses.groups.find((g) => g.name === 'Cost of Sales');
+    const cogsGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Cost of Sales');
     expect(cogsGroup).toBeDefined();
     expect(cogsGroup?.accounts).toHaveLength(3);
 
@@ -624,7 +625,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.costOfSales).toBe(2500000);
+    expect(legacyIncomeStatement(report).costOfSales).toBe(2500000);
   });
 
   it('gross profit = revenue - COGS = $31,000', async () => {
@@ -635,7 +636,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.grossProfit).toBe(3100000); // 5,600,000 - 2,500,000
+    expect(legacyIncomeStatement(report).grossProfit).toBe(3100000); // 5,600,000 - 2,500,000
   });
 
   // ── Operating Expenses Section ──────────────────────────────────────────
@@ -648,7 +649,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses');
+    const opexGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Operating Expenses');
     expect(opexGroup).toBeDefined();
     expect(opexGroup?.accounts).toHaveLength(6); // 5 standard + 1 uncategorized
 
@@ -669,7 +670,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses')!;
+    const opexGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Operating Expenses')!;
     const findAcct = (code: string) => opexGroup.accounts.find((a) => a.code === code)!;
 
     expect(findAcct('9060').balance).toBe(1200000); // Salaries $12,000
@@ -690,7 +691,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.operatingIncome).toBe(900000); // 3,100,000 - 2,200,000
+    expect(legacyIncomeStatement(report).operatingIncome).toBe(900000); // 3,100,000 - 2,200,000
   });
 
   it('net income = revenue - all expenses = $9,000', async () => {
@@ -701,7 +702,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.netIncome).toBe(900000); // 5,600,000 - 4,700,000
+    expect(legacyIncomeStatement(report).netIncome).toBe(900000); // 5,600,000 - 4,700,000
   });
 
   it('total expenses = COGS + Operating Expenses = $47,000', async () => {
@@ -712,7 +713,7 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.expenses.total).toBe(4700000);
+    expect(legacyIncomeStatement(report).expenses.total).toBe(4700000);
   });
 
   // ── Layout: no data shifting between groups ─────────────────────────────
@@ -725,8 +726,8 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const cogsGroup = report.expenses.groups.find((g) => g.name === 'Cost of Sales')!;
-    const opexGroup = report.expenses.groups.find((g) => g.name === 'Operating Expenses')!;
+    const cogsGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Cost of Sales')!;
+    const opexGroup = legacyIncomeStatement(report).expenses.groups.find((g) => g.name === 'Operating Expenses')!;
 
     // COGS should only have 8xxx codes in the 8300-8500 range
     const cogsCodes = cogsGroup.accounts.map((a) => a.code);
@@ -745,8 +746,8 @@ describe('Income Statement — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const allExpenseCodes = report.expenses.groups.flatMap((g) => g.accounts.map((a) => a.code));
-    const allRevenueCodes = report.revenue.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const allExpenseCodes = legacyIncomeStatement(report).expenses.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const allRevenueCodes = legacyIncomeStatement(report).revenue.groups.flatMap((g) => g.accounts.map((a) => a.code));
 
     // No overlap
     const overlap = allExpenseCodes.filter((c) => allRevenueCodes.includes(c));
@@ -762,8 +763,8 @@ describe('Income Statement — Group Structure & Layout', () => {
     );
 
     const allAccounts = [
-      ...report.revenue.groups.flatMap((g) => g.accounts.map((a) => a.code)),
-      ...report.expenses.groups.flatMap((g) => g.accounts.map((a) => a.code)),
+      ...legacyIncomeStatement(report).revenue.groups.flatMap((g) => g.accounts.map((a) => a.code)),
+      ...legacyIncomeStatement(report).expenses.groups.flatMap((g) => g.accounts.map((a) => a.code)),
     ];
 
     // No duplicates
@@ -810,7 +811,7 @@ describe('Income Statement — Group Structure & Layout', () => {
     );
 
     // Revenue should still be $56,000, not $56,000 + $99,999.99
-    expect(report.revenue.total).toBe(5600000);
+    expect(legacyIncomeStatement(report).revenue.total).toBe(5600000);
   });
 });
 
@@ -865,7 +866,7 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const groupNames = report.assets.groups.map((g) => g.name);
+    const groupNames = legacyBalanceSheet(report).assets.groups.map((g) => g.name);
     expect(groupNames).toContain('Current Assets');
     expect(groupNames).toContain('Capital Assets');
   });
@@ -878,7 +879,7 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets')!;
+    const currentAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Current Assets')!;
     const codes = currentAssets.accounts.map((a) => a.code);
     expect(codes).toContain('1000'); // Cash
     expect(codes).toContain('1060'); // AR
@@ -893,7 +894,7 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const capitalAssets = report.assets.groups.find((g) => g.name === 'Capital Assets')!;
+    const capitalAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Capital Assets')!;
     const codes = capitalAssets.accounts.map((a) => a.code);
     expect(codes).toContain('1600'); // Land
     expect(codes).toContain('1680'); // Equipment
@@ -907,7 +908,7 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const currentLiab = report.liabilities.groups.find((g) => g.name === 'Current Liabilities')!;
+    const currentLiab = legacyBalanceSheet(report).liabilities.groups.find((g) => g.name === 'Current Liabilities')!;
     expect(currentLiab).toBeDefined();
     const codes = currentLiab.accounts.map((a) => a.code);
     expect(codes).toContain('2620'); // AP
@@ -921,10 +922,10 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
-    expect(report.summary.difference).toBe(0);
-    expect(report.summary.totalAssets).toBe(
-      report.summary.totalLiabilities + report.summary.totalEquity,
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.difference).toBe(0);
+    expect(legacyBalanceSheet(report).summary.totalAssets).toBe(
+      legacyBalanceSheet(report).summary.totalLiabilities + legacyBalanceSheet(report).summary.totalEquity,
     );
   });
 
@@ -936,8 +937,8 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const currentAssets = report.assets.groups.find((g) => g.name === 'Current Assets')!;
-    const capitalAssets = report.assets.groups.find((g) => g.name === 'Capital Assets')!;
+    const currentAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Current Assets')!;
+    const capitalAssets = legacyBalanceSheet(report).assets.groups.find((g) => g.name === 'Capital Assets')!;
 
     const findAcct = (group: any, code: string) => group.accounts.find((a: any) => a.code === code);
 
@@ -961,9 +962,9 @@ describe('Balance Sheet — Group Structure & Layout', () => {
       { dateOption: 'month', dateValue: '2025-03' },
     );
 
-    const assetCodes = report.assets.groups.flatMap((g) => g.accounts.map((a) => a.code));
-    const liabCodes = report.liabilities.groups.flatMap((g) => g.accounts.map((a) => a.code));
-    const eqCodes = report.equity.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const assetCodes = legacyBalanceSheet(report).assets.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const liabCodes = legacyBalanceSheet(report).liabilities.groups.flatMap((g) => g.accounts.map((a) => a.code));
+    const eqCodes = legacyBalanceSheet(report).equity.groups.flatMap((g) => g.accounts.map((a) => a.code));
 
     // No overlap
     expect(assetCodes.filter((c) => liabCodes.includes(c))).toEqual([]);
@@ -981,6 +982,6 @@ describe('Balance Sheet — Group Structure & Layout', () => {
 
     // Revenue $20,000 - Rent $3,000 = $17,000 net income
     // Equity = $100,000 shares + $17,000 net income = $117,000
-    expect(report.equity.total).toBe(11700000);
+    expect(legacyBalanceSheet(report).equity.total).toBe(11700000);
   });
 });

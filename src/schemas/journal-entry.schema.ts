@@ -17,6 +17,56 @@ import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.
 import type { AccountingEngineConfig, JournalSchemaOptions } from '../types/engine.js';
 import { buildCurrencyField } from './currency-field.js';
 
+/**
+ * Recommended opt-in indexes for the line-level provenance fields
+ * (`journalItems.sourceRef.*` + `journalItems.linkedRefs.*`).
+ *
+ * Schema fields ship in the core schema unconditionally. Index creation
+ * costs writes on every JE insert, so the package ships them as opt-in:
+ * spread this into `schemaOptions.journalEntry.extraIndexes` to enable
+ * fast `/by-source` lookups against the line-level slots.
+ *
+ * Both indexes are sparse + partial — only lines that actually carry a
+ * sourceModel are indexed. Hosts that never write line-level provenance
+ * pay zero index storage / no insert overhead.
+ *
+ * @example
+ *   import { createAccountingEngine, LINE_SOURCE_INDEXES } from '@classytic/ledger';
+ *   createAccountingEngine({
+ *     schemaOptions: {
+ *       journalEntry: { extraIndexes: [...LINE_SOURCE_INDEXES] },
+ *     },
+ *   });
+ */
+export const LINE_SOURCE_INDEXES: ReadonlyArray<{
+  fields: Record<string, 1 | -1>;
+  options: Record<string, unknown>;
+}> = [
+  {
+    fields: {
+      'journalItems.sourceRef.sourceModel': 1,
+      'journalItems.sourceRef.sourceId': 1,
+    },
+    options: {
+      sparse: true,
+      partialFilterExpression: {
+        'journalItems.sourceRef.sourceModel': { $type: 'string' },
+      },
+      name: 'journalItems_sourceRef_idx',
+    },
+  },
+  {
+    fields: {
+      'journalItems.linkedRefs.sourceModel': 1,
+      'journalItems.linkedRefs.sourceId': 1,
+    },
+    options: {
+      sparse: true,
+      name: 'journalItems_linkedRefs_idx',
+    },
+  },
+];
+
 export function createJournalEntrySchema(
   config: AccountingEngineConfig,
   accountModelName: string,
@@ -39,6 +89,21 @@ export function createJournalEntrySchema(
     {
       taxCode: { type: String },
       taxName: { type: String },
+    },
+    { _id: false },
+  );
+
+  // ── Per-line source-doc back-reference ───────────────────────────────────
+  //
+  // Defined as a nested Schema (rather than an inline object literal) so
+  // Mongoose treats it as a typed subdocument inside the journalItems array.
+  // Inline nested objects on subdoc-array items can drop on PATCH due to
+  // path-resolution quirks; a typed sub-Schema persists reliably.
+
+  const ItemSourceRefSchema = new mongoose.Schema(
+    {
+      sourceModel: { type: String, default: null },
+      sourceId: { type: String, default: null },
     },
     { _id: false },
   );
@@ -103,6 +168,48 @@ export function createJournalEntrySchema(
       // Maturity date for aged-balance bucketing (Odoo `date_maturity`).
       // When absent, defaults to item.date or entry.date in reports.
       maturityDate: { type: Date, default: null },
+      // Free-form per-line provenance. Schema-less by design — host apps stamp
+      // whatever per-line context they need (cost-center, project code, color
+      // tag) without having to declare it via extraItemFields at engine init.
+      // Mirrors the entry-level `metadata` field consumers already get via
+      // extraFields. Not validated, not indexed by default; index via
+      // extraIndexes if you need to query on a specific subkey. For source-doc
+      // back-references prefer the typed `sourceRef` slot below.
+      meta: { type: mongoose.Schema.Types.Mixed, default: null },
+      // First-class per-line source provenance. Mirrors Odoo
+      // `account.move.line.payment_id`/`statement_line_id` and ERPNext
+      // `Journal Entry Account.reference_type`/`reference_name` — the
+      // universal "this line settles document X" pointer.
+      //
+      // String (not ObjectId) by design: the ledger has no knowledge of
+      // consumer model namespaces, and source-doc identifiers can be
+      // ObjectIds, ULIDs, or human-readable numbers (`INV-2026-04-001`,
+      // `RMA-2026-007`) depending on the host app. The same convention is
+      // used by `@classytic/revenue` (transaction.schema.ts) and ERPNext
+      // (Dynamic Link).
+      //
+      // Use cases this enables that JE-level sourceRef cannot:
+      //   - One payment JE settling N invoices: each line carries its own
+      //     `sourceRef` pointing to the matching invoice.
+      //   - One bank-statement JE produced from N statement-lines.
+      //   - Reverse lookup "show every JE line touching invoice X" via the
+      //     sparse compound index declared further down.
+      //
+      // Complements the line-level `meta` (free-form) and the entry-level
+      // `sourceRef` (whole-JE anchor). Four primitives, four jobs:
+      //   - entry-level `sourceRef`  → "what drove this whole JE"
+      //   - line-level `sourceRef`   → "the document this line settles" (PRIMARY)
+      //   - line-level `linkedRefs[]` → "additional docs this line touches" (SECONDARY,
+      //                                  e.g. `[{ Transaction, txn-123 }, { Order, ord-456 }]`)
+      //   - line-level `meta`        → free-form, not indexable
+      sourceRef: { type: ItemSourceRefSchema, default: () => ({}) },
+      // Multi-source provenance. QBO `LinkedTxn[]` shape — same polymorphic
+      // ref, but as an array. Use when one line legitimately touches more
+      // than one source doc (a payment line that simultaneously references
+      // its revenue Transaction id, the originating Order, AND the Invoice
+      // it settles). Indexed via opt-in `LINE_SOURCE_INDEXES` only — not
+      // every consumer pays the write cost.
+      linkedRefs: { type: [ItemSourceRefSchema], default: undefined },
       ...currencyItemFields,
       ...extraItemFields,
     },
@@ -165,6 +272,11 @@ export function createJournalEntrySchema(
       ref: 'JournalEntry',
       default: null,
     },
+    // P7 — embedded ApprovalChain VO. Hosts that gate posting on a
+    // maker-checker review attach a chain at submit time; `post()` reads
+    // `isApproved(doc.approvals)` before transitioning to `posted`. Hosts
+    // that auto-post (system-generated entries) leave it undefined.
+    approvals: { type: mongoose.Schema.Types.Mixed, default: null },
     ...extraFields,
   };
 
@@ -364,6 +476,22 @@ export function createJournalEntrySchema(
     // Open-item matching — tenant-scoped when multi-tenant is on.
     schema.index({ 'journalItems.matchingNumber': 1 });
 
+    // NOTE on per-line `sourceRef` / `linkedRefs[]` indexes:
+    //
+    // The schema fields are always present, but the package does NOT
+    // auto-create indexes for them. Indexes have a real write cost on every
+    // JE insert; consumers who don't query by line-level provenance shouldn't
+    // pay for indexes they won't use.
+    //
+    // Recommended opt-in pattern: spread `LINE_SOURCE_INDEXES` into
+    // `schemaOptions.journalEntry.extraIndexes` at engine creation time.
+    //   import { LINE_SOURCE_INDEXES } from '@classytic/ledger';
+    //   createAccountingEngine({
+    //     schemaOptions: {
+    //       journalEntry: { extraIndexes: [...LINE_SOURCE_INDEXES, /* yours */] },
+    //     },
+    //   });
+
     // Idempotency key: unique (only when enabled). Tenant prefix is
     // prepended by the helper when multi-tenant is configured.
     if (config.idempotency) {
@@ -389,24 +517,25 @@ export function createJournalEntrySchema(
 
     schema.index({ reversed: 1 });
 
-    if (config.idempotency) {
-      // TTL index — auto-expire old idempotency rows so stale replay keys
-      // don't collide forever. Scoped to rows that carry an idempotencyKey
-      // so normal journal entries are never TTL'd. Default: 24h (Stripe /
-      // Saleor convention). Override via `config.idempotencyTtlSeconds`.
-      const ttlSeconds =
-        typeof config.idempotencyTtlSeconds === 'number' && config.idempotencyTtlSeconds > 0
-          ? config.idempotencyTtlSeconds
-          : 86_400;
-      schema.index(
-        { createdAt: 1 },
-        {
-          name: 'idempotency_ttl_idx',
-          expireAfterSeconds: ttlSeconds,
-          partialFilterExpression: { idempotencyKey: { $type: 'string' } },
-        },
-      );
-    }
+    // NOTE: a partial TTL index on (createdAt, partial: idempotencyKey)
+    // existed here pre-0.x.x and was removed because it auto-deleted
+    // permanent business records. It modelled the wrong thing: an
+    // idempotency *cache* (replay protection, ephemeral) is not the same
+    // as the JE *itself* (audit trail, permanent). Stripe / Saleor keep
+    // the cache in a SEPARATE store with TTL — they don't delete the
+    // resulting Charge / Order. Conflating the two here meant every JE
+    // posted with an idempotencyKey (sales, COD, invoices, bills,
+    // shifts — i.e. the entire ledger) vanished after 24 h, leaving
+    // orphaned `journalEntryId` references on Invoice / Order docs
+    // and corrupting trial-balance + period-close calculations.
+    //
+    // The unique partial index on `idempotencyKey` (above) is the only
+    // de-duplication primitive needed. The before:create hook in
+    // `idempotency.plugin.ts` reads it for fast-path replay detection.
+    //
+    // If a forcing function ever calls for a true Stripe-style 24-h cache
+    // window (after which the same key creates a new JE), implement it via
+    // a separate `IdempotencyCache` collection, NOT by deleting the JE.
   }
 
   if (textSearch) {

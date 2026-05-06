@@ -23,6 +23,7 @@ import { createAccountSchema } from '../../src/schemas/account.schema.js';
 import { createFiscalPeriodSchema } from '../../src/schemas/fiscal-period.schema.js';
 import { createJournalEntrySchema } from '../../src/schemas/journal-entry.schema.js';
 import type { AccountingEngineConfig } from '../../src/types/engine.js';
+import { legacyBalanceSheet, legacyTrialBalance } from '../helpers/legacy-report-view.js';
 
 // ── Test country pack with multiple IS accounts ────────────────────────────
 
@@ -221,10 +222,10 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
 
     // Find retained earnings group
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings');
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings');
     expect(reGroup).toBeDefined();
 
     const priorRE = reGroup?.accounts.find((a) => a.id === 'prior-retained');
@@ -259,9 +260,9 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
       { dateOption: 'month', dateValue: '2025-09' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     const priorRE = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
     const currentYearNI = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
@@ -294,9 +295,9 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
       { dateOption: 'month', dateValue: '2025-12' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     const priorRE = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
     const currentYearNI = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
@@ -334,8 +335,8 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const janRE = janBS.equity.groups.find((g) => g.name === 'Retained Earnings')!;
-    const aprRE = aprBS.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const janRE = legacyBalanceSheet(janBS).equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const aprRE = legacyBalanceSheet(aprBS).equity.groups.find((g) => g.name === 'Retained Earnings')!;
 
     // Jan start: prior=0, current=800000
     expect(janRE.accounts.find((a) => a.id === 'prior-retained')?.balance).toBe(0);
@@ -346,8 +347,8 @@ describe('Fiscal Year Start Month — Balance Sheet Retained Earnings Split', ()
     expect(aprRE.accounts.find((a) => a.id === 'current-year')?.balance).toBe(300000);
 
     // Both should still balance
-    expect(janBS.summary.isBalanced).toBe(true);
-    expect(aprBS.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(janBS).summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(aprBS).summary.isBalanced).toBe(true);
   });
 });
 
@@ -383,7 +384,7 @@ describe('retainedEarningsAccountCode and currentYearEarningsCode on Balance She
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     const priorLine = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
     const currentLine = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
@@ -512,9 +513,9 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    expect(report.summary.isBalanced).toBe(true);
+    expect(legacyBalanceSheet(report).summary.isBalanced).toBe(true);
 
-    const reGroup = report.equity.groups.find((g) => g.name === 'Retained Earnings')!;
+    const reGroup = legacyBalanceSheet(report).equity.groups.find((g) => g.name === 'Retained Earnings')!;
     const priorRE = reGroup.accounts.find((a) => a.id === 'prior-retained')!;
     const currentNI = reGroup.accounts.find((a) => a.id === 'current-year')!;
 
@@ -527,7 +528,7 @@ describe('Multi-Year Retained Earnings Carryforward', () => {
     expect(priorRE.balance).toBe(300000);
 
     // The RE account should NOT appear separately in any equity group
-    const retainedInEquity = report.equity.groups.find((g) =>
+    const retainedInEquity = legacyBalanceSheet(report).equity.groups.find((g) =>
       g.accounts.some((a) => String(a.id) === String(retainedId)),
     );
     // It should only appear in the computed "Retained Earnings" group (id = 'prior-retained')
@@ -930,7 +931,7 @@ describe('Trial Balance with Non-January Fiscal Year Start', () => {
       { dateOption: 'month', dateValue: '2025-06' },
     );
 
-    const cashRow = report.rows.find((r) => String((r.account as any)._id) === String(cashId));
+    const cashRow = legacyTrialBalance(report).rows.find((r) => String((r.account as any)._id) === String(cashId));
     expect(cashRow).toBeDefined();
 
     // Initial = everything before June 2025 reporting period but >= fiscal year start (Apr 1)

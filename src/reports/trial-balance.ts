@@ -7,9 +7,14 @@
 
 import type { Model, PipelineStage } from 'mongoose';
 import type { CountryPack } from '../country/index.js';
-import type { TrialBalanceReport, TrialBalanceRow } from '../types/report.js';
+import type {
+  TrialBalanceColumnRow,
+  TrialBalanceReport,
+  TrialBalanceRow,
+} from '../types/report.js';
 import { getDateRange, getFiscalYearStart } from '../utils/date-range.js';
 import { buildItemFilters } from '../utils/filter-builder.js';
+import { buildPeriodColumns, isoDate } from '../utils/period-columns.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface TrialBalanceOptions {
@@ -27,6 +32,7 @@ export async function generateTrialBalance(
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     accountId?: string;
+    comparative?: 'monthly' | 'quarterly' | null;
     businessName?: string;
     filters?: Record<string, unknown>;
   },
@@ -34,7 +40,7 @@ export async function generateTrialBalance(
   const { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth = 1 } = opts;
   requireOrgScope(orgField, params.organizationId);
   const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
-  const fiscalYearStart = getFiscalYearStart(startDate, fiscalYearStartMonth);
+  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null);
   const itemFilters = buildItemFilters(params.filters);
 
   // Fetch all active accounts
@@ -62,7 +68,8 @@ export async function generateTrialBalance(
 
   const accountFilter = params.accountId ? { 'journalItems.account': params.accountId } : {};
 
-  // Build pipelines
+  const accountLookup = new Map(allAccounts.map((a) => [String(a._id), a]));
+
   const buildPipeline = (ids: unknown[], dateFrom: Date, dateTo: Date): PipelineStage[] => [
     { $match: { ...baseMatch, date: { $gte: dateFrom, $lt: dateTo } } },
     { $unwind: '$journalItems' },
@@ -76,54 +83,100 @@ export async function generateTrialBalance(
     },
   ];
 
-  // BS initial: all history before startDate
-  // IS initial: fiscal year start → startDate
-  // Current: startDate → endDate
-  const [bsInitial, isInitial, current] = await Promise.all([
-    bsIds.length ? JournalEntryModel.aggregate(buildPipeline(bsIds, new Date(0), startDate)) : [],
-    isIds.length
-      ? JournalEntryModel.aggregate(buildPipeline(isIds, fiscalYearStart, startDate))
-      : [],
-    JournalEntryModel.aggregate(
-      buildPipeline([...bsIds, ...isIds], startDate, new Date(endDate.getTime() + 1)),
-    ),
-  ]);
-
-  // Merge
-  const map = new Map<string, { iD: number; iC: number; cD: number; cC: number }>();
-
-  for (const r of [...bsInitial, ...isInitial]) {
-    const key = String(r._id);
-    map.set(key, { iD: r.d, iC: r.c, cD: 0, cC: 0 });
-  }
-  for (const r of current) {
-    const key = String(r._id);
-    const existing = map.get(key) ?? { iD: 0, iC: 0, cD: 0, cC: 0 };
-    existing.cD = r.d;
-    existing.cC = r.c;
-    map.set(key, existing);
-  }
-
-  // Build rows
-  const accountLookup = new Map(allAccounts.map((a) => [String(a._id), a]));
-
-  const rows: TrialBalanceRow[] = [];
-  for (const [id, bal] of map) {
-    const acc = accountLookup.get(id);
-    const totalD = bal.iD + bal.cD;
-    const totalC = bal.iC + bal.cC;
-    const net = totalD - totalC;
-
-    rows.push({
-      account: acc ?? id,
-      initial: { debit: bal.iD, credit: bal.iC },
-      current: { debit: bal.cD, credit: bal.cC },
-      ending: net >= 0 ? { debit: net, credit: 0 } : { debit: 0, credit: Math.abs(net) },
+  const sortRows = (rows: TrialBalanceRow[]) =>
+    rows.sort((a, b) => {
+      const codeA =
+        ((a.account as Record<string, unknown>)?.accountNumber as string) ??
+        ((a.account as Record<string, unknown>)?.accountTypeCode as string) ??
+        '';
+      const codeB =
+        ((b.account as Record<string, unknown>)?.accountNumber as string) ??
+        ((b.account as Record<string, unknown>)?.accountTypeCode as string) ??
+        '';
+      return codeA.localeCompare(codeB, undefined, { numeric: true });
     });
+
+  const computeRowsForRange = async (
+    rangeStart: Date,
+    rangeEnd: Date,
+  ): Promise<TrialBalanceRow[]> => {
+    const fiscalYearStart = getFiscalYearStart(rangeStart, fiscalYearStartMonth);
+
+    const [bsInitial, isInitial, current] = await Promise.all([
+      bsIds.length
+        ? JournalEntryModel.aggregate(buildPipeline(bsIds, new Date(0), rangeStart))
+        : [],
+      isIds.length
+        ? JournalEntryModel.aggregate(buildPipeline(isIds, fiscalYearStart, rangeStart))
+        : [],
+      JournalEntryModel.aggregate(
+        buildPipeline([...bsIds, ...isIds], rangeStart, new Date(rangeEnd.getTime() + 1)),
+      ),
+    ]);
+
+    const map = new Map<string, { iD: number; iC: number; cD: number; cC: number }>();
+
+    for (const r of [...bsInitial, ...isInitial]) {
+      const key = String(r._id);
+      map.set(key, { iD: r.d, iC: r.c, cD: 0, cC: 0 });
+    }
+    for (const r of current) {
+      const key = String(r._id);
+      const existing = map.get(key) ?? { iD: 0, iC: 0, cD: 0, cC: 0 };
+      existing.cD = r.d;
+      existing.cC = r.c;
+      map.set(key, existing);
+    }
+
+    const rows: TrialBalanceRow[] = [];
+    for (const [id, bal] of map) {
+      const acc = accountLookup.get(id);
+      const totalD = bal.iD + bal.cD;
+      const totalC = bal.iC + bal.cC;
+      const net = totalD - totalC;
+
+      rows.push({
+        account: acc ?? id,
+        initial: { debit: bal.iD, credit: bal.iC },
+        current: { debit: bal.cD, credit: bal.cC },
+        ending: net >= 0 ? { debit: net, credit: 0 } : { debit: 0, credit: Math.abs(net) },
+      });
+    }
+
+    return sortRows(rows);
+  };
+
+  const columnarRowsByAccount = new Map<string, TrialBalanceColumnRow>();
+  for (const period of periods) {
+    const periodRows = await computeRowsForRange(period.start, period.end);
+    for (const row of periodRows) {
+      const id = String((row.account as Record<string, unknown>)?._id ?? row.account);
+      const columnar = columnarRowsByAccount.get(id) ?? {
+        account: row.account,
+        initial: {
+          debit: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+          credit: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+        },
+        current: {
+          debit: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+          credit: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+        },
+        ending: {
+          debit: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+          credit: Object.fromEntries(periods.map((p) => [p.column.key, 0])),
+        },
+      };
+      columnar.initial.debit[period.column.key] = row.initial.debit;
+      columnar.initial.credit[period.column.key] = row.initial.credit;
+      columnar.current.debit[period.column.key] = row.current.debit;
+      columnar.current.credit[period.column.key] = row.current.credit;
+      columnar.ending.debit[period.column.key] = row.ending.debit;
+      columnar.ending.credit[period.column.key] = row.ending.credit;
+      columnarRowsByAccount.set(id, columnar);
+    }
   }
 
-  // Sort rows by account code for deterministic output
-  rows.sort((a, b) => {
+  const columnarRows = [...columnarRowsByAccount.values()].sort((a, b) => {
     const codeA =
       ((a.account as Record<string, unknown>)?.accountNumber as string) ??
       ((a.account as Record<string, unknown>)?.accountTypeCode as string) ??
@@ -144,11 +197,13 @@ export async function generateTrialBalance(
     metadata: {
       businessName: params.businessName,
       generatedAt: new Date().toISOString(),
-      periodStart: startDate.toISOString().split('T')[0],
-      periodEnd: endDate.toISOString().split('T')[0],
+      periodStart: isoDate(startDate),
+      periodEnd: isoDate(endDate),
       displayPeriod: periodDisplay,
+      comparative: params.comparative ?? null,
     },
-    rows,
     period: { startDate, endDate },
+    periods: periods.map((p) => p.column),
+    columnarRows,
   };
 }

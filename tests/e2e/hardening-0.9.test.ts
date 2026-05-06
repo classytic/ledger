@@ -25,7 +25,7 @@ import { defineCountryPack } from '../../src/country/index.js';
 import { createAccountingEngine } from '../../src/engine.js';
 import { LEDGER_EVENTS } from '../../src/events/event-constants.js';
 import type { OutboxStore } from '../../src/events/outbox-store.js';
-import type { DomainEvent } from '../../src/events/transport.js';
+import type { DomainEvent } from '@classytic/primitives/events';
 import {
   ConcurrencyError,
   DuplicateReferenceError,
@@ -362,29 +362,38 @@ describe('0.9.0 — strictness.immutable enforcement (PR #3)', () => {
   });
 });
 
-// ── Scenario 5: idempotency TTL index ───────────────────────────────────────
+// ── Scenario 5: idempotency does NOT TTL the JE itself ──────────────────────
+//
+// Earlier the kernel auto-deleted any JE with an `idempotencyKey` after 24 h
+// via a partial TTL index on `createdAt`. JEs are permanent audit records;
+// the TTL was removed. This scenario regression-tests that:
+//   1. No TTL index of any kind exists on the journalentries collection.
+//   2. The unique partial index on `idempotencyKey` is still present (it's
+//      the sole de-duplication primitive).
+//   3. A JE persisted with `idempotencyKey` is still retrievable an hour
+//      later (proxy for "permanently") — no Mongo TTL daemon would touch
+//      it because the index is gone.
+//
+// Stripe-style replay windows (where the same key creates a NEW resource
+// after a TTL elapses) MUST live in a separate IdempotencyCache collection,
+// never on the resource itself. See journal-entry.schema.ts comment block.
 
-describe('0.9.0 — idempotency TTL index (PR #5)', () => {
-  it('builds a TTL index with configurable expiry on the idempotencyKey partition', async () => {
+describe('idempotency — JE persistence (no TTL on permanent records)', () => {
+  it('builds NO TTL index on the journalentries collection', async () => {
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
       country: pack,
       currency: 'USD',
       idempotency: true,
-      idempotencyTtlSeconds: 3600,
     });
     await engine.models.JournalEntry.syncIndexes();
 
     const indexes = await engine.models.JournalEntry.collection.indexes();
-    const ttlIdx = indexes.find((i) => i.name === 'idempotency_ttl_idx');
-    expect(ttlIdx).toBeDefined();
-    expect(ttlIdx?.expireAfterSeconds).toBe(3600);
-    expect(ttlIdx?.partialFilterExpression).toEqual({
-      idempotencyKey: { $type: 'string' },
-    });
+    const ttlIdx = indexes.find((i) => i.expireAfterSeconds !== undefined);
+    expect(ttlIdx).toBeUndefined();
   });
 
-  it('uses 86400s (24h) as the default TTL when idempotencyTtlSeconds is omitted', async () => {
+  it('still builds the unique partial index on idempotencyKey for de-dup', async () => {
     const engine = createAccountingEngine({
       mongoose: mongoose.connection,
       country: pack,
@@ -392,9 +401,60 @@ describe('0.9.0 — idempotency TTL index (PR #5)', () => {
       idempotency: true,
     });
     await engine.models.JournalEntry.syncIndexes();
+
     const indexes = await engine.models.JournalEntry.collection.indexes();
-    const ttlIdx = indexes.find((i) => i.name === 'idempotency_ttl_idx');
-    expect(ttlIdx?.expireAfterSeconds).toBe(86400);
+    const uniqueIdx = indexes.find((i) => i.name === 'idempotencyKey_1');
+    expect(uniqueIdx).toBeDefined();
+    expect(uniqueIdx?.unique).toBe(true);
+    expect(uniqueIdx?.partialFilterExpression).toEqual({
+      idempotencyKey: { $type: 'string' },
+    });
+    // Critically: this index does NOT carry an expiry.
+    expect(uniqueIdx?.expireAfterSeconds).toBeUndefined();
+  });
+
+  it('a JE created with idempotencyKey survives the 24-h window — back-dated createdAt is still queryable', async () => {
+    // Direct DB write with createdAt 25h in the past (TTL daemons run every
+    // 60 s; if any TTL index existed on createdAt+idempotencyKey this row
+    // would be eligible for deletion). After syncIndexes + a short settle
+    // window the row must still be present.
+    const engine = createAccountingEngine({
+      mongoose: mongoose.connection,
+      country: pack,
+      currency: 'USD',
+      idempotency: true,
+    });
+    await engine.models.JournalEntry.syncIndexes();
+
+    const stamp = new Date(Date.now() - 25 * 60 * 60 * 1000); // 25 h ago
+    const doc = await engine.models.JournalEntry.collection.insertOne({
+      journalType: 'GENERAL',
+      label: 'TTL regression probe',
+      date: stamp,
+      journalItems: [],
+      state: 'draft',
+      reversed: false,
+      idempotencyKey: 'ttl-regression-' + Date.now(),
+      totalDebit: 0,
+      totalCredit: 0,
+      createdAt: stamp,
+      updatedAt: stamp,
+    });
+
+    // Give Mongo's TTL monitor a wide-enough window. If a TTL index were
+    // present, the row would already be eligible (createdAt > 24h ago);
+    // the monitor sweeps every 60s — wait 5s + re-check. Without TTL it
+    // sticks around regardless.
+    await new Promise((r) => setTimeout(r, 5_000));
+
+    const stillThere = await engine.models.JournalEntry.collection.findOne({
+      _id: doc.insertedId,
+    });
+    expect(stillThere).not.toBeNull();
+    expect(stillThere?.label).toBe('TTL regression probe');
+
+    // Cleanup so the unique key doesn't pollute sibling tests.
+    await engine.models.JournalEntry.collection.deleteOne({ _id: doc.insertedId });
   });
 });
 
@@ -498,7 +558,12 @@ describe('0.9.0 — syncIndexes boot option (PR #8)', () => {
     // Give the fire-and-forget syncIndexes a moment to complete
     await new Promise((r) => setTimeout(r, 250));
 
+    // The unique partial index on `idempotencyKey` is the canonical
+    // managed index that idempotency: true creates. (The TTL index that
+    // used to live next to it was removed — JEs are permanent records,
+    // see scenario 5.)
     const jeIndexes = await engine.models.JournalEntry.collection.indexes();
-    expect(jeIndexes.find((i) => i.name === 'idempotency_ttl_idx')).toBeDefined();
+    expect(jeIndexes.find((i) => i.name === 'idempotencyKey_1')).toBeDefined();
+    expect(jeIndexes.find((i) => i.expireAfterSeconds !== undefined)).toBeUndefined();
   });
 });

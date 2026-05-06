@@ -243,11 +243,19 @@ describe('Improvement 1: Immutability Guard', () => {
     );
   });
 
-  it('reverse() marks the original via repository.update() with _ledgerInternal=reverseMark', async () => {
-    // As of 0.5.1 reverse() routes the mark-as-reversed step through
-    // repository.update() so plugins (audit, observability) observe the
-    // reversal event. The double-entry immutability guard honours the
-    // internal flag so the legitimate mutation is permitted.
+  it('reverse() marks the original via repository.claim() with state-noop CAS guard', async () => {
+    // As of 0.10.6 reverse() routes the mark-as-reversed step through
+    // mongokit's `repo.claim()` (atomic state-machine CAS) instead of
+    // `repo.update()`. Two concurrent reverses on the same entry can't
+    // both succeed — `where: { reversed: { $ne: true } }` is the CAS
+    // predicate that admits exactly one winner. The transition is a
+    // state-noop (`from === to === 'posted'`) so the state field stays
+    // unchanged; we use claim purely as a `findOneAndUpdate` with
+    // race-safe predicate that flows through the plugin pipeline (audit,
+    // observability, multi-tenant scope). This replaces the previous
+    // `update(...)` + `_ledgerInternal: 'reverseMark'` workaround that
+    // existed solely to bypass the double-entry immutability guard —
+    // claim doesn't fire `before:update`, so the bypass flag is gone.
     const { wireJournalEntryMethods } = await import(
       '../src/repositories/journal-entry.repository.js'
     );
@@ -276,12 +284,20 @@ describe('Improvement 1: Immutability Guard', () => {
 
     await repo.reverse('entry-1');
 
-    // The reverse-mark step went through update(), not entry.save().
+    // The reverse-mark step went through claim(), not entry.save() or update().
     expect(mockEntry.save).not.toHaveBeenCalled();
-    expect(repo.update).toHaveBeenCalledWith(
+    expect(repo.claim).toHaveBeenCalledWith(
       'entry-1',
-      expect.objectContaining({ reversed: true, reversedBy: 'reversal-1' }),
-      expect.objectContaining({ _ledgerInternal: 'reverseMark' }),
+      expect.objectContaining({
+        field: 'state',
+        from: 'posted',
+        to: 'posted',
+        where: { reversed: { $ne: true } },
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ reversed: true, reversedBy: 'reversal-1' }),
+      }),
+      expect.any(Object),
     );
   });
 
@@ -492,18 +508,28 @@ describe('Improvement 1: reverse()', () => {
     expect(reversalData.journalItems[1].debit).toBe(10000); // was credit: 10000 → debit: 10000
     expect(reversalData.journalItems[1].credit).toBe(0); // was debit: 0 → credit: 0
 
-    // Verify reversal metadata
+    // Verify reversal metadata. State is omitted so the schema default
+    // (`draft`) applies — matches ERPNext/Odoo industry standard.
     expect(reversalData.reversalOf).toBe('entry-1');
-    expect(reversalData.state).toBe('posted');
+    expect(reversalData.state).toBeUndefined();
     expect(reversalData.label).toContain('Reversal of');
 
-    // Verify the original was marked as reversed via repository.update()
-    // (the plugin pipeline runs on the mark step, not a silent entry.save()).
+    // Verify the original was marked as reversed via repository.claim()
+    // (atomic CAS — plugin pipeline runs on the mark step, not a silent
+    // entry.save(); two concurrent reverses can't both succeed).
     expect(mockEntry.save).not.toHaveBeenCalled();
-    expect(repo.update).toHaveBeenCalledWith(
+    expect(repo.claim).toHaveBeenCalledWith(
       'entry-1',
-      expect.objectContaining({ reversed: true, reversedBy: 'reversal-1' }),
-      expect.objectContaining({ _ledgerInternal: 'reverseMark' }),
+      expect.objectContaining({
+        field: 'state',
+        from: 'posted',
+        to: 'posted',
+        where: { reversed: { $ne: true } },
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ reversed: true, reversedBy: 'reversal-1' }),
+      }),
+      expect.any(Object),
     );
 
     // Verify return value — the reversal doc is unchanged, `original` is the
@@ -1489,13 +1515,22 @@ describe('archive() method', () => {
     const result = await repo.archive('entry-1');
     expect(result.state).toBe('archived');
     expect(result.stateChangedAt).toBeInstanceOf(Date);
-    // archive() now routes through repository.update() so the plugin pipeline
-    // (date-lock, audit, observability) fires on the state transition. The
-    // mock echoes the patch back, so we assert update — not save — was called.
-    expect(repo.update).toHaveBeenCalledWith(
+    // archive() routes the state mutation through mongokit's atomic
+    // `repo.claim()` (0.10.6+) so two concurrent archive calls can never
+    // both succeed. Plugins (date-lock, audit, observability) still fire
+    // — `before:claim` handlers were added in 0.10.6 alongside this
+    // migration. The mock echoes back $set + transition.to.
+    expect(repo.claim).toHaveBeenCalledWith(
       'entry-1',
-      expect.objectContaining({ state: 'archived' }),
-      expect.objectContaining({ _ledgerInternal: 'archive' }),
+      expect.objectContaining({
+        field: 'state',
+        from: 'draft',
+        to: 'archived',
+      }),
+      expect.objectContaining({
+        $set: expect.objectContaining({ stateChangedAt: expect.any(Date) }),
+      }),
+      expect.any(Object),
     );
   });
 
