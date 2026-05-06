@@ -17,7 +17,7 @@
  *
  * @example
  * ```typescript
- * import { buildOpeningBalanceEntry } from '@classytic/ledger/sync';
+ * import { buildOpeningBalanceEntry } from '@classytic/ledger';
  *
  * const result = buildOpeningBalanceEntry({
  *   cutoverDate: new Date('2025-01-01'),
@@ -33,8 +33,8 @@
  * ```
  */
 
-import type { Cents } from '../../types/core';
-import type { JournalEntryInput, JournalItemInput } from '../../types/sync';
+import type { Cents } from '../types/core.js';
+import type { JournalEntryInput, JournalItemInput } from '../types/journal-input.js';
 
 export interface OpeningBalanceInput {
   /** Cutover date — typically the start of fiscal year.

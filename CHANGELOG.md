@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.11.0
+
+### ⚠️ BREAKING — `/sync` subpath removed; `@classytic/fin-io` peer dropped
+
+The `@classytic/ledger/sync` subpath (introduced in 0.6 to bridge `@classytic/fin-io` canonical shapes into `JournalEntry` documents) has been removed. Sync orchestration is host responsibility — only one host (fajr-be-arc) ever consumed the subpath, and it already imported `@classytic/fin-io` directly elsewhere (parsers, providers, token stores). Keeping the glue in ledger violated PACKAGE_RULES P1 (no cross-`@classytic/*` imports outside `mongokit` + `primitives`) and forced fin-io to ride along as an optional peer for every consumer.
+
+What moved out:
+- `wireImport`, `wireExport` — generic batch importer/exporter
+- `bankStatementMapper`, `invoiceMapper`, `journalEntryMapper`, `openingBalanceMapper` — fin-io-shape → `JournalEntryInput` mappers
+- `createLedgerBridge` — `@classytic/invoice` LedgerBridge adapter
+- All sync-only types (`ImportMapper`, `ImportContext`, `WireImportArgs`, `ExportSink`, `ImportReport`, etc.)
+
+What stayed (now on the main entry):
+- `buildOpeningBalanceEntry` (pure, no fin-io) — re-exported from `@classytic/ledger`
+- `OpeningBalanceInput`, `OpeningBalanceResult` — re-exported from `@classytic/ledger`
+- `JournalEntryInput`, `JournalItemInput` — re-exported from `@classytic/ledger` (these describe the `journalEntries.create()` input; they're inherent to the engine, not a sync concern)
+
+**Migration for fajr-be-arc** (the only known consumer): the canonical replacement lives at `D:/projects/algoclan/fajr/fajr-be-arc/src/shared/ledger-sync/`. Imports change `from '@classytic/ledger/sync'` → `from '#shared/ledger-sync/index.js'`. fin-io stays as a fajr direct dependency; ledger no longer cares about it.
+
+**Migration for any other consumer**: copy `src/shared/ledger-sync/` from fajr-be-arc into your own host repo. Drop `@classytic/fin-io` from ledger's peer footprint (it was already optional). The exports surface inside the moved folder is byte-identical to what `@classytic/ledger/sync` shipped.
+
+### Fixed — reconciliation matching number generator (was: 0.10.4 smoke-blocker)
+
+`reconciliations.match()` could collide on the unique index `{ matchingNumber: 1 }` when called twice on the same engine. Root cause: the 0.10.x refactor routed the in-collection `__counter__` sentinel doc's `$inc: { seq: 1 }` through `repository.findOneAndUpdate(...)` (to flow through the plugin pipeline — multi-tenant, audit, cache), but `seq` was never declared in the reconciliation schema and mongoose strict mode silently dropped the operator. Every call returned `undefined` → fell back to `1` → every match resolved to `RECN-000001`. First match per engine succeeded; second collided.
+
+Replaced with `getNextSequence(counterKey, 1, connection, session)` from mongokit (the same primitive ledger already uses for `journalEntries.referenceNumber` allocation in `journal-entry.schema.ts`). Counter lives in the shared `_mongokit_counters` collection, no schema pollution, session-aware (counter rolls back if the calling transaction aborts), multi-tenant via key prefix `ledger:{orgScope}:matchingNumber`.
+
 ## [Unreleased]
 
 ### Removed

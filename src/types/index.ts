@@ -59,8 +59,8 @@ export type {
   SchemaOptions,
   StrictnessConfig,
 } from './engine.js';
+export type { JournalEntryInput, JournalItemInput } from './journal-input.js';
 export type { LedgerInternalOp } from './mongokit-augmentation.js';
-
 export type {
   BalanceSheetLineSource,
   BalanceSheetParams,
@@ -91,16 +91,3 @@ export type {
   TrialBalanceReport,
   TrialBalanceRow,
 } from './report.js';
-
-export type {
-  ExportReport,
-  ExportSink,
-  ImportContext,
-  ImportError,
-  ImportMapper,
-  ImportReport,
-  JournalEntryInput,
-  JournalItemInput,
-  WireExportArgs,
-  WireImportArgs,
-} from './sync.js';
