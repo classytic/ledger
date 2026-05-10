@@ -62,6 +62,10 @@ const testPack = defineCountryPack({
       parentCode: 'Assets',
       isTotal: false,
       cashFlowCategory: null,
+      // The country pack flags 1000 as cash so bulkCreate inherits it
+      // onto every Account seeded from this code. See the "inherits
+      // isCashAccount from country pack" test below.
+      isCashAccount: true,
     },
     {
       code: '1100',
@@ -367,6 +371,64 @@ describe('bulkCreate', () => {
 
     expect(result.summary.total).toBe(0);
     expect(result.summary.created).toBe(0);
+  });
+
+  // ── isCashAccount inheritance from country pack ─────────────────
+  // The country pack is the single owner of "what is cash in this
+  // jurisdiction's chart". Account docs need to carry the flag so
+  // downstream consumers (Bank Reconciliation, Cash Flow Statement,
+  // the JE-detail "Bank & Cash movement" panel) can trust it without
+  // re-deriving "is this a cash code?" everywhere.
+
+  it('inherits isCashAccount from the country pack AccountType when caller omits it', async () => {
+    const repo = createRepo();
+    await repo.bulkCreate([{ accountTypeCode: '1000' }], orgId);
+
+    const cash = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1000',
+    }).lean()) as any;
+    expect(cash.isCashAccount).toBe(true);
+  });
+
+  it('leaves isCashAccount=false when the country pack does not flag the code', async () => {
+    const repo = createRepo();
+    // 1100 is AR in the test pack — no isCashAccount flag.
+    await repo.bulkCreate([{ accountTypeCode: '1100' }], orgId);
+
+    const ar = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1100',
+    }).lean()) as any;
+    expect(ar.isCashAccount).toBe(false);
+  });
+
+  it('honors caller override (explicit false beats country-pack true)', async () => {
+    const repo = createRepo();
+    await repo.bulkCreate(
+      [{ accountTypeCode: '1000', isCashAccount: false }],
+      orgId,
+    );
+
+    const doc = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1000',
+    }).lean()) as any;
+    expect(doc.isCashAccount).toBe(false);
+  });
+
+  it('honors caller override (explicit true on a non-cash code)', async () => {
+    const repo = createRepo();
+    await repo.bulkCreate(
+      [{ accountTypeCode: '1100', isCashAccount: true }],
+      orgId,
+    );
+
+    const doc = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1100',
+    }).lean()) as any;
+    expect(doc.isCashAccount).toBe(true);
   });
 
   it('handles mix of valid, invalid, and existing', async () => {

@@ -78,7 +78,7 @@ try {
   const staleLock = join(exampleDir, 'package-lock.json');
   if (existsSync(staleNm)) rmSync(staleNm, { recursive: true, force: true });
   if (existsSync(staleLock)) rmSync(staleLock, { recursive: true, force: true });
-  await run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], {
+  await run('npm', ['install', '--no-audit', '--no-fund', '--legacy-peer-deps', '--loglevel=error'], {
     cwd: exampleDir,
   });
 
