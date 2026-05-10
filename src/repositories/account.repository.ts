@@ -236,13 +236,7 @@ export function wireAccountMethods<TDoc = unknown>(
     }> = [];
 
     for (let i = 0; i < accounts.length; i++) {
-      const {
-        accountTypeCode,
-        accountNumber,
-        name,
-        active = true,
-        isCashAccount = false,
-      } = accounts[i];
+      const { accountTypeCode, accountNumber, name, active = true, isCashAccount } = accounts[i];
 
       if (!accountTypeCode) {
         results.errors.push({ index: i, reason: 'accountTypeCode is required' });
@@ -266,13 +260,24 @@ export function wireAccountMethods<TDoc = unknown>(
 
       const resolvedNumber = accountNumber ?? accountTypeCode;
       const resolvedName = name ?? at.name ?? accountTypeCode;
+      // `isCashAccount` resolves in this priority:
+      //   1. Caller-supplied flag (explicit override — wins always).
+      //   2. Country pack's AccountType.isCashAccount (the catalog-level
+      //      truth: "GIFI 1000 IS cash"). This makes the country pack
+      //      the single owner of cash-account semantics, so consumers
+      //      (Cash Flow report, Bank Reconciliation, JE bank/cash
+      //      movement panel) can trust the flag without each having to
+      //      re-derive "is this code a cash code?".
+      //   3. Default false — for non-cash accounts.
+      const resolvedIsCash =
+        isCashAccount === undefined ? Boolean(at.isCashAccount) : Boolean(isCashAccount);
       validAccounts.push({
         index: i,
         accountTypeCode,
         accountNumber: resolvedNumber,
         name: resolvedName,
         active: Boolean(active),
-        isCashAccount: Boolean(isCashAccount),
+        isCashAccount: resolvedIsCash,
       });
     }
 

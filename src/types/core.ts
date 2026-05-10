@@ -126,6 +126,19 @@ export interface AccountType {
    * NonCashAdjustmentTag type for the canonical set.
    */
   readonly nonCashAdjustmentTag?: NonCashAdjustmentTag | null;
+  /**
+   * Marks this AccountType as a cash/bank account (GIFI 1000-family in
+   * CA, equivalent in other charts). Set on the country-pack template
+   * so that `bulkCreate` propagates it to every Account instance seeded
+   * from this code without each caller needing to know the rule.
+   *
+   * Downstream consumers — Cash Flow Statement (Indirect/Direct method),
+   * Bank Reconciliation, the JE-detail "Bank & Cash movement" panel —
+   * key off `Account.isCashAccount` to decide what flows through cash.
+   * Putting the source-of-truth here keeps the country pack as the
+   * single owner of "what is cash in this jurisdiction's chart".
+   */
+  readonly isCashAccount?: boolean;
   readonly taxMetadata?: TaxMetadata;
   readonly deprecated?: boolean;
   readonly replacedBy?: string;
