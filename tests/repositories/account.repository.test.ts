@@ -431,6 +431,45 @@ describe('bulkCreate', () => {
     expect(doc.isCashAccount).toBe(true);
   });
 
+  // Regression for the v0.12.0 crash where bulkCreate did
+  //   `_id: inserted[idx]._id`
+  // and exploded with "Cannot read properties of undefined (reading
+  // '_id')" when the mongokit / Mongoose layer returned a shorter
+  // array than `toCreate` (observed in ledger-bd 0.6 integration
+  // tests). The fix correlates docs by `accountNumber` instead of
+  // index, so a short return is handled gracefully (the missing
+  // entries land in `skipped` with a clear reason).
+  it('handles createMany returning fewer docs than requested without crashing', async () => {
+    const repo = createRepo();
+    // Stub createMany to simulate the driver edge case: only the first
+    // input doc comes back, the rest are silently dropped (no error).
+    const original = repo.createMany.bind(repo);
+    (repo as any).createMany = async (docs: Record<string, unknown>[]) => {
+      const inserted = await original([docs[0]] as never);
+      return inserted;
+    };
+
+    const result = await repo.bulkCreate(
+      [
+        { accountTypeCode: '1000' },
+        { accountTypeCode: '2000' },
+        { accountTypeCode: '4000' },
+      ],
+      orgId,
+    );
+
+    // Must not throw. The summary should reflect 1 created + 2 skipped
+    // (the dropped ones), with valid `_id` on the created entry.
+    expect(result.summary.total).toBe(3);
+    expect(result.summary.created).toBe(1);
+    expect(result.summary.skipped).toBe(2);
+    expect(result.summary.errors).toBe(0);
+    expect((result.created[0] as any)._id).toBeDefined();
+    expect(result.skipped.every((s: any) => /not returned/i.test(s.reason))).toBe(
+      true,
+    );
+  });
+
   it('handles mix of valid, invalid, and existing', async () => {
     await AccountModel.create({
       accountTypeCode: '1000',

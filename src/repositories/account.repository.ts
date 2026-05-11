@@ -341,12 +341,49 @@ export function wireAccountMethods<TDoc = unknown>(
       try {
         // Route through mongokit's createMany so plugins fire
         const inserted = await repository.createMany(docs, { ordered: false });
-        results.created = toCreate.map((item, idx) => ({
-          accountTypeCode: item.accountTypeCode,
-          active: item.active,
-          isCashAccount: item.isCashAccount,
-          _id: (inserted[idx] as unknown as Record<string, unknown>)._id,
-        }));
+
+        // Correlate inserted docs back to toCreate by `accountNumber`,
+        // not by array index. Two reasons indices are unreliable here:
+        //   1. Mongo / Mongoose `insertMany({ ordered: false })` may
+        //      preserve the input order, but plugin chains (mongokit's
+        //      before:create / after:create) can reorder or drop docs
+        //      without throwing — we'd silently read undefined at the
+        //      tail.
+        //   2. Drivers occasionally return successful subsets when
+        //      partial failures didn't bubble as a bulk error (rare,
+        //      but observed in BD ledger-bd 0.6 integration tests).
+        // accountNumber is the unique key our pre-flight enforces, so
+        // a Map<accountNumber, doc> gives a deterministic correlation
+        // regardless of return-order or length.
+        const insertedByNumber = new Map<string, Record<string, unknown>>();
+        for (const doc of inserted as Array<Record<string, unknown>>) {
+          const num = doc?.accountNumber as string | undefined;
+          if (num) insertedByNumber.set(num, doc);
+        }
+
+        for (const item of toCreate) {
+          const doc = insertedByNumber.get(item.accountNumber);
+          if (doc) {
+            results.created.push({
+              accountTypeCode: item.accountTypeCode,
+              active: item.active,
+              isCashAccount: item.isCashAccount,
+              _id: doc._id,
+            });
+          } else {
+            // Driver/plugin returned fewer docs than requested without
+            // surfacing an error — record as skipped (concurrent-insert
+            // semantics) so the summary stays honest. Better than
+            // pushing a `created` entry with a missing _id, which would
+            // mislead callers reading `results.created.length` as
+            // "rows actually inserted".
+            results.skipped.push({
+              index: item.index,
+              accountTypeCode: item.accountTypeCode,
+              reason: 'Not returned by createMany (driver edge case)',
+            });
+          }
+        }
       } catch (err: unknown) {
         if (!isDuplicateKeyBulkError(err)) throw err;
 

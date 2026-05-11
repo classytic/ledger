@@ -1092,7 +1092,15 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
 
     const repo: any = mockRepository({
       findAll: vi.fn().mockResolvedValue([]),
-      createMany: vi.fn().mockResolvedValue([{ _id: 'id-1', accountTypeCode: '1000' }]),
+      // Real Mongo echoes back every field on the inserted doc;
+      // mock the same so bulkCreate's accountNumber-based correlation
+      // matches. Returning only `_id` would land the result in
+      // `skipped` (the driver-edge-case branch) rather than `created`.
+      createMany: vi
+        .fn()
+        .mockResolvedValue([
+          { _id: 'id-1', accountTypeCode: '1000', accountNumber: '1000' },
+        ]),
     });
     wireAccountMethods(repo, mockCountry, 'business');
 
@@ -1128,7 +1136,14 @@ describe('Fix 8: seedAccounts/bulkCreate reject unscoped calls when orgField con
 
     const repo: any = mockRepository({
       findAll: vi.fn().mockResolvedValue([]),
-      createMany: vi.fn().mockResolvedValue([{ _id: 'id-1', accountTypeCode: '1000' }]),
+      // See note above on the partner test — the accountNumber field
+      // matters because bulkCreate now correlates inserted docs by
+      // natural key, not array index.
+      createMany: vi
+        .fn()
+        .mockResolvedValue([
+          { _id: 'id-1', accountTypeCode: '1000', accountNumber: '1000' },
+        ]),
     });
     wireAccountMethods(repo, mockCountry); // no orgField
 
