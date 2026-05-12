@@ -115,7 +115,7 @@ export async function generateGeneralLedger(
       ...orgScope,
       ...itemFilters,
     })
-      .select('date referenceNumber label journalItems')
+      .select('_id date referenceNumber label journalItems')
       .sort({ date: 1 })
       .lean() as Promise<Array<Record<string, unknown>>>,
   ]);
@@ -136,6 +136,7 @@ export async function generateGeneralLedger(
   const entryItemsByAccount = new Map<
     string,
     Array<{
+      journalEntryId: string;
       date: Date;
       referenceNumber: string;
       label: string;
@@ -146,6 +147,7 @@ export async function generateGeneralLedger(
 
   for (const entry of periodEntries) {
     const items = (entry.journalItems as Array<Record<string, unknown>>) ?? [];
+    const journalEntryId = String(entry._id);
     for (const item of items) {
       const accId = String(item.account);
       const debit = (item.debit as number) ?? 0;
@@ -157,6 +159,7 @@ export async function generateGeneralLedger(
         entryItemsByAccount.set(accId, list);
       }
       list.push({
+        journalEntryId,
         date: entry.date as Date,
         referenceNumber: (entry.referenceNumber as string) ?? '',
         label: (entry.label as string) ?? '',
@@ -191,6 +194,7 @@ export async function generateGeneralLedger(
       runningBalance += delta;
 
       entries.push({
+        journalEntryId: item.journalEntryId,
         date: item.date,
         referenceNumber: item.referenceNumber,
         label: item.label,
