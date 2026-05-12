@@ -176,6 +176,8 @@ export type IncomeStatementSection = ReportSection<IncomeStatementLineSource>;
 // ─── General Ledger ──────────────────────────────────────────────────────────
 
 export interface LedgerEntry {
+  /** Source journal-entry `_id` — lets the UI link a GL row to its JE. */
+  journalEntryId: string;
   date: Date;
   referenceNumber: string;
   label: string;

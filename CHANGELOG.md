@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.12.2 — 2026-05-12
+
+### Added — `journalEntryId` on `LedgerEntry` (general-ledger report rows)
+
+Each row returned by `generateGeneralLedger(...)` now carries the source
+`JournalEntry._id` as `journalEntryId: string`. The GL report selects
+`_id` alongside the existing `date / referenceNumber / label /
+journalItems` projection and threads the entry id through to every
+`LedgerEntry` row.
+
+**Why:** UIs rendering the GL had no programmatic handle to deep-link
+from a ledger row back to the journal entry that produced it. The
+`referenceNumber` is human-readable but not stable as a key (manual
+adjustments can share refs across multiple JEs); `_id` is the only
+stable join key. Hosts that hand-rolled a second `JournalEntry.find()`
+to resolve the id-by-reference can drop that lookup.
+
+**Compatibility:** purely additive at runtime. TypeScript consumers
+that destructure `LedgerEntry` need no change; consumers that construct
+`LedgerEntry` literals (rare — this is an output shape) must now
+populate `journalEntryId`.
+
 ## 0.11.0
 
 ### ⚠️ BREAKING — `/sync` subpath removed; `@classytic/fin-io` peer dropped
