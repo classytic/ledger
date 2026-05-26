@@ -13,6 +13,7 @@
  * — see fajr-be-arc's `#shared/ledger-sync` for the canonical implementation.
  */
 
+import type { SourceRef } from '../bridges/source.bridge.js';
 import type { Cents } from './core.js';
 
 /**
@@ -27,6 +28,16 @@ export interface JournalEntryInput {
   label?: string;
   date: Date;
   journalItems: JournalItemInput[];
+  /**
+   * Entry-level source back-reference (0.13.0+). Set at create time to stamp
+   * "what produced this whole JE". Most ingestion paths set this *after*
+   * insert via `repo.updateMany({ _importRunId }, { $set: { sourceRef } })`
+   * (because the source doc id is known only after the batch lands), but
+   * single-shot creators can pass it inline here. Drill-down: query
+   * `find({ 'sourceRef.sourceId': id })` — add `ENTRY_SOURCE_INDEX` to
+   * `schemaOptions.journalEntry.extraIndexes` for the index.
+   */
+  sourceRef?: SourceRef;
   /** Extra fields injected into the entry doc (dimension fields, tags, etc.). */
   extra?: Record<string, unknown>;
 }
@@ -42,4 +53,10 @@ export interface JournalItemInput {
   originalCredit?: Cents;
   matchingNumber?: string;
   maturityDate?: Date;
+  /** "The document this line settles" — primary per-line back-reference. */
+  sourceRef?: SourceRef;
+  /** Additional docs this line touches (QBO `LinkedTxn[]` shape). */
+  linkedRefs?: SourceRef[];
+  /** Free-form per-line provenance (cost-center, project code, etc). */
+  meta?: Record<string, unknown> | null;
 }

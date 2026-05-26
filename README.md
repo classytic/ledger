@@ -121,6 +121,38 @@ const engine = createAccountingEngine({
 });
 ```
 
+### Source provenance — `JournalEntry.sourceRef` (0.13.0+)
+
+Every JE carries a typed `sourceRef: { sourceModel, sourceId, label?, kind? }`
+slot for "what produced this whole JE". Per-line back-references live on
+`journalItems[].sourceRef` (settles which document) and
+`journalItems[].linkedRefs[]` (additional docs touched).
+
+Add the index for fast source → JEs drill-down:
+
+```ts
+import { createAccountingEngine, ENTRY_SOURCE_INDEX } from '@classytic/ledger';
+
+createAccountingEngine({
+  schemaOptions: {
+    journalEntry: { extraIndexes: [ENTRY_SOURCE_INDEX] },
+  },
+});
+
+// After import — stamp the back-reference, then query by it.
+await JE.updateMany({ _importRunId: docId }, { $set: { sourceRef: {
+  sourceModel: 'SourceDocument', sourceId: docId,
+  label: 'INV-2026-001 — Acme Corp', kind: 'xero-invoice',
+}}});
+
+// Drill-down. Include `sourceModel` in the predicate so the query
+// planner reliably picks `sourceRef_idx` (the partial index only
+// contains stamped docs; the planner prefers it when both fields are
+// constrained). The sourceId-only form returns identical results but
+// may COLLSCAN on small collections.
+await JE.find({ 'sourceRef.sourceModel': 'SourceDocument', 'sourceRef.sourceId': docId });
+```
+
 ## Plugins
 
 ```ts

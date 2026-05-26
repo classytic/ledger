@@ -16,9 +16,38 @@
  * when a bridge is not provided.
  */
 
+/**
+ * Polymorphic back-reference to a host source document — the universal
+ * "what produced this entry" pointer used by both the entry-level
+ * `JournalEntry.sourceRef` slot and the line-level
+ * `JournalEntry.journalItems[].sourceRef` slot.
+ *
+ * Required:
+ *   - `sourceModel` — host model namespace (`"SourceDocument"`,
+ *     `"BankStatement"`, `"Invoice"`, `"PayrollRun"`, …).
+ *   - `sourceId` — opaque string identifier (ObjectId hex, ULID, or a
+ *     human-readable number like `INV-2026-04-001`). String — not ObjectId —
+ *     because the ledger has no knowledge of consumer model namespaces.
+ *
+ * Optional denormalization (0.13.0+):
+ *   - `label` — human-readable name of the source (statement label,
+ *     invoice number with party). Renders "From: <label>" in audit / drill-down
+ *     UIs without a follow-up `SourceBridge.resolve()` call.
+ *   - `kind` — sub-classifier of `sourceModel` (e.g. `"xero-invoice"`,
+ *     `"qbo-bill"`, `"bank-statement"`). Lets the UI route to the correct
+ *     detail page without re-querying the source.
+ *
+ * Both optional fields are denormalized — labels rarely change, and if they
+ * do, a one-shot `updateMany({ 'sourceRef.sourceId': id }, { $set: ... })`
+ * refreshes stale copies. The tradeoff buys the bookkeeping UI a fast path
+ * for "show me every JE produced by this document" without N+1 source-doc
+ * fetches.
+ */
 export interface SourceRef {
   sourceId: string;
   sourceModel: string;
+  label?: string | null;
+  kind?: string | null;
 }
 
 export interface SourceBridgeContext {
