@@ -285,12 +285,19 @@ export {
   JOURNAL_TYPES,
   registerJournalType,
 } from './constants/journals.js';
-// Opt-in index recommendations for line-level source provenance fields.
-// Spread into `schemaOptions.journalEntry.extraIndexes` to enable indexed
-// `/by-source` lookups against `journalItems.sourceRef.*` and
-// `journalItems.linkedRefs.*`. Hosts that don't query by line-level
-// provenance can omit them and pay no per-insert index cost.
-export { LINE_SOURCE_INDEXES } from './schemas/journal-entry.schema.js';
+// Opt-in index recommendations for source-provenance fields.
+//   - `ENTRY_SOURCE_INDEX`    — entry-level `sourceRef.*`. The bookkeeping
+//     "show JEs produced by this source document" drill-down. Add this
+//     whenever the host stamps `JournalEntry.sourceRef`.
+//   - `LINE_SOURCE_INDEXES`   — per-line `journalItems.sourceRef.*` +
+//     `journalItems.linkedRefs.*`. Add when the host stamps per-line
+//     source pointers (one payment settling N invoices, etc.).
+// Hosts that don't query by a given level can omit its index and pay no
+// per-insert index cost.
+export {
+  ENTRY_SOURCE_INDEX,
+  LINE_SOURCE_INDEXES,
+} from './schemas/journal-entry.schema.js';
 
 // ── Country Pack ───────────────────────────────────────────────────────────
 

@@ -7,6 +7,8 @@
  * @module @classytic/ledger/exports
  */
 
+import type { SourceRef } from '../bridges/source.bridge.js';
+
 // ── Input Types (what the app layer provides) ────────────────────────────────
 
 /**
@@ -31,6 +33,12 @@ export interface PopulatedJournalItem {
   debit: number;
   credit: number;
   taxDetails?: Array<{ taxCode?: string; taxName?: string }>;
+  /** Per-line source back-ref (0.13.0). Null defaults when unstamped. */
+  sourceRef?: SourceRef;
+  /** Additional docs this line touches (QBO `LinkedTxn[]` shape). */
+  linkedRefs?: SourceRef[];
+  /** Free-form per-line provenance. */
+  meta?: Record<string, unknown> | null;
   /** Extra dimension fields from extraItemFields */
   [key: string]: unknown;
 }
@@ -50,6 +58,8 @@ export interface PopulatedJournalEntry {
   totalCredit: number;
   state: 'draft' | 'posted' | 'archived';
   reversed?: boolean;
+  /** Entry-level source back-ref (0.13.0). Null defaults when unstamped. */
+  sourceRef?: SourceRef;
   createdAt?: Date | string;
   updatedAt?: Date | string;
   [key: string]: unknown;

@@ -1,330 +1,84 @@
-# Sync — Invoice Bridge, Import & Export
+# Sync — Removed in 0.11.0
 
-`@classytic/ledger/sync` is the integration subpath for connecting external systems to the ledger.
+> **The `@classytic/ledger/sync` subpath was removed in `@classytic/ledger@0.11.0`.**
+> Sync orchestration is now host responsibility. This doc page is preserved
+> so links from older releases still resolve to a useful migration pointer
+> instead of a 404.
 
-```typescript
-import {
-  // Invoice engine bridge (recommended)
-  createLedgerBridge,
+## What used to live here
 
-  // Import/export pipeline
-  wireImport,
-  wireExport,
+The `/sync` subpath shipped with three concerns bundled together:
 
-  // Mapper factories (fin-io canonical shapes → JournalEntry)
-  bankStatementMapper,
-  invoiceMapper,
-  journalEntryMapper,
-  openingBalanceMapper,
-} from '@classytic/ledger/sync';
+1. **`createLedgerBridge(accounting, config)`** — `@classytic/invoice` `LedgerBridge` adapter.
+2. **`wireImport` / `wireExport`** — generic batch importer/exporter pipeline.
+3. **Mapper factories** — `bankStatementMapper`, `invoiceMapper`, `journalEntryMapper`, `openingBalanceMapper` (fin-io canonical shapes → `JournalEntryInput`).
+
+All three were moved out of `@classytic/ledger` because:
+
+- They forced **`@classytic/fin-io`** as an optional peer on every consumer, even when no fin-io shape was ever read.
+- The invoice-bridge adapter imported `@classytic/invoice` types — a cross-package import that violates [`PACKAGE_RULES` P1](../PACKAGE_RULES.md) (no inter-package imports beyond `mongokit` + `primitives`).
+- Only one host ever consumed the subpath, so the cost wasn't worth keeping in a shared library.
+
+## What stayed (still on the main entry)
+
+The pure ledger-side primitives that don't pull in fin-io OR invoice types are kept:
+
+- `buildOpeningBalanceEntry(input)` — pure helper, re-exported from `@classytic/ledger`.
+- `OpeningBalanceInput`, `OpeningBalanceResult` — re-exported from `@classytic/ledger`.
+- `JournalEntryInput`, `JournalItemInput` — describe the `journalEntries.create()` input; inherent to the engine, not a sync concern.
+
+```ts
+import { buildOpeningBalanceEntry } from '@classytic/ledger';
+import type { JournalEntryInput, JournalItemInput } from '@classytic/ledger';
 ```
 
----
+## How to wire an invoice engine today
 
-## Invoice Engine Integration
+Pick one of two paths:
 
-### Recommended: `createLedgerBridge()`
+### Option A — Copy the canonical reference implementation
 
-Wire `@classytic/invoice` to `@classytic/ledger` with one call. The bridge handles account mapping, tax lines, credit notes, payments, and reversals — no manual journal wiring needed.
+`fajr-be-arc` carries the production-grade implementation at
+`src/shared/ledger-sync/`. The relevant files are:
 
-```typescript
-import { createAccountingEngine } from '@classytic/ledger';
-import { createLedgerBridge } from '@classytic/ledger/sync';
-import { createInvoiceEngine } from '@classytic/invoice';
-import { canadaPack } from '@classytic/ledger-ca';
+- `ledger-bridge.ts` — implements `@classytic/invoice`'s `LedgerBridge`
+  contract on top of an `AccountingEngine`. Includes multi-tenant scope,
+  multi-currency, withholding tax, refunds, and an opt-in
+  `resolvePaymentAccounts({ debit, credit })` callback for AR/AP-aware
+  hosts (clears AR-shape for `out_invoice`, AP-shape for `in_invoice`).
 
-// 1. Create the accounting engine
-const accounting = createAccountingEngine({
-  mongoose: connection,
-  country: canadaPack,
-  currency: 'CAD',
-  multiTenant: { orgField: 'organizationId', orgRef: 'Organization' },
-  idempotency: true,
-});
+Drop the files into your repo, adjust the import paths, done. The
+implementation is < 600 lines total and stable.
 
-// 2. Create the bridge — map your chart of accounts once
-const bridge = createLedgerBridge(accounting, {
-  accounts: {
-    receivable: '1200',     // Accounts Receivable
-    payable: '2000',        // Accounts Payable
-    revenue: '4000',        // Revenue
-    expense: '5000',        // Cost of Goods Sold / Expenses
-    taxPayable: '2100',     // HST/GST/VAT Payable
-    taxReceivable: '1150',  // HST/GST/VAT Receivable (Input Tax Credit)
-    cash: '1000',           // Cash / Bank
-  },
-});
+### Option B — Implement `LedgerBridge` yourself
 
-// 3. Pass the bridge to the invoice engine — done
-const invoicing = createInvoiceEngine({
-  mongoose: connection,
-  ledger: bridge,
-  // ... other invoice config
-});
-```
+Implement the three-method interface against your accounting engine
+directly. The contract lives in `@classytic/invoice/dist/domain/contracts/ledger-bridge.d.ts`:
 
-From this point, every invoice lifecycle operation automatically posts to the ledger:
-
-- **`invoicing.services.posting.post(id)`** → creates a balanced journal entry
-- **`invoicing.services.payment.recordPayment(input)`** → posts a payment entry (DR Cash, CR AR)
-- **`invoicing.services.posting.cancel(id, reason)`** → reverses the journal entry
-- **`invoicing.services.posting.void(id, reason)`** → reverses the journal entry (even if partially paid)
-
-### How the bridge maps each move type
-
-| Invoice Move Type | Journal Lines | Journal Type |
-|---|---|---|
-| `out_invoice` (Customer Invoice) | DR Receivable (total), CR Revenue (per line), CR Tax Payable | `SALES` |
-| `in_invoice` (Vendor Bill) | DR Expense (per line), DR Tax Receivable, CR Payable (total) | `PURCHASES` |
-| `out_refund` (Customer Credit Note) | CR Receivable, DR Revenue (per line), DR Tax Payable | `SALES` |
-| `in_refund` (Vendor Credit Note) | DR Payable, CR Expense (per line), CR Tax Receivable | `PURCHASES` |
-| `receipt` (POS Receipt) | DR Receivable/Cash, CR Revenue (per line), CR Tax Payable | `CASH_RECEIPTS` |
-
-All amounts are integer cents. Tax lines are only added when `taxAmount > 0`.
-
-### Payment recording
-
-When the invoice engine records a payment, the bridge calls `engine.record.payment()`:
-
-```
-DR Cash (1000)        $500.00
-CR Receivable (1200)  $500.00
-```
-
-An idempotency key is automatically derived from the payment ID (`payment:{paymentId}`), preventing duplicate journal entries on retry.
-
-### Reversal
-
-When an invoice is cancelled or voided, the bridge calls `engine.repositories.journalEntries.reverse()`, which creates a mirror entry with debits and credits swapped and links both entries bidirectionally.
-
-### Bridge configuration options
-
-#### `receiptAccount`
-
-Override the debit account for POS receipts. By default, receipts debit the `receivable` account. If your receipts are immediately paid (no A/R), point this at cash:
-
-```typescript
-createLedgerBridge(accounting, {
-  accounts: { ... },
-  receiptAccount: '1000',  // Receipts debit Cash directly
-});
-```
-
-#### `resolvePaymentAccounts`
-
-Custom resolver for payment accounts. Use when you need to determine AR vs AP based on context (e.g., vendor bill payments should clear AP, not AR):
-
-```typescript
-createLedgerBridge(accounting, {
-  accounts: { ... },
-  resolvePaymentAccounts: (input) => {
-    const isVendor = vendorInvoiceIds.has(input.invoiceId);
-    return {
-      receivableOrPayable: isVendor ? '2000' : '1200',
-      cash: '1000',
-    };
-  },
-});
-```
-
-### Double-entry guarantee
-
-The bridge uses `engine.record.adjustment()` internally. This routes through the ledger's double-entry plugin, which validates `sum(debits) === sum(credits)` before persisting. If the invoice engine sends unbalanced data, the ledger rejects it with a structured validation error.
-
----
-
-### Alternative: Manual wiring (without `createLedgerBridge`)
-
-If you need full control over the journal entry shape — for example, to add dimension fields, use different accounts per line, or handle complex tax scenarios — you can implement the `LedgerBridge` interface yourself:
-
-```typescript
-import type { LedgerBridge } from '@classytic/ledger/sync';
-
-const ledgerBridge: LedgerBridge = {
-  async createJournalEntry(input) {
-    // Use record.adjustment() for multi-line entries with tax
-    const entry = await accounting.record.adjustment(input.organizationId, {
-      date: input.date,
-      label: `Invoice ${input.invoiceId}`,
-      journalType: 'SALES',
-      lines: [
-        { account: '1200', debit: input.totalAmount },
-        ...input.lines.map(line => ({
-          account: '4000',
-          credit: line.amount,
-          label: line.description,
-        })),
-        ...(input.taxAmount > 0
-          ? [{ account: '2100', credit: input.taxAmount, label: 'Tax' }]
-          : []),
-      ],
-    }, {
-      idempotencyKey: input.idempotencyKey,
-    });
-    return String((entry as any)._id);
-  },
-
-  async reverseJournalEntry(journalEntryId, reason) {
-    const { reversal } = await accounting.repositories.journalEntries
-      .reverse(journalEntryId);
-    return String((reversal as any)._id);
-  },
-
-  async recordPayment(input) {
-    const entry = await accounting.record.payment(input.organizationId, {
-      date: input.date,
-      amount: input.amount,
-      fromReceivableAccount: '1200',
-      toCashAccount: '1000',
-      label: `Payment ${input.paymentId} for ${input.invoiceId}`,
-    }, {
-      idempotencyKey: `payment:${input.paymentId}`,
-    });
-    return String((entry as any)._id);
-  },
-};
-
-// Then pass to the invoice engine
-const invoicing = createInvoiceEngine({
-  mongoose: connection,
-  ledger: ledgerBridge,
-});
-```
-
-This gives you the same integration but with full control over account resolution, dimension fields, and tax line construction.
-
-### Using `LedgerBridge` without `@classytic/invoice`
-
-The bridge types are generic — any invoicing system that calls these 3 methods works:
-
-```typescript
-import type { LedgerBridge, LedgerPostInput, LedgerPaymentInput } from '@classytic/ledger/sync';
-
-// Use createLedgerBridge() for standard mapping
-const bridge: LedgerBridge = createLedgerBridge(accounting, { accounts: { ... } });
-
-// Post an invoice
-const jeId = await bridge.createJournalEntry({
-  organizationId: 'org_1',
-  invoiceId: 'INV-001',
-  moveType: 'out_invoice',
-  partnerId: 'customer-123',
-  date: new Date(),
-  currency: 'USD',
-  lines: [
-    { description: 'Consulting', amount: 100000, taxAmount: 13000, taxCode: 'HST' },
-  ],
-  totalAmount: 113000,
-  taxAmount: 13000,
-});
-
-// Record a payment
-await bridge.recordPayment({
-  organizationId: 'org_1',
-  invoiceId: 'INV-001',
-  paymentId: 'PAY-001',
-  amount: 113000,
-  currency: 'USD',
-  date: new Date(),
-  method: 'bank_transfer',
-});
-
-// Reverse (cancel/void)
-await bridge.reverseJournalEntry(jeId, 'Invoice cancelled');
-```
-
----
-
-## Bank Statement Import
-
-Import bank transactions from any format supported by `@classytic/fin-io`:
-
-```typescript
-import { parseOfx } from '@classytic/fin-io/ofx';
-import { wireImport, bankStatementMapper } from '@classytic/ledger/sync';
-
-const parsed = parseOfx(buffer);
-if (!parsed.ok) throw new Error(parsed.error);
-
-const report = await wireImport({
-  source: parsed.data.flatMap(s => s.transactions),
-  mapper: bankStatementMapper({
-    bankAccountId: bankAccount._id,
-    suspenseAccountId: suspenseAccount._id,
-    categorize: (txn) => knownVendors[txn.counterparty?.name]?.accountId,
-  }),
-  journalEntries: engine.repositories.journalEntries,
-  context: { organizationId },
-}).run();
-
-console.log(`Imported ${report.inserted}, skipped ${report.skipped} duplicates`);
-```
-
-### Available mappers
-
-| Mapper | Source | Output |
-|---|---|---|
-| `bankStatementMapper` | `CanonicalTransaction` (OFX, CAMT, MT940, CSV, Plaid) | 2-line JE: Cash ↔ Suspense |
-| `invoiceMapper` | `CanonicalInvoice` (QBO, Xero JSON) | Multi-line JE: AR/AP ↔ Revenue/Expense ↔ Tax |
-| `journalEntryMapper` | `CanonicalJournalEntry` (QBO, Xero manual journals) | 1:1 mapping |
-| `openingBalanceMapper` | `TrialBalanceInput` | Multi-line opening balance entry |
-
-### Idempotency
-
-Re-running an import on the same file produces zero duplicates. Each mapper extracts a stable `externalId` from the source record (e.g., OFX `FITID`, CAMT `NtryRef`). The `wireImport` pipeline checks for existing entries before creating.
-
-For best performance, provide a `findExisting` callback and add a partial index on `{ organizationId: 1, _externalId: 1 }`.
-
----
-
-## Export
-
-Stream ledger data to external formats:
-
-```typescript
-import { wireExport } from '@classytic/ledger/sync';
-
-const report = await wireExport({
-  query: { organizationId: 'org_1', state: 'posted' },
-  sink: {
-    fromJournalEntry: (entry) => transformToCSVRow(entry),
-    emit: async (rows) => csvStream.write(rows),
-    flush: async () => csvStream.end(),
-  },
-  journalEntries: engine.repositories.journalEntries,
-  options: { batchSize: 500 },
-}).run();
-```
-
----
-
-## Writing Custom Mappers
-
-Implement `ImportMapper<TRaw>` for any data source:
-
-```typescript
-import type { ImportMapper } from '@classytic/ledger/sync';
-
-interface MyPayrollRecord {
-  id: string;
-  employeeName: string;
-  grossPay: number;
-  taxWithheld: number;
-  netPay: number;
-  date: Date;
+```ts
+export interface LedgerBridge {
+  createJournalEntry(input: LedgerPostInput): Promise<string>;
+  reverseJournalEntry(jeId: string, reason: string, ctx: LedgerReverseContext): Promise<string>;
+  recordPayment(input: LedgerPaymentInput): Promise<string>;
 }
-
-const payrollMapper: ImportMapper<MyPayrollRecord> = {
-  externalId: (record) => `payroll:${record.id}`,
-
-  toJournalEntry: (record, ctx) => ({
-    date: record.date,
-    label: `Payroll — ${record.employeeName}`,
-    journalItems: [
-      { account: salaryExpenseId, debit: record.grossPay, credit: 0 },
-      { account: taxPayableId, debit: 0, credit: record.taxWithheld },
-      { account: cashId, debit: 0, credit: record.netPay },
-    ],
-  }),
-};
 ```
+
+A bare-minimum implementation is ~80 lines (one tax line, no withholding,
+no FX). Useful when your COA is small and stable enough that the
+`createLedgerBridge` config map's flexibility is overkill.
+
+## How to wire fin-io imports today
+
+The mapper helpers (`bankStatementMapper`, `invoiceMapper`, etc.) and the
+`wireImport`/`wireExport` pipeline moved to host code along with the
+bridge. The canonical implementation lives in `fajr-be-arc` under
+`src/workflows/ai-bank-import.workflow.ts` (for AI-extracted bank
+statements) and `src/resources/integrations/` (for QBO / Xero sync).
+
+`@classytic/fin-io` is a normal direct dependency in fajr — not a peer
+of ledger. Hosts that don't need fin-io shapes don't pull it in.
+
+---
+
+For the architectural rationale + full migration list, see
+[`CHANGELOG.md` → 0.11.0](../CHANGELOG.md).

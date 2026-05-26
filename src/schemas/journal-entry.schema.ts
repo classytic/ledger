@@ -38,6 +38,47 @@ import { buildCurrencyField } from './currency-field.js';
  *     },
  *   });
  */
+/**
+ * Recommended opt-in index for the entry-level `sourceRef` field (0.13.0+).
+ *
+ * Spread into `schemaOptions.journalEntry.extraIndexes` to enable fast
+ * "list every JE produced by source document X" lookups — the canonical
+ * bookkeeping-UI drill-down from a source document (invoice, bill, bank
+ * statement) into its derived journal entries.
+ *
+ * Sparse + partial: only JEs where `sourceRef.sourceModel` is a string get
+ * indexed. Unstamped JEs (the default `{ sourceModel: null, sourceId: null }`)
+ * cost zero index storage.
+ *
+ * @example
+ *   import { createAccountingEngine, ENTRY_SOURCE_INDEX } from '@classytic/ledger';
+ *   createAccountingEngine({
+ *     schemaOptions: {
+ *       journalEntry: { extraIndexes: [ENTRY_SOURCE_INDEX] },
+ *     },
+ *   });
+ */
+export const ENTRY_SOURCE_INDEX: {
+  fields: Record<string, 1 | -1>;
+  options: Record<string, unknown>;
+} = {
+  fields: {
+    'sourceRef.sourceModel': 1,
+    'sourceRef.sourceId': 1,
+  },
+  options: {
+    // `partialFilterExpression` is strictly more precise than `sparse` —
+    // they're mutually exclusive in MongoDB (server rejects both at index
+    // creation). Predicate excludes the default `{ sourceModel: null }`
+    // subdoc so unstamped JEs cost zero index storage, same outcome as
+    // sparse but predicate-driven.
+    partialFilterExpression: {
+      'sourceRef.sourceModel': { $type: 'string' },
+    },
+    name: 'sourceRef_idx',
+  },
+};
+
 export const LINE_SOURCE_INDEXES: ReadonlyArray<{
   fields: Record<string, 1 | -1>;
   options: Record<string, unknown>;
@@ -48,7 +89,8 @@ export const LINE_SOURCE_INDEXES: ReadonlyArray<{
       'journalItems.sourceRef.sourceId': 1,
     },
     options: {
-      sparse: true,
+      // `partialFilterExpression` and `sparse` are mutually exclusive in
+      // MongoDB. Predicate alone gives equivalent storage savings.
       partialFilterExpression: {
         'journalItems.sourceRef.sourceModel': { $type: 'string' },
       },
@@ -100,10 +142,27 @@ export function createJournalEntrySchema(
   // Inline nested objects on subdoc-array items can drop on PATCH due to
   // path-resolution quirks; a typed sub-Schema persists reliably.
 
-  const ItemSourceRefSchema = new mongoose.Schema(
+  // Shared subdocument shape for every `sourceRef` slot — both the
+  // entry-level field declared below and the per-line field inside
+  // `journalItems[]`. Mirrors the `SourceRef` interface exported from
+  // `bridges/source.bridge.ts`:
+  //   - `sourceModel` + `sourceId` are the canonical pointer (required at
+  //     write time; null defaults so unstamped docs round-trip cleanly).
+  //   - `label` + `kind` (0.13.0+) are denormalized so the drill-down UI
+  //     can render the source's name and sub-type without a follow-up
+  //     `SourceBridge.resolve()` call — see source.bridge.ts for the
+  //     denormalization rationale.
+  //
+  // Defined as a typed sub-Schema (not an inline object literal) so the
+  // path resolver treats it as one subdocument, not four loose fields.
+  // Inline-object slots inside subdoc arrays can drop on PATCH due to
+  // path-resolution quirks.
+  const SourceRefSchema = new mongoose.Schema(
     {
       sourceModel: { type: String, default: null },
       sourceId: { type: String, default: null },
+      label: { type: String, default: null },
+      kind: { type: String, default: null },
     },
     { _id: false },
   );
@@ -202,14 +261,14 @@ export function createJournalEntrySchema(
       //   - line-level `linkedRefs[]` → "additional docs this line touches" (SECONDARY,
       //                                  e.g. `[{ Transaction, txn-123 }, { Order, ord-456 }]`)
       //   - line-level `meta`        → free-form, not indexable
-      sourceRef: { type: ItemSourceRefSchema, default: () => ({}) },
+      sourceRef: { type: SourceRefSchema, default: () => ({}) },
       // Multi-source provenance. QBO `LinkedTxn[]` shape — same polymorphic
       // ref, but as an array. Use when one line legitimately touches more
       // than one source doc (a payment line that simultaneously references
       // its revenue Transaction id, the originating Order, AND the Invoice
       // it settles). Indexed via opt-in `LINE_SOURCE_INDEXES` only — not
       // every consumer pays the write cost.
-      linkedRefs: { type: [ItemSourceRefSchema], default: undefined },
+      linkedRefs: { type: [SourceRefSchema], default: undefined },
       ...currencyItemFields,
       ...extraItemFields,
     },
@@ -277,6 +336,24 @@ export function createJournalEntrySchema(
     // `isApproved(doc.approvals)` before transitioning to `posted`. Hosts
     // that auto-post (system-generated entries) leave it undefined.
     approvals: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Entry-level source back-reference (0.13.0). The "what drove this
+    // whole JE" pointer. Complements the per-line `journalItems[].sourceRef`
+    // (which says "the document this LINE settles") — both slots are
+    // first-class so a single invoice-derived JE can carry its top-level
+    // anchor here while each line's sourceRef points at the matched line
+    // on the source doc.
+    //
+    // Stamped by host ingestion / bridge code immediately after insert,
+    // typically via `updateMany({ _importRunId }, { $set: { sourceRef } })`
+    // in a workflow's post-import step. Unstamped JEs round-trip with
+    // every field set to `null` (subdoc default) — never undefined — so
+    // consumers can rely on `je.sourceRef.sourceId` being a known shape.
+    //
+    // Index it via `ENTRY_SOURCE_INDEX` if you query by entry-level
+    // source (the bookkeeping-UI "Open journal entries for this
+    // document" drill-down). See `LINE_SOURCE_INDEXES` for the
+    // line-level counterparts.
+    sourceRef: { type: SourceRefSchema, default: () => ({}) },
     ...extraFields,
   };
 
@@ -505,6 +582,19 @@ export function createJournalEntrySchema(
     }
   }
 
+  // Host-supplied extraIndexes (`ENTRY_SOURCE_INDEX`, `LINE_SOURCE_INDEXES`,
+  // and any host-defined ones) registered BEFORE `injectTenantField` so the
+  // tenant prefix is auto-prepended in multi-tenant mode. This matches the
+  // ERP-canonical expectation: every drill-down / audit / report query is
+  // tenant-scoped, so the index must be tenant-prefixed for the planner to
+  // pick it efficiently at scale. Indexes that already include the tenant
+  // field (e.g. fajr's `{ organizationId: 1, ... }` extraIndexes) are
+  // skipped by the helper's idempotent prefix check, so manual prefixing
+  // remains a no-op rather than a double-prefix.
+  for (const idx of extraIndexes) {
+    schema.index(idx.fields, idx.options);
+  }
+
   // Inject tenant field + prepend it onto the compound indexes above.
   injectTenantField(schema, scope);
 
@@ -543,10 +633,6 @@ export function createJournalEntrySchema(
       { referenceNumber: 'text', label: 'text' },
       { weights: { referenceNumber: 10, label: 5 }, name: 'journal_text_idx' },
     );
-  }
-
-  for (const idx of extraIndexes) {
-    schema.index(idx.fields, idx.options);
   }
 
   return schema;

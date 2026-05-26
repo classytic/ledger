@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.12.3 — 2026-05-26
+
+### Added — entry-level `JournalEntry.sourceRef`
+
+First-class schema slot for "what produced this whole JE", parallel to the
+existing per-line `journalItems[].sourceRef`. Replaces the
+per-consumer `extraFields.sourceRef` workaround.
+
+- `SourceRef` gains optional `label` + `kind` (denormalized — drill-down UI
+  renders without a `SourceBridge.resolve()` call).
+- `JournalEntryInput.sourceRef?: SourceRef` — typed inline creation slot.
+- `ENTRY_SOURCE_INDEX` — opt-in compound index. Spread into
+  `schemaOptions.journalEntry.extraIndexes`.
+
+**Compatibility:** purely additive — zero migration. Unstamped JEs
+round-trip with null defaults. Hosts that already declared
+`extraFields.sourceRef` (same 4-field shape) keep working —
+`...extraFields` post-spread means host slot wins. Delete the host block
+at your leisure. Versioned as a patch because the change is fully
+back-compat (verified by the 0.12 → 0.12.3 collision test) and the existing
+`^0.12.0` peer ranges in sibling packages (`ledger-au`, `ledger-ca`) accept
+this version without republish.
+
+### Fixed — `sparse + partialFilterExpression` index spec rejected by MongoDB
+
+`LINE_SOURCE_INDEXES[0]` shipped with both `sparse: true` AND
+`partialFilterExpression`. MongoDB rejects this combo at index creation
+(`cannot mix "partialFilterExpression" and "sparse" options`), so every
+host that opted into the line-level index silently got no index. Dropped
+the redundant `sparse`; `partialFilterExpression` alone gives the same
+storage savings.
+
+### Changed — `extraIndexes` now tenant-scoped in multi-tenant mode
+
+`schemaOptions.journalEntry.extraIndexes` are now registered BEFORE
+`injectTenantField()` — the tenant field auto-prepends onto compound
+indexes (matches built-in ledger indexes). Without this, a multi-tenant
+drill-down like `find({ organizationId, 'sourceRef.sourceId': X })`
+would scan stamped JEs across every tenant in the cluster.
+
+Hosts that already manually prefix the tenant field on their extraIndexes
+(the `{ organizationId: 1, _externalId: 1 }` pattern) are unaffected —
+`injectTenantField`'s idempotent prefix check skips already-prefixed
+indexes. No host code change required; this only adds correct behavior
+for hosts that DIDN'T manually prefix.
+
+### Peer-dep floors
+
+`@classytic/mongokit` `>=3.14.0`, `@classytic/primitives` `>=0.6.0`,
+`@classytic/repo-core` `>=0.5.0`. Additive on the APIs ledger uses.
+Verified against Mongoose 9.6.2 + MongoDB 8.2.6.
+
 ## 0.12.2 — 2026-05-12
 
 ### Added — `journalEntryId` on `LedgerEntry` (general-ledger report rows)
@@ -40,6 +92,8 @@ What stayed (now on the main entry):
 - `JournalEntryInput`, `JournalItemInput` — re-exported from `@classytic/ledger` (these describe the `journalEntries.create()` input; they're inherent to the engine, not a sync concern)
 
 **Migration for fajr-be-arc** (the only known consumer): the canonical replacement lives at `D:/projects/algoclan/fajr/fajr-be-arc/src/shared/ledger-sync/`. Imports change `from '@classytic/ledger/sync'` → `from '#shared/ledger-sync/index.js'`. fin-io stays as a fajr direct dependency; ledger no longer cares about it.
+
+**Reference implementation for other hosts:** fajr's local copy is a stable, production-grade `LedgerBridge` adapter — multi-tenant, multi-currency, withholding tax, AR/AP-aware via an opt-in `resolvePaymentAccounts({ debit, credit })` callback (returns `{ debit: cash, credit: receivable }` for `out_invoice` payments and `{ debit: payable, credit: cash }` for `in_invoice` payments). Pairs with `@classytic/invoice@>=0.3.0`'s new `LedgerPaymentInput.moveType` field so the resolver dispatches AR/AP direction without an extra invoice fetch. Any future host needing the same glue can copy these files and adjust imports — see [`docs/sync.md`](docs/sync.md) for the full migration breakdown.
 
 **Migration for any other consumer**: copy `src/shared/ledger-sync/` from fajr-be-arc into your own host repo. Drop `@classytic/fin-io` from ledger's peer footprint (it was already optional). The exports surface inside the moved folder is byte-identical to what `@classytic/ledger/sync` shipped.
 
