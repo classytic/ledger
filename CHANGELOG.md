@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.4 — 2026-06-03
+
+- Fix `seed()`: inherit `isCashAccount` from the country pack's `AccountType` — was silently defaulting to `false`, breaking Bank Reconciliation, Cash Flow Statement, and the import bank-account selector for seeded cash accounts
+
 ## 0.12.3 — 2026-05-26
 
 ### Added — entry-level `JournalEntry.sourceRef`

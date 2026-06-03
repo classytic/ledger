@@ -162,6 +162,15 @@ export function wireAccountMethods<TDoc = unknown>(
           accountTypeCode: at.code,
           accountNumber: at.code,
           name: at.name,
+          // Inherit cash-account semantics from the country pack's
+          // AccountType (e.g. GIFI 1000, AU 1010). Without this the seed
+          // path writes nothing and the schema default (false) wins, so
+          // seeded cash accounts silently fail Bank Reconciliation, the
+          // Cash Flow Statement, and the import bank-account selector —
+          // the exact divergence `bulkCreate` already avoids via its
+          // `resolvedIsCash`. Seed has no caller override, so the pack
+          // flag is authoritative.
+          isCashAccount: Boolean(at.isCashAccount),
         };
         if (orgField && orgId != null) doc[orgField] = orgId;
         return doc;

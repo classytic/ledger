@@ -266,6 +266,31 @@ describe('seedAccounts', () => {
     expect(org1Count).toBe(8);
     expect(org2Count).toBe(8);
   });
+
+  // Regression: seedAccounts must inherit isCashAccount from the country
+  // pack just like bulkCreate does. It previously built docs without the
+  // field, so every seeded cash account fell back to the schema default
+  // (false) — silently breaking Bank Reconciliation, the Cash Flow
+  // Statement, and the import bank-account selector for any org set up via
+  // the default-chart seed path (the only inheritance tests were on
+  // bulkCreate, so the gap went unnoticed).
+  it('stamps isCashAccount from the country pack on seeded cash accounts', async () => {
+    const repo = createRepo();
+    await repo.seedAccounts(orgId);
+
+    const cash = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1000',
+    }).lean()) as any;
+    expect(cash.isCashAccount).toBe(true);
+
+    // Non-cash codes stay false (the pack doesn't flag 1100 / AR).
+    const ar = (await AccountModel.findOne({
+      business: orgId,
+      accountTypeCode: '1100',
+    }).lean()) as any;
+    expect(ar.isCashAccount).toBe(false);
+  });
 });
 
 // ── bulkCreate ───────────────────────────────────────────────────────────────
