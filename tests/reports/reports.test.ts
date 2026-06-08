@@ -249,6 +249,121 @@ describe('Trial Balance', () => {
 
     expect(report.columnarRows).toHaveLength(0);
   });
+
+  it('rolls prior fiscal-year P&L into retained earnings so opening + ending columns balance', async () => {
+    // Prior fiscal year (2024) PROFIT: revenue 30000. P&L resets at the
+    // fiscal-year start (Jan 1), so without the roll-forward this 2024 credit
+    // would be missing from the 2025 opening column → imbalance.
+    await postEntry('2024-06-01', [
+      { account: cashId, debit: 30000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 30000 },
+    ]);
+    // Current fiscal year (2025) activity.
+    await postEntry('2025-03-10', [
+      { account: cashId, debit: 50000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 50000 },
+    ]);
+
+    const report = await generateTrialBalance(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'month', dateValue: '2025-03' },
+    );
+
+    const sum = (sel: (r: (typeof report.columnarRows)[number]) => number) =>
+      report.columnarRows.reduce((s, r) => s + sel(r), 0);
+
+    // Opening column ties out — prior-year profit closed into retained earnings.
+    expect(sum((r) => r.initial.debit.total ?? 0)).toBe(sum((r) => r.initial.credit.total ?? 0));
+    // Ending column ties out too.
+    expect(sum((r) => r.ending.debit.total ?? 0)).toBe(sum((r) => r.ending.credit.total ?? 0));
+
+    // The 2024 profit (30000) landed in retained earnings' OPENING credit.
+    const reRow = report.columnarRows.find(
+      (r) => String((r.account as { _id?: unknown })._id) === String(retainedId),
+    );
+    expect(reRow?.initial.credit.total).toBe(30000);
+    // Current-year revenue stays in the P&L account (not rolled into RE).
+    const revRow = report.columnarRows.find(
+      (r) => String((r.account as { _id?: unknown })._id) === String(revenueId),
+    );
+    expect(revRow?.current.credit.total).toBe(50000);
+  });
+
+  it('does NOT inject retained earnings on a single-account drill (params.accountId)', async () => {
+    await postEntry('2024-06-01', [
+      { account: cashId, debit: 30000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 30000 },
+    ]);
+    const report = await generateTrialBalance(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'month', dateValue: '2025-03', accountId: String(cashId) },
+    );
+    // Drilling a single (non-RE) account must not fabricate an RE row.
+    const reRow = report.columnarRows.find(
+      (r) => String((r.account as { _id?: unknown })._id) === String(retainedId),
+    );
+    expect(reRow).toBeUndefined();
+  });
+
+  it('rolls a prior fiscal-year LOSS into retained earnings as an opening DEBIT', async () => {
+    // Prior fiscal year (2024) LOSS: rent expense 8000 funded by cash. A
+    // debit-heavy prior P&L (priorNet > 0) must DEBIT retained earnings.
+    await postEntry('2024-09-01', [
+      { account: rentId, debit: 8000, credit: 0 },
+      { account: cashId, debit: 0, credit: 8000 },
+    ]);
+    // A current-year entry so the report has live activity too.
+    await postEntry('2025-02-15', [
+      { account: cashId, debit: 1000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 1000 },
+    ]);
+
+    const report = await generateTrialBalance(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'month', dateValue: '2025-03' },
+    );
+    const sum = (sel: (r: (typeof report.columnarRows)[number]) => number) =>
+      report.columnarRows.reduce((s, r) => s + sel(r), 0);
+
+    // Both columns still tie out.
+    expect(sum((r) => r.initial.debit.total ?? 0)).toBe(sum((r) => r.initial.credit.total ?? 0));
+    expect(sum((r) => r.ending.debit.total ?? 0)).toBe(sum((r) => r.ending.credit.total ?? 0));
+
+    // The 2024 loss (8000) landed in retained earnings' OPENING debit.
+    const reRow = report.columnarRows.find(
+      (r) => String((r.account as { _id?: unknown })._id) === String(retainedId),
+    );
+    expect(reRow?.initial.debit.total).toBe(8000);
+    expect(reRow?.initial.credit.total).toBe(0);
+  });
+
+  it('accumulates MULTIPLE prior fiscal years (profit + loss) into one RE opening figure', async () => {
+    // 2023 profit 20000, 2024 loss 5000 → net prior P&L = +15000 profit →
+    // RE opening CREDIT 15000. Proves priorIs sums ALL pre-FY years, not just
+    // the immediately prior one.
+    await postEntry('2023-05-01', [
+      { account: cashId, debit: 20000, credit: 0 },
+      { account: revenueId, debit: 0, credit: 20000 },
+    ]);
+    await postEntry('2024-07-01', [
+      { account: rentId, debit: 5000, credit: 0 },
+      { account: cashId, debit: 0, credit: 5000 },
+    ]);
+
+    const report = await generateTrialBalance(
+      { AccountModel, JournalEntryModel: JEModel, country: testPack },
+      { dateOption: 'month', dateValue: '2025-03' },
+    );
+    const sum = (sel: (r: (typeof report.columnarRows)[number]) => number) =>
+      report.columnarRows.reduce((s, r) => s + sel(r), 0);
+
+    expect(sum((r) => r.initial.debit.total ?? 0)).toBe(sum((r) => r.initial.credit.total ?? 0));
+    const reRow = report.columnarRows.find(
+      (r) => String((r.account as { _id?: unknown })._id) === String(retainedId),
+    );
+    expect(reRow?.initial.credit.total).toBe(15000);
+    expect(reRow?.initial.debit.total).toBe(0);
+  });
 });
 
 // ── Balance Sheet ────────────────────────────────────────────────────────────

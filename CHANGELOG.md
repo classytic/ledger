@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.5 — 2026-06-08
+
+- Fix trial balance opening column: roll prior fiscal years' net P&L into the retained earnings account's opening balance so the TB ties out. New `TrialBalanceOptions.retainedEarningsAccountCode` override (defaults to country pack value). No-op when a real year-end closing entry was already posted.
+
 ## 0.12.4 — 2026-06-03
 
 - Fix `seed()`: inherit `isCashAccount` from the country pack's `AccountType` — was silently defaulting to `false`, breaking Bank Reconciliation, Cash Flow Statement, and the import bank-account selector for seeded cash accounts
