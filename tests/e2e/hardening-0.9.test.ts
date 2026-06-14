@@ -518,7 +518,12 @@ describe('0.9.0 — outbox store integration (PR #7)', () => {
     }
   });
 
-  it('outbox save failures do not break the ledger write path', async () => {
+  it('outbox save failures propagate (P8 — durable event must not silently vanish)', async () => {
+    // PACKAGE_RULES §P8: the transactional outbox's whole correctness argument
+    // is "business write + event row commit atomically". A save failure must
+    // PROPAGATE so a host running the verb inside `withTransaction` rolls back,
+    // and a standalone caller fails loudly instead of committing the write
+    // while the durable event vanishes (the relay would never know to retry).
     const brokenStore: OutboxStore = {
       save: vi.fn(async () => {
         throw new Error('outbox is down');
@@ -536,9 +541,8 @@ describe('0.9.0 — outbox store integration (PR #7)', () => {
     await engine.models.Account.createIndexes();
     await engine.models.JournalEntry.createIndexes();
 
-    // seedAccounts must still succeed despite the broken outbox
-    const result = await engine.repositories.accounts.seedAccounts(null);
-    expect(result.created).toBeGreaterThan(0);
+    // The verb must surface the outbox failure rather than swallow it.
+    await expect(engine.repositories.accounts.seedAccounts(null)).rejects.toThrow('outbox is down');
     expect(brokenStore.save).toHaveBeenCalled();
   });
 });
