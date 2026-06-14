@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.0 — 2026-06-13
+
+### Stack — mongokit 3.16 / repo-core 0.6 / primitives 0.7
+
+- Peer ranges bumped to `@classytic/mongokit >=3.16.0`, `@classytic/repo-core >=0.6.0` (`@classytic/primitives >=0.6.0` unchanged). Dev stack pins mongokit `^3.16.0`, repo-core `^0.6.0`, primitives `^0.7.2`, clean-installed from the npm registry. No source-level changes were required by the bump — the full suite passes unmodified on the new stack.
+- `multiTenantPlugin` now inherits mongokit 3.16's fail-closed defaults: `onMismatch: 'throw'` (a caller-supplied tenant that differs from the resolved scope is rejected, never silently rewritten — equivalent hex/ObjectId forms still normalize) and `allowDataInjection: false` (tenant scope must come from the call context, not payload stamping). Verified no ledger flow relied on the prior silent-overwrite behavior; ledger continues to stamp the matching org on the context, so equal values pass the guard.
+
+### Fixed — outbox.save failures now propagate (PACKAGE_RULES §P8)
+
+`safePublish()` previously swallowed `outboxStore.save()` failures, so a ledger write could commit while its durable event row silently vanished — the host relay would never know to re-deliver. This violated the transactional-outbox correctness contract (business write + event row commit atomically) and is severe for a financial package. Save failures now **propagate**: when the verb runs inside a host `withTransaction`, the throw rolls the transaction back; standalone callers fail loudly instead of dropping the event. Transport `publish()` failures are still swallowed (logged) — the relay re-delivers from the durable row.
+
+**Behavioral change for hosts:** if your injected `OutboxStore.save` throws, the originating ledger verb (`post`/`unpost`/`archive`/`reverse`/`duplicate`/`seedAccounts`/reconciliation match) now rejects instead of succeeding. This is intentional fail-closed behavior — a durable accounting event must never be silently lost. Ensure your outbox store is healthy or wrap calls accordingly.
+
+### Build hygiene
+
+- `tsconfig.json`: `declarationMap` and `sourceMap` set to `false` (were `true`) — they leak source into published artifacts. `dist` now ships zero `.map` files (tsdown already had `sourcemap: false`).
+
 ## 0.12.5 — 2026-06-08
 
 - Fix trial balance opening column: roll prior fiscal years' net P&L into the retained earnings account's opening balance so the TB ties out. New `TrialBalanceOptions.retainedEarningsAccountCode` override (defaults to country pack value). No-op when a real year-end closing entry was already posted.
