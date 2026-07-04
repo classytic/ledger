@@ -120,7 +120,7 @@ export type {
 
 // ── Engine ─────────────────────────────────────────────────────────────────
 
-export { AccountingEngine, createAccountingEngine } from './engine.js';
+export { AccountingEngine, assertLedgerCapabilities, createAccountingEngine } from './engine.js';
 export type { LedgerModels, ResolvedModelNames } from './models/factory.js';
 export { createModels, resolveModelNames } from './models/factory.js';
 export type {
@@ -321,6 +321,7 @@ export type {
   MatchInput,
   OpenItem,
   PostOptions,
+  UpdateDraftOptions,
   ReconciliationRepository,
   ReverseOptions,
   ReverseResult,

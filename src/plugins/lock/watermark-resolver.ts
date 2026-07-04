@@ -31,7 +31,7 @@ export interface WatermarkResolverOptions {
   /**
    * Optional label override. Defaults to `"through {ISO date}"`.
    */
-  formatLabel?: (watermark: Date, ctx: LockResolverContext) => string;
+  formatLabel?: (watermark: Date, ctx: LockResolverContext) => string | undefined;
 }
 
 export function watermarkResolver(options: WatermarkResolverOptions): LockResolver {

@@ -168,6 +168,37 @@ import {
 
 Plugins attach to mongokit repository hooks. They run at POLICY priority before any query.
 
+## Production Wiring Checklist
+
+Three integration points are host responsibilities — the engine cannot
+enforce them for you:
+
+1. **Multi-currency needs `fxRealizationPlugin` wired explicitly.** The
+   engine does NOT auto-register it. Without it, matching multi-rate
+   foreign-currency items reconciles cleanly but the realized FX gain/loss
+   is silently never booked. Register it on the reconciliation repository
+   at engine creation time and seed the realized-gain/loss accounts it
+   points at.
+
+2. **The outbox relay is yours.** Configuring `outboxStore` makes every
+   domain event commit atomically with its ledger write (and, since 0.14.0,
+   makes `transactions` a boot-asserted requirement) — but the engine only
+   WRITES the rows. A host-side relay must poll pending rows and re-publish
+   to your transport, or durable delivery silently degrades to
+   at-most-once. Arc hosts: wire the outbox worker; standalone hosts: run a
+   small poller.
+
+3. **Reopening a closed fiscal period has no cascade guard.** Entries
+   posted while the period is open again become retroactively locked when
+   it re-closes — the engine does not re-audit them. Treat reopening as an
+   audit-gated, exceptional operation, and re-run your close checklist
+   (trial balance tie-out, closing entry) before closing again.
+
+Boot itself is guarded since 0.14.0: `createAccountingEngine` asserts the
+repository backend's `RepoCapabilities` (`upsert` + `duplicateKeyError`
+always; `transactions` when an `outboxStore` is configured) and fails
+loudly instead of erroring on the first posting call.
+
 ## Subpath Exports
 
 ```ts

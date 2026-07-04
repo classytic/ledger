@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import { _freezeJournalTypes, getJournalTypeCodes, JOURNAL_CODES } from '../constants/journals.js';
 import { injectTenantField, resolveLedgerTenant } from '../models/inject-tenant.js';
 import type { AccountingEngineConfig, JournalSchemaOptions } from '../types/engine.js';
+import { civilPartsOf } from '../utils/zoned-boundaries.js';
 import { buildCurrencyField } from './currency-field.js';
 
 /**
@@ -115,6 +116,7 @@ export function createJournalEntrySchema(
   options: JournalSchemaOptions = {},
 ) {
   const { multiTenant } = config;
+  const refTimeZone = config.timezone ?? 'UTC';
   const scope = resolveLedgerTenant(config);
   const {
     indexes = true,
@@ -403,7 +405,7 @@ export function createJournalEntrySchema(
   schema.pre('validate', function (this: mongoose.Document & JournalValidateDoc) {
     // Propagate entry date to items without a date
     for (const item of this.journalItems) {
-      if (!item.date) item.date = this.date;
+      if (!item.date && this.date) item.date = this.date;
     }
 
     // Each line must be debit OR credit (not both), and posted entries cannot have zero-value lines
@@ -459,7 +461,7 @@ export function createJournalEntrySchema(
     // order, cart, revenue — one shared store across the monorepo.
 
     interface JournalSaveDoc {
-      referenceNumber?: string;
+      referenceNumber?: string | undefined;
       journalType?: string;
       date?: Date;
       isModified(path: string): boolean;
@@ -483,8 +485,12 @@ export function createJournalEntrySchema(
         const date = this.date
           ? new Date(this.date as unknown as string | number | Date)
           : new Date();
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
+        // Civil year/month of the posting date in the engine's reporting zone
+        // (default UTC) — never server-local getFullYear/getMonth, so the
+        // reference-number period is stable across deploy machines. P12.
+        const parts = civilPartsOf(date, refTimeZone);
+        const year = parts.year;
+        const month = String(parts.month).padStart(2, '0');
 
         // Multi-tenant partition — include org scope so sequences are per-tenant.
         // Use `.get()` so Mongoose returns the cast value (not the raw input).

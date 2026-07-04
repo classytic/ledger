@@ -53,6 +53,7 @@ import { generateTrialBalance } from './reports/trial-balance.js';
 import { createRepositories, type LedgerRepositories } from './repositories/factory.js';
 import { buildIntrospectAPI, type IntrospectAPI } from './semantic/introspect.js';
 import { buildRecordAPI, type RecordAPI } from './semantic/record.js';
+import { isValidTimeZone } from '@classytic/primitives/timezone';
 import type { AccountingEngineConfig } from './types/engine.js';
 
 export class AccountingEngine {
@@ -94,6 +95,14 @@ export class AccountingEngine {
       );
     }
 
+    if (config.timezone !== undefined && !isValidTimeZone(config.timezone)) {
+      throw new Error(
+        `createAccountingEngine: invalid IANA timezone '${config.timezone}'. ` +
+          'Reporting periods and reference numbers derive their civil boundaries ' +
+          'from this zone; fix the config or omit it to default to UTC.',
+      );
+    }
+
     this.config = config;
     this.country = config.country;
     this.currency = config.currency;
@@ -116,6 +125,13 @@ export class AccountingEngine {
         outboxStore: this.outboxStore,
       },
     );
+
+    // 0.14.0: capability gate — fail boot loudly when the wired repository
+    // backend can't satisfy the ledger's contract (flow/order/catalog
+    // pattern), instead of a cryptic error on the first posting call.
+    assertLedgerCapabilities(this.repositories.journalEntries, {
+      outboxConfigured: this.outboxStore !== undefined,
+    });
 
     // 0.9.0: optional auto-sync of indexes so new partial/TTL indexes are
     // present before the first write. Hosts running their own migration
@@ -215,7 +231,10 @@ export class AccountingEngine {
   ): QueryParser {
     const paginationConfig = this.config.pagination ?? {};
 
-    const modelMap: Record<string, { model: Model<unknown>; pagination?: { maxLimit?: number } }> =
+    const modelMap: Record<
+      string,
+      { model: Model<unknown>; pagination?: { maxLimit?: number | undefined } | undefined }
+    > =
       {
         account: {
           model: this.models.Account as Model<unknown>,
@@ -265,6 +284,7 @@ export class AccountingEngine {
     const { country, config } = this;
     const orgField = config.multiTenant?.tenantField;
     const fiscalYearStartMonth = config.fiscalYearStartMonth ?? 1;
+    const timezone = config.timezone ?? 'UTC';
     const retainedEarningsAccountCode = config.retainedEarningsAccountCode;
     const retainedEarningsDisplayCode = config.retainedEarningsDisplayCode;
     const currentYearEarningsCode = config.currentYearEarningsCode;
@@ -278,7 +298,7 @@ export class AccountingEngine {
         filters?: Record<string, unknown>;
       }) =>
         generateTrialBalance(
-          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth },
+          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth, timezone },
           params,
         ),
 
@@ -299,6 +319,7 @@ export class AccountingEngine {
             retainedEarningsAccountCode,
             retainedEarningsDisplayCode,
             currentYearEarningsCode,
+            timezone,
           },
           params,
         ),
@@ -309,7 +330,11 @@ export class AccountingEngine {
         dateValue: unknown;
         businessName?: string;
         filters?: Record<string, unknown>;
-      }) => generateIncomeStatement({ AccountModel, JournalEntryModel, country, orgField }, params),
+      }) =>
+        generateIncomeStatement(
+          { AccountModel, JournalEntryModel, country, orgField, timezone },
+          params,
+        ),
 
       generalLedger: (params: {
         organizationId?: unknown;
@@ -319,7 +344,7 @@ export class AccountingEngine {
         filters?: Record<string, unknown>;
       }) =>
         generateGeneralLedger(
-          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth },
+          { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth, timezone },
           params,
         ),
 
@@ -329,7 +354,8 @@ export class AccountingEngine {
         dateValue: unknown;
         businessName?: string;
         filters?: Record<string, unknown>;
-      }) => generateCashFlow({ AccountModel, JournalEntryModel, country, orgField }, params),
+      }) =>
+        generateCashFlow({ AccountModel, JournalEntryModel, country, orgField, timezone }, params),
 
       daybook: (params: DaybookParams) => generateDaybook({ JournalEntryModel, orgField }, params),
 
@@ -351,7 +377,10 @@ export class AccountingEngine {
         accountCategory?: string;
         filters?: Record<string, unknown>;
       }) =>
-        generateDimensionBreakdown({ AccountModel, JournalEntryModel, country, orgField }, params),
+        generateDimensionBreakdown(
+          { AccountModel, JournalEntryModel, country, orgField, timezone },
+          params,
+        ),
 
       budgetVsActual: (params: {
         organizationId?: unknown;
@@ -361,7 +390,7 @@ export class AccountingEngine {
         filters?: Record<string, unknown>;
       }) =>
         generateBudgetVsActual(
-          { AccountModel, JournalEntryModel, BudgetModel, country, orgField },
+          { AccountModel, JournalEntryModel, BudgetModel, country, orgField, timezone },
           params,
         ),
 
@@ -377,6 +406,62 @@ export class AccountingEngine {
           params,
         ),
     };
+  }
+}
+
+// ── Capability gate (0.14.0) ────────────────────────────────────────────────
+
+/**
+ * Capability flags the ledger requires from the wired repository backend
+ * (`RepoCapabilities`, declared by mongokit >= 3.16 / repo-core >= 0.6).
+ *
+ * Always required:
+ *   - `upsert` — atomic reference-number counters ride
+ *     findOneAndUpdate-with-upsert.
+ *   - `duplicateKeyError` — race-safe idempotent create depends on typed
+ *     11000 classification to re-read the winner instead of throwing raw.
+ *
+ * Required when an `outboxStore` is configured:
+ *   - `transactions` — the durable-event contract is "outbox row commits
+ *     atomically with the ledger write"; without multi-document
+ *     transactions that guarantee is unenforceable, so the engine refuses
+ *     to pretend. (Without an outbox, posting still works on standalone
+ *     MongoDB via the ledger's non-transactional fallback paths.)
+ */
+const REQUIRED_CAPABILITIES = ['upsert', 'duplicateKeyError'] as const;
+
+/**
+ * Fail-fast check that the journal-entry repository's backend declares the
+ * capabilities the ledger's write paths depend on. Runs automatically in
+ * the engine constructor; exported for hosts wiring custom repositories.
+ */
+export function assertLedgerCapabilities(
+  repository: unknown,
+  options: { outboxConfigured?: boolean } = {},
+): void {
+  const repo = repository as { capabilities?: Record<string, boolean | undefined> };
+  const caps = repo.capabilities;
+  if (!caps) {
+    throw new Error(
+      'ledger: the wired repository backend declares no `capabilities` descriptor ' +
+        '(RepoCapabilities, required since @classytic/repo-core 0.6 / mongokit 3.16). ' +
+        'Upgrade the kit or declare capabilities on the custom repository.',
+    );
+  }
+
+  const required: string[] = [...REQUIRED_CAPABILITIES];
+  if (options.outboxConfigured) required.push('transactions');
+
+  const missing = required.filter((flag) => caps[flag] !== true);
+  if (missing.length > 0) {
+    const outboxNote = options.outboxConfigured
+      ? ' An outboxStore is configured, so multi-document transactions are mandatory — ' +
+        'MongoDB must run as a replica set (or mongos); remove the outbox or fix the deployment.'
+      : '';
+    throw new Error(
+      `ledger: the wired repository backend does not support required capabilities: ` +
+        `${missing.join(', ')}.${outboxNote} See repo.capabilities (RepoCapabilities from @classytic/repo-core).`,
+    );
   }
 }
 

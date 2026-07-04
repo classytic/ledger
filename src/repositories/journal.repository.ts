@@ -23,11 +23,12 @@ import type { JournalRepository, SeedResult } from '../types/repositories.js';
 import { Errors } from '../utils/errors.js';
 import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
+import { civilPartsOf } from '../utils/zoned-boundaries.js';
 
 export interface JournalIntegrations {
-  events?: EventTransport;
-  bridges?: LedgerBridges;
-  outboxStore?: OutboxStore;
+  events?: EventTransport | undefined;
+  bridges?: LedgerBridges | undefined;
+  outboxStore?: OutboxStore | undefined;
 }
 
 /**
@@ -59,6 +60,7 @@ export function wireJournalMethods<TDoc = Record<string, unknown>>(
   country: CountryPack,
   orgField?: string,
   integrations: JournalIntegrations = {},
+  timezone = 'UTC',
 ): JournalRepository<TDoc> {
   const create = repository.create.bind(repository);
   const exists = repository.exists.bind(repository);
@@ -130,9 +132,11 @@ export function wireJournalMethods<TDoc = Record<string, unknown>>(
 
     const next = (updated.sequenceNextNum ?? 1) - 1; // $inc returned the post-increment value
     const prefix = updated.sequencePrefix ?? updated.code ?? 'JE';
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
+    // Civil year/month in the engine's reporting zone (default UTC) — never
+    // server-local getFullYear/getMonth, so the reference period is stable
+    // across deploy machines. P12.
+    const { year, month: monthNum } = civilPartsOf(new Date(), timezone);
+    const month = String(monthNum).padStart(2, '0');
     return `${prefix}/${year}/${month}/${String(next).padStart(4, '0')}`;
   };
 

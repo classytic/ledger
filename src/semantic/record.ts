@@ -432,7 +432,7 @@ export function buildRecordAPI({ models, repositories, config }: BuildDeps): Rec
       {
         journalType: input.journalType ?? 'SALES',
         date: input.date,
-        label: input.label,
+        ...(input.label !== undefined ? { label: input.label } : {}),
         referenceNumber: input.reference,
         journalItems: items,
       },

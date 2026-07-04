@@ -28,8 +28,8 @@ import { watermarkResolver } from './watermark-resolver.js';
 
 export interface FiscalLockPluginOptions {
   FiscalPeriodModel: Model<unknown>;
-  JournalEntryModel?: Model<unknown>;
-  orgField?: string;
+  JournalEntryModel?: Model<unknown> | undefined;
+  orgField?: string | undefined;
 }
 
 export function fiscalLockPlugin(options: FiscalLockPluginOptions) {
@@ -57,8 +57,8 @@ export interface DailyLockPluginOptions {
     orgValue: unknown,
     session: ClientSession | null,
   ) => Promise<Date | null> | Date | null;
-  JournalEntryModel?: Model<unknown>;
-  orgField?: string;
+  JournalEntryModel?: Model<unknown> | undefined;
+  orgField?: string | undefined;
 }
 
 export function dailyLockPlugin(options: DailyLockPluginOptions) {

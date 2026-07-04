@@ -13,7 +13,7 @@ export interface IdempotencyPluginOptions {
   /** Mongoose model for journal entries */
   JournalEntryModel: Model<unknown>;
   /** Multi-tenant org field name */
-  orgField?: string;
+  orgField?: string | undefined;
 }
 
 export function idempotencyPlugin(options: IdempotencyPluginOptions) {

@@ -21,43 +21,43 @@ import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface DaybookOptions {
   JournalEntryModel: Model<unknown>;
-  orgField?: string;
+  orgField?: string | undefined;
 }
 
 export interface DaybookParams {
-  organizationId?: unknown;
+  organizationId?: unknown | undefined;
   startDate: Date;
   endDate: Date;
   /** Default `'posted'`. Pass `'draft'` or `'all'` to widen. */
-  state?: 'posted' | 'draft' | 'all';
+  state?: 'posted' | 'draft' | 'all' | undefined;
   /** Filter to one specific account (renders that account's daybook slice). */
-  accountId?: unknown;
+  accountId?: unknown | undefined;
   /** Filter to one journal type (e.g. `'SALES'`, `'PURCHASES'`). */
-  journalType?: string;
+  journalType?: string | undefined;
   /** Filter to one partner (item-level field). */
-  partnerId?: unknown;
+  partnerId?: unknown | undefined;
   /** Field name on each item that holds the partner reference. Default `partnerId`. */
-  partnerField?: string;
+  partnerField?: string | undefined;
   /** Hard cap on rows. Default 5000 — prevents accidental full-table dumps. */
-  limit?: number;
+  limit?: number | undefined;
 }
 
 export interface DaybookLine {
   date: Date;
   entryId: unknown;
   itemIndex: number;
-  referenceNumber?: string;
-  journalType?: string;
-  entryLabel?: string;
-  itemLabel?: string;
-  state?: string;
+  referenceNumber?: string | undefined;
+  journalType?: string | undefined;
+  entryLabel?: string | undefined;
+  itemLabel?: string | undefined;
+  state?: string | undefined;
   accountId: unknown;
   /** Item-level debit in minor units (paisa). */
   debit: number;
   /** Item-level credit in minor units (paisa). */
   credit: number;
-  partnerId?: unknown;
-  matchingNumber?: string | null;
+  partnerId?: unknown | undefined;
+  matchingNumber?: string | null | undefined;
 }
 
 export interface DaybookReport {
@@ -66,9 +66,9 @@ export interface DaybookReport {
     period: { startDate: string; endDate: string };
     state: string;
     filters: {
-      accountId?: unknown;
-      journalType?: string;
-      partnerId?: unknown;
+      accountId?: unknown | undefined;
+      journalType?: string | undefined;
+      partnerId?: unknown | undefined;
     };
     truncated: boolean;
     rowCount: number;

@@ -217,6 +217,16 @@ export function createLockPlugin(options: CreateLockPluginOptions) {
       repo.on('before:createMany', runMany);
       repo.on('before:update', (ctx: RepositoryContext) => run(ctx, true));
       repo.on('before:claim', runClaim);
+      // claimVersion (mongokit 3.16) carries an operator-shaped update —
+      // unwrap the `$set` view so the same update-path lock logic applies.
+      // Draft-scoped writes (the engine's `updateDraft()`) short-circuit on
+      // the `state !== 'posted'` guard exactly like plain updates.
+      repo.on('before:claimVersion', (ctx: RepositoryContext) => {
+        const data = ctx.data as Record<string, unknown> | undefined;
+        const set =
+          data && '$set' in data ? ((data.$set ?? {}) as Record<string, unknown>) : (data ?? {});
+        return run({ ...ctx, data: set } as RepositoryContext, true);
+      });
     },
   };
 }

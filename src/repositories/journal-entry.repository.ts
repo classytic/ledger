@@ -33,8 +33,8 @@ import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface JournalEntryIntegrations {
-  events?: EventTransport;
-  bridges?: LedgerBridges;
+  events?: EventTransport | undefined;
+  bridges?: LedgerBridges | undefined;
   /**
    * Host-owned outbox store (0.9.0). When present, domain events are
    * persisted to the outbox inside the same mongoose session as the write
@@ -42,7 +42,7 @@ export interface JournalEntryIntegrations {
    * delivery because the host-side relay can re-read pending outbox rows
    * if the transport is down or the process crashes.
    */
-  outboxStore?: OutboxStore;
+  outboxStore?: OutboxStore | undefined;
 }
 
 // ── Interfaces ──────────────────────────────────────────────────────────────
@@ -113,6 +113,17 @@ interface ReverseOptions extends PostOptions {
   reversalDate?: Date;
   /** Post the reversal immediately. Defaults to false (ERPNext/Odoo standard — reversal is Draft). */
   autoPost?: boolean;
+}
+
+interface UpdateDraftOptions extends PostOptions {
+  /**
+   * The `__v` the caller last read. Pin it from the loaded form/document so
+   * a concurrent edit between the user's read and this write surfaces as a
+   * typed `ConcurrencyError` instead of silently winning. Omitted → the
+   * current persisted version is used (still race-safe for this verb's own
+   * read-modify-write window).
+   */
+  expectedVersion?: number;
 }
 
 /**
@@ -341,7 +352,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
   /** Fetch an entry via the repository (fires all hooks) */
   async function findEntry(
     query: Record<string, unknown>,
-    options: { session?: ClientSession | null; populate?: string },
+    options: { session?: ClientSession | null | undefined; populate?: string | undefined },
   ): Promise<JournalEntryDoc | null> {
     const opts: Record<string, unknown> = { lean: false };
     if (options.populate) opts.populate = options.populate;
@@ -773,6 +784,180 @@ export function wireJournalEntryMethods<TDoc = unknown>(
     return duplicated;
   };
 
+  // ── updateDraft() ───────────────────────────────────────────────────────
+
+  // Fields updateDraft() refuses to patch — engine-managed lifecycle, audit,
+  // and derived-money fields. `date`, `label`, `journalType`, `journalItems`
+  // and consumer-defined extra fields (dimensions, sourceRef, branch tags)
+  // remain freely editable while an entry is a draft.
+  const UPDATE_DRAFT_MANAGED = new Set([
+    '_id',
+    '__v',
+    'id',
+    'state',
+    'totalDebit',
+    'totalCredit',
+    'reversalOf',
+    'reversedBy',
+    'reversedByUser',
+    'reversed',
+    'stateChangedAt',
+    'createdAt',
+    'updatedAt',
+    'referenceNumber',
+    'idempotencyKey',
+    'postedBy',
+    'approvedBy',
+    'approvedAt',
+  ]);
+
+  /**
+   * Version-guarded draft edit (0.14.0) — rides mongokit 3.16's
+   * `claimVersion()` so two concurrent editors can't silently clobber each
+   * other (plain `repository.update()` is last-write-wins; mongoose's
+   * `optimisticConcurrency` only guards `save()`, not `findOneAndUpdate`).
+   *
+   * Semantics:
+   *   - Drafts only — the CAS `where: { state: 'draft' }` makes a
+   *     transition race (someone posts the entry mid-edit) a clean miss,
+   *     never a mixed write. Posted entries are corrected via `reverse()`.
+   *   - `options.expectedVersion` pins the `__v` the caller last read
+   *     (send it from the UI form's loaded document). Omitted → the
+   *     current persisted version is used, which still closes the
+   *     read-modify-write gap between this verb's own read and write.
+   *   - `journalItems` patches revalidate line shape and recompute
+   *     `totalDebit`/`totalCredit` here — findOneAndUpdate bypasses the
+   *     schema's pre-validate sync, so the totals must ride the patch.
+   *     Draft balance is NOT enforced (that's `post()`'s contract).
+   *   - Loses the CAS → typed `ConcurrencyError` (version moved) or
+   *     `AccountingError(409)` (state moved). Re-fetch and retry.
+   */
+  repository.updateDraft = async (
+    id: unknown,
+    patch: Record<string, unknown>,
+    orgId?: unknown,
+    options: UpdateDraftOptions = {},
+  ) => {
+    const claimVersion = (
+      repository as unknown as {
+        claimVersion?: (
+          id: unknown,
+          transition: {
+            field?: string;
+            from: number | undefined;
+            where?: Record<string, unknown>;
+          },
+          update: Record<string, unknown>,
+          opts?: Record<string, unknown>,
+        ) => Promise<unknown>;
+      }
+    ).claimVersion?.bind(repository);
+    if (!claimVersion) {
+      throw Errors.validation(
+        'updateDraft() requires mongokit >= 3.16 (Repository.claimVersion). Upgrade @classytic/mongokit.',
+      );
+    }
+    if (strictness?.requireActor && !options.actorId) {
+      throw Errors.validation('actorId is required for updateDraft operations.');
+    }
+    requireOrgScope(orgField, orgId);
+
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      throw Errors.validation('updateDraft() patch must be a plain object.');
+    }
+    const managed = Object.keys(patch).filter((k) => UPDATE_DRAFT_MANAGED.has(k));
+    if (managed.length > 0) {
+      throw Errors.validation(
+        `updateDraft() cannot patch engine-managed fields: ${managed.join(', ')}. ` +
+          'Use post()/unpost()/reverse()/archive() for lifecycle transitions.',
+      );
+    }
+    if (Object.keys(patch).some((k) => k.startsWith('$'))) {
+      throw Errors.validation('updateDraft() takes a field-shape patch — MongoDB operators are not allowed.');
+    }
+    if (Object.keys(patch).length === 0) {
+      throw Errors.validation('updateDraft() patch is empty.');
+    }
+
+    const $set: Record<string, unknown> = { ...patch };
+
+    // journalItems patch: enforce the schema's line-shape invariants here
+    // (debit XOR credit, non-negative integers) and sync the derived totals,
+    // because findOneAndUpdate does not run the document pre-validate hook.
+    if (patch.journalItems !== undefined) {
+      const items = patch.journalItems as Array<{ debit?: number; credit?: number }>;
+      if (!Array.isArray(items) || items.length === 0) {
+        throw Errors.validation('updateDraft() journalItems must be a non-empty array.');
+      }
+      let totalDebit = 0;
+      let totalCredit = 0;
+      items.forEach((item, i) => {
+        const debit = item.debit ?? 0;
+        const credit = item.credit ?? 0;
+        if (!Number.isInteger(debit) || debit < 0 || !Number.isInteger(credit) || credit < 0) {
+          throw Errors.validation(
+            `journalItems.${i}: debit/credit must be non-negative integers (minor units).`,
+            [{ path: `journalItems.${i}`, issue: 'non-integer or negative amount' }],
+          );
+        }
+        if (debit > 0 && credit > 0) {
+          throw Errors.validation(
+            `journalItems.${i}: a line must be a debit OR a credit, not both.`,
+            [{ path: `journalItems.${i}`, issue: 'both debit and credit set' }],
+          );
+        }
+        totalDebit += debit;
+        totalCredit += credit;
+      });
+      $set.totalDebit = totalDebit;
+      $set.totalCredit = totalCredit;
+    }
+
+    // Read the current doc — supplies the CAS version when the caller
+    // didn't pin one, and lets losses produce precise errors below.
+    const query = buildQuery(id, orgId);
+    const entry = await findEntry(query, { session: options.session });
+    if (!entry) {
+      throw Errors.notFound('Entry not found');
+    }
+    if (entry.state !== 'draft') {
+      throw Errors.immutable(
+        `Cannot edit a ${String(entry.state)} entry. Drafts are editable; posted entries are corrected via reverse().`,
+      );
+    }
+    const expectedVersion = options.expectedVersion ?? (entry.__v as number | undefined);
+    if (typeof expectedVersion !== 'number') {
+      throw Errors.validation(
+        'updateDraft() could not resolve the document version (__v). Pass options.expectedVersion explicitly.',
+      );
+    }
+
+    const updated = await claimVersion(
+      id,
+      {
+        field: '__v',
+        from: expectedVersion,
+        where: buildClaimWhere(orgId, { state: 'draft' }),
+      },
+      { $set },
+      buildClaimOptions(orgId, options.actorId, options.session ?? null),
+    );
+
+    if (updated) return updated as never;
+
+    // CAS miss — distinguish the three loss modes for the caller.
+    const after = await findEntry(query, { session: options.session });
+    if (!after) {
+      throw Errors.notFound('Entry not found');
+    }
+    if (after.state !== 'draft') {
+      throw Errors.immutable(
+        `Entry was ${String(after.state)} by another writer mid-edit. Re-fetch before editing.`,
+      );
+    }
+    throw new ConcurrencyError('journal-entry', id);
+  };
+
   // ── reverse() ───────────────────────────────────────────────────────────
 
   /**
@@ -954,7 +1139,7 @@ export function wireJournalEntryMethods<TDoc = unknown>(
   };
 
   // Register methods for discoverability (mongokit 3.4+ registerMethod)
-  const methodNames = ['post', 'unpost', 'archive', 'duplicate', 'reverse'] as const;
+  const methodNames = ['post', 'unpost', 'archive', 'duplicate', 'reverse', 'updateDraft'] as const;
   if (typeof repository.registerMethod === 'function') {
     for (const name of methodNames) {
       const fn = repository[name] as (...args: unknown[]) => unknown;

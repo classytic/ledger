@@ -53,9 +53,9 @@ export interface LedgerRepositories {
  * consumers without events/bridges see no behavioral change.
  */
 export interface LedgerRepositoryIntegrations {
-  events?: EventTransport;
-  bridges?: LedgerBridges;
-  outboxStore?: OutboxStore;
+  events?: EventTransport | undefined;
+  bridges?: LedgerBridges | undefined;
+  outboxStore?: OutboxStore | undefined;
 }
 
 /**
@@ -206,11 +206,17 @@ export function createRepositories(
     [...tenantPlugins, ...(plugins.journal ?? [])],
     journalPagination,
   );
-  const journals = wireJournalMethods(journalBase, country, orgField, {
-    events,
-    bridges,
-    outboxStore,
-  });
+  const journals = wireJournalMethods(
+    journalBase,
+    country,
+    orgField,
+    {
+      events,
+      bridges,
+      outboxStore,
+    },
+    config.timezone ?? 'UTC',
+  );
 
   return {
     accounts,

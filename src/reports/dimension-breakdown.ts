@@ -18,19 +18,21 @@ export interface DimensionBreakdownOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
 }
 
 export interface DimensionBreakdownParams {
-  organizationId?: unknown;
+  organizationId?: unknown | undefined;
   dateOption: 'month' | 'quarter' | 'year' | 'custom';
   dateValue: unknown;
   /** Field on journalItems to group by, e.g. 'departmentId' */
   dimension: string;
   /** Filter accounts by category, e.g. 'Income Statement-Expense' */
-  accountCategory?: string;
+  accountCategory?: string | undefined;
   /** Additional item-level filters */
-  filters?: Record<string, unknown>;
+  filters?: Record<string, unknown> | undefined;
 }
 
 export interface DimensionBreakdownRow {
@@ -56,10 +58,10 @@ export async function generateDimensionBreakdown(
   opts: DimensionBreakdownOptions,
   params: DimensionBreakdownParams,
 ): Promise<DimensionBreakdownReport> {
-  const { AccountModel, JournalEntryModel, country, orgField } = opts;
+  const { AccountModel, JournalEntryModel, country, orgField, timezone = 'UTC' } = opts;
   requireOrgScope(orgField, params.organizationId);
 
-  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);
   const itemFilters = buildItemFilters(params.filters);
 
   // ── Fetch accounts ──────────────────────────────────────────────────────

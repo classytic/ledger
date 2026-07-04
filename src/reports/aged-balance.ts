@@ -32,24 +32,24 @@ export interface AgedBalanceOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
 }
 
 export interface AgedBalanceParams {
-  organizationId?: unknown;
-  asOfDate?: Date; // defaults to now
+  organizationId?: unknown | undefined;
+  asOfDate?: Date | undefined; // defaults to now
   type: 'receivable' | 'payable';
-  accountIds?: unknown[]; // specific AR/AP accounts
-  dueDateField?: string; // field path for due date (default: 'journalItems.dueDate')
-  contactField?: string; // field path for contact grouping (e.g. 'journalItems.contactId')
-  buckets?: AgedBucketConfig[]; // custom buckets, defaults to DEFAULT_BUCKETS
+  accountIds?: unknown[] | undefined; // specific AR/AP accounts
+  dueDateField?: string | undefined; // field path for due date (default: 'journalItems.dueDate')
+  contactField?: string | undefined; // field path for contact grouping (e.g. 'journalItems.contactId')
+  buckets?: AgedBucketConfig[] | undefined; // custom buckets, defaults to DEFAULT_BUCKETS
 }
 
 export interface AgedBalanceRow {
   accountId: unknown;
   accountName: string;
   accountCode: string;
-  contactId?: unknown;
+  contactId?: unknown | undefined;
   total: number; // integer cents
   amounts: Record<string, number>; // bucket label -> cents, aligned with PeriodColumn.key
 }

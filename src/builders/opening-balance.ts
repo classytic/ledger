@@ -72,7 +72,7 @@ export interface OpeningBalanceInput {
   equityAccountCode: string;
 
   /** Optional label. Defaults to 'Opening Balance — Cutover YYYY-MM-DD'. */
-  label?: string;
+  label?: string | undefined;
 }
 
 export interface OpeningBalanceResult {

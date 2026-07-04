@@ -27,24 +27,24 @@ export interface PeriodResolverOptions {
   /** Mongoose model holding closed-period rows. */
   PeriodModel: Model<unknown>;
   /** Field name for the start of the window. Default: `'startDate'`. */
-  startField?: string;
+  startField?: string | undefined;
   /** Field name for the end of the window. Default: `'endDate'`. */
-  endField?: string;
+  endField?: string | undefined;
   /**
    * Field name that indicates "this window is closed". Default:
    * `'closed'` (matches FiscalPeriod model).
    */
-  closedField?: string;
+  closedField?: string | undefined;
   /** Value of the closed field that counts as closed. Default: `true`. */
-  closedValue?: unknown;
+  closedValue?: unknown | undefined;
   /** Field name to use as the display label in errors. Default: `'name'`. */
-  labelField?: string;
+  labelField?: string | undefined;
   /** Field name to surface as `LockHit.subType`. Default: undefined. */
-  subTypeField?: string;
+  subTypeField?: string | undefined;
   /** Field name to surface as `LockHit.externalRef`. Default: undefined. */
-  externalRefField?: string;
+  externalRefField?: string | undefined;
   /** Multi-tenant scope field on the period doc. */
-  orgField?: string;
+  orgField?: string | undefined;
   /**
    * Optional additional query fragment merged into the lookup. Receives
    * the resolver context so callers can derive dynamic filters from the

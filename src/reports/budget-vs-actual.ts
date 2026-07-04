@@ -19,15 +19,17 @@ export interface BudgetVsActualOptions {
   JournalEntryModel: Model<unknown>;
   BudgetModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
 }
 
 export interface BudgetVsActualParams {
-  organizationId?: unknown;
+  organizationId?: unknown | undefined;
   dateOption: 'month' | 'quarter' | 'year' | 'custom';
   dateValue: unknown;
-  accountIds?: unknown[];
-  filters?: Record<string, unknown>;
+  accountIds?: unknown[] | undefined;
+  filters?: Record<string, unknown> | undefined;
 }
 
 export interface BudgetVsActualRow {
@@ -57,10 +59,10 @@ export async function generateBudgetVsActual(
   opts: BudgetVsActualOptions,
   params: BudgetVsActualParams,
 ): Promise<BudgetVsActualReport> {
-  const { AccountModel, JournalEntryModel, BudgetModel, country, orgField } = opts;
+  const { AccountModel, JournalEntryModel, BudgetModel, country, orgField, timezone = 'UTC' } = opts;
   requireOrgScope(orgField, params.organizationId);
 
-  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);
 
   // 1. Query budget records overlapping the period
   const budgetQuery: Record<string, unknown> = {

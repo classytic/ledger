@@ -19,25 +19,34 @@ export interface GeneralLedgerOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
-  fiscalYearStartMonth?: number;
+  orgField?: string | undefined;
+  fiscalYearStartMonth?: number | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
 }
 
 export async function generateGeneralLedger(
   opts: GeneralLedgerOptions,
   params: {
-    organizationId?: unknown;
+    organizationId?: unknown | undefined;
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
-    accountId?: string;
-    businessName?: string;
-    filters?: Record<string, unknown>;
+    accountId?: string | undefined;
+    businessName?: string | undefined;
+    filters?: Record<string, unknown> | undefined;
   },
 ): Promise<GeneralLedgerReport> {
-  const { AccountModel, JournalEntryModel, country, orgField, fiscalYearStartMonth = 1 } = opts;
+  const {
+    AccountModel,
+    JournalEntryModel,
+    country,
+    orgField,
+    fiscalYearStartMonth = 1,
+    timezone = 'UTC',
+  } = opts;
   requireOrgScope(orgField, params.organizationId);
-  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
-  const fiscalYearStart = getFiscalYearStart(startDate, fiscalYearStartMonth);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);
+  const fiscalYearStart = getFiscalYearStart(startDate, fiscalYearStartMonth, timezone);
   const itemFilters = buildItemFilters(params.filters);
 
   // Get target accounts
@@ -214,8 +223,8 @@ export async function generateGeneralLedger(
 
   const periodDisplay =
     params.dateOption === 'year'
-      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
-      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}`
+      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: timezone })}`;
 
   return {
     metadata: {
