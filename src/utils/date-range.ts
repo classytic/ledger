@@ -2,22 +2,30 @@
  * Date Range Utility — Compute period boundaries for reports.
  *
  * All inputs are validated to prevent silent failures from invalid dates.
+ *
+ * Boundaries are resolved in the engine's reporting `zone` (default `'UTC'`)
+ * via {@link zonedFirstOfMonth} / {@link civilPartsOf} — never the server-local
+ * `new Date(year, month, day)` constructor, which shifts periods with the
+ * deploy machine's `TZ` env. See `utils/zoned-boundaries.ts` + PACKAGE_RULES P12.
  */
 
+import { addCivilDays, civilDate, civilDateOf, civilDateToInstant } from '@classytic/primitives/timezone';
 import type { CustomDateRange, DateOption, DateRange, QuarterValue } from '../types/core.js';
+import { civilPartsOf, endBefore, zonedFirstOfMonth } from './zoned-boundaries.js';
 
 /**
- * Compute start/end dates from a date option + value.
+ * Compute start/end dates from a date option + value, in the given reporting
+ * `zone` (IANA name; default `'UTC'`).
  *
  * @throws {Error} If value is null/undefined/invalid for the given option
  *
- * Examples:
+ * Examples (zone = 'UTC'):
  *   getDateRange('month', '2025-03')            → Mar 1 – Mar 31
  *   getDateRange('quarter', { quarter: 2, year: 2025 }) → Apr 1 – Jun 30
  *   getDateRange('year', 2025)                  → Jan 1 – Dec 31
  *   getDateRange('custom', { startDate, endDate })
  */
-export function getDateRange(option: DateOption, value: unknown): DateRange {
+export function getDateRange(option: DateOption, value: unknown, zone = 'UTC'): DateRange {
   // Validate: value is required for known date options (not the default fallback)
   if (
     value == null &&
@@ -30,25 +38,26 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
     case 'month': {
       // Parse 'YYYY-MM' strings explicitly to avoid UTC-vs-local timezone shift
       let year: number;
-      let month: number;
+      let month: number; // 0-indexed
       const strVal = String(value);
       const match = strVal.match(/^(\d{4})-(\d{1,2})$/);
       if (match) {
         year = parseInt(match[1], 10);
-        month = parseInt(match[2], 10) - 1; // 0-indexed
+        month = parseInt(match[2], 10) - 1;
       } else {
         const date = new Date(value as string | number | Date);
         if (Number.isNaN(date.getTime())) {
           throw new Error(`Invalid month value: ${String(value)}`);
         }
-        year = date.getFullYear();
-        month = date.getMonth();
+        const p = civilPartsOf(date, zone);
+        year = p.year;
+        month = p.month - 1;
       }
       if (year < 1900 || year > 9999) {
         throw new Error(`Year ${year} is out of valid range (1900–9999)`);
       }
-      const startDate = new Date(year, month, 1);
-      const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const startDate = zonedFirstOfMonth(year, month + 1, zone);
+      const endDate = endBefore(zonedFirstOfMonth(year, month + 2, zone));
       return { startDate, endDate };
     }
 
@@ -63,9 +72,9 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
       if (!Number.isInteger(year) || year < 1900 || year > 9999) {
         throw new Error(`Invalid year: ${year}. Must be 1900–9999.`);
       }
-      const startMonth = (quarter - 1) * 3;
-      const startDate = new Date(year, startMonth, 1);
-      const endDate = new Date(year, startMonth + 3, 0, 23, 59, 59, 999);
+      const startMonth = (quarter - 1) * 3; // 0-indexed
+      const startDate = zonedFirstOfMonth(year, startMonth + 1, zone);
+      const endDate = endBefore(zonedFirstOfMonth(year, startMonth + 4, zone));
       return { startDate, endDate };
     }
 
@@ -74,8 +83,8 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
       if (Number.isNaN(year) || year < 1900 || year > 9999) {
         throw new Error(`Invalid year: ${String(value)}. Must be a number between 1900–9999.`);
       }
-      const startDate = new Date(year, 0, 1);
-      const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
+      const startDate = zonedFirstOfMonth(year, 1, zone);
+      const endDate = endBefore(zonedFirstOfMonth(year + 1, 1, zone));
       return { startDate, endDate };
     }
 
@@ -88,39 +97,37 @@ export function getDateRange(option: DateOption, value: unknown): DateRange {
         throw new Error('Custom date range requires both startDate and endDate');
       }
       const start = new Date(rawStart);
-      const end = new Date(rawEnd);
+      let end = new Date(rawEnd);
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
         throw new Error('Custom date range contains invalid dates');
       }
       if (start > end) {
         throw new Error('startDate must be before endDate');
       }
-      // Normalize end date to end-of-day if time is midnight (00:00:00)
-      if (
-        end.getHours() === 0 &&
-        end.getMinutes() === 0 &&
-        end.getSeconds() === 0 &&
-        end.getMilliseconds() === 0
-      ) {
-        end.setHours(23, 59, 59, 999);
+      // If `end` lands exactly on local midnight in the reporting zone (a
+      // date-only bound), extend it to the last instant of that day so the
+      // whole day is included — zone-aware, never server-local getHours().
+      const endCivil = civilDate(civilDateOf(end, zone));
+      if (civilDateToInstant(endCivil, zone).getTime() === end.getTime()) {
+        end = endBefore(civilDateToInstant(addCivilDays(endCivil, 1), zone));
       }
       return { startDate: start, endDate: end };
     }
 
     default: {
-      // Default: current month
-      const now = new Date();
+      // Default: current month (in the reporting zone)
+      const p = civilPartsOf(new Date(), zone);
       return {
-        startDate: new Date(now.getFullYear(), now.getMonth(), 1),
-        endDate: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999),
+        startDate: zonedFirstOfMonth(p.year, p.month, zone),
+        endDate: endBefore(zonedFirstOfMonth(p.year, p.month + 1, zone)),
       };
     }
   }
 }
 
-/** Get fiscal year start date for a given date and fiscal start month */
-export function getFiscalYearStart(date: Date, fiscalStartMonth = 1): Date {
-  const month = fiscalStartMonth - 1; // 0-indexed
-  const year = date.getMonth() < month ? date.getFullYear() - 1 : date.getFullYear();
-  return new Date(year, month, 1);
+/** Get fiscal year start instant for a given date and fiscal start month, in `zone`. */
+export function getFiscalYearStart(date: Date, fiscalStartMonth = 1, zone = 'UTC'): Date {
+  const { year, month } = civilPartsOf(date, zone); // month is 1-based
+  const fiscalYear = month < fiscalStartMonth ? year - 1 : year;
+  return zonedFirstOfMonth(fiscalYear, fiscalStartMonth, zone);
 }

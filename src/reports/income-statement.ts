@@ -23,25 +23,27 @@ export interface IncomeStatementOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
 }
 
 export async function generateIncomeStatement(
   opts: IncomeStatementOptions,
   params: {
-    organizationId?: unknown;
+    organizationId?: unknown | undefined;
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
-    comparative?: 'monthly' | 'quarterly' | null;
-    businessName?: string;
-    filters?: Record<string, unknown>;
+    comparative?: 'monthly' | 'quarterly' | null | undefined;
+    businessName?: string | undefined;
+    filters?: Record<string, unknown> | undefined;
   },
 ): Promise<IncomeStatementReport> {
-  const { AccountModel, JournalEntryModel, country, orgField } = opts;
+  const { AccountModel, JournalEntryModel, country, orgField, timezone = 'UTC' } = opts;
   requireOrgScope(orgField, params.organizationId);
-  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);
   const itemFilters = buildItemFilters(params.filters);
-  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null);
+  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null, timezone);
 
   // Fetch accounts
   const q: Record<string, unknown> = { active: true };
@@ -237,8 +239,8 @@ export async function generateIncomeStatement(
 
   const periodDisplay =
     params.dateOption === 'year'
-      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
-      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}`
+      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: timezone })}`;
 
   // Country-pack display labels — projected onto metadata so the FE can
   // render section headings ("Net Revenue" US, "Revenue" default) without
@@ -248,8 +250,8 @@ export async function generateIncomeStatement(
     metadata: {
       businessName: params.businessName,
       generatedAt: new Date().toISOString(),
-      periodStart: isoDate(startDate),
-      periodEnd: isoDate(endDate),
+      periodStart: isoDate(startDate, timezone),
+      periodEnd: isoDate(endDate, timezone),
       displayPeriod: periodDisplay,
       comparative: params.comparative ?? null,
       labels: {

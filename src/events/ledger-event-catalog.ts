@@ -34,6 +34,7 @@
  * ```
  */
 
+import { CURRENCY_PATTERN } from '@classytic/primitives/currency';
 import type { DomainEvent } from '@classytic/primitives/events';
 import { createEvent as createPrimitiveEvent } from '@classytic/primitives/events';
 import { z } from 'zod';
@@ -160,7 +161,7 @@ const reconciliationMatchedSchema = z.object({
   debitTotal: z.number(),
   creditTotal: z.number(),
   isFullReconcile: z.boolean(),
-  currency: z.string().nullable(),
+  currency: z.string().regex(CURRENCY_PATTERN, 'ISO 4217 (3 uppercase letters)').nullable(),
   organizationId: objectIdLike.optional(),
 });
 

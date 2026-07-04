@@ -241,5 +241,5 @@ export function classifyDuplicateKey(
       ? (e.message.match(/index: ([^\s]+)/) as RegExpMatchArray)[1]
       : 'unknown';
 
-  return { indexName, keyPattern };
+  return { indexName, ...(keyPattern !== undefined ? { keyPattern } : {}) };
 }

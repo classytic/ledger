@@ -232,6 +232,18 @@ export interface AccountingEngineConfig {
   /** Fiscal year start month (1-12, default: 1 = January) */
   fiscalYearStartMonth?: number | undefined;
   /**
+   * IANA timezone (e.g. `'Asia/Dhaka'`, `'America/Toronto'`) the engine uses to
+   * decide civil boundaries: report periods (month/quarter/year windows,
+   * comparative columns, fiscal-year start) and the year/month embedded in
+   * journal reference numbers. Resolved DST-exact via
+   * `@classytic/primitives/timezone`; validated at boot (an unknown zone throws).
+   *
+   * Omitted → **UTC** — the historical behaviour of a UTC-deployed server, and
+   * parity with mongokit's `dateSequentialId` partitions. Either way the result
+   * NEVER depends on the deploy machine's `TZ` env. PACKAGE_RULES P12.
+   */
+  timezone?: string | undefined;
+  /**
    * The retained earnings account code (e.g. '3600' CA, '3310' BD).
    * Overrides the country pack value. See CountryPack.retainedEarningsAccountCode.
    */

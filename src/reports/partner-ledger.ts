@@ -35,11 +35,11 @@ import { DEFAULT_BUCKETS } from './aged-balance.js';
 export interface PartnerLedgerOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
-  orgField?: string;
+  orgField?: string | undefined;
 }
 
 export interface PartnerLedgerParams {
-  organizationId?: unknown;
+  organizationId?: unknown | undefined;
   /**
    * The control account being ledgered — typically `2111 A/P`
    * (supplier statement) or `1141 A/R` (customer statement).
@@ -50,7 +50,7 @@ export interface PartnerLedgerParams {
    * Default: `'partnerId'`. Whatever you declared in
    * `schemaOptions.journalEntry.extraItemFields`.
    */
-  partnerField?: string;
+  partnerField?: string | undefined;
   /**
    * The specific partner whose statement we're generating. Required —
    * to get all partners use `generateAgedBalance` instead.
@@ -62,23 +62,23 @@ export interface PartnerLedgerParams {
    * If true, include items already matched (settled) inside the period.
    * Default: true — statements show settled activity in the period.
    */
-  includeMatched?: boolean;
+  includeMatched?: boolean | undefined;
   /** Custom aged buckets for the open-items summary. */
-  buckets?: AgedBucketConfig[];
+  buckets?: AgedBucketConfig[] | undefined;
 }
 
 export interface PartnerLedgerLine {
   date: Date;
   entry: unknown;
   itemIndex: number;
-  referenceNumber?: string;
-  label?: string;
+  referenceNumber?: string | undefined;
+  label?: string | undefined;
   debit: number;
   credit: number;
   /** Running balance (debit - credit, signed) including this row. */
   balance: number;
   matchingNumber: string | null;
-  maturityDate?: Date | null;
+  maturityDate?: Date | null | undefined;
   /** Days past `maturityDate` as of `endDate`; null if no maturity set. */
   daysPastDue: number | null;
   isMatched: boolean;
@@ -231,13 +231,13 @@ export async function generatePartnerLedger(
     date: Date;
     entry: unknown;
     itemIndex: number;
-    referenceNumber?: string;
-    label?: string;
+    referenceNumber?: string | undefined;
+    label?: string | undefined;
     debit: number;
     credit: number;
     runningDelta: number;
     matchingNumber: string | null;
-    maturityDate?: Date | null;
+    maturityDate?: Date | null | undefined;
   }>;
 
   const endMs = endDate.getTime();
@@ -288,8 +288,10 @@ export async function generatePartnerLedger(
       partnerId,
       controlAccount: {
         id: controlAccountId,
-        name: accountDoc?.name as string | undefined,
-        code: accountDoc?.accountNumber as string | undefined,
+        ...(accountDoc?.name !== undefined ? { name: accountDoc.name as string } : {}),
+        ...(accountDoc?.accountNumber !== undefined
+          ? { code: accountDoc.accountNumber as string }
+          : {}),
       },
       period: {
         startDate: startDate.toISOString().split('T')[0],

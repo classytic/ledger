@@ -19,9 +19,9 @@ import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface AccountIntegrations {
-  events?: EventTransport;
-  bridges?: LedgerBridges;
-  outboxStore?: OutboxStore;
+  events?: EventTransport | undefined;
+  bridges?: LedgerBridges | undefined;
+  outboxStore?: OutboxStore | undefined;
   /**
    * JournalEntry model — when provided, the repository blocks hard deletion
    * of accounts that are referenced by any posted journal item. Without

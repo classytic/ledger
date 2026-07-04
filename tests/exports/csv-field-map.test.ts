@@ -156,7 +156,7 @@ describe('quickbooksFieldMap', () => {
     journalType: 'SALES',
     referenceNumber: 'SALES/2025/01/0001',
     entryLabel: 'Sale',
-    entryDate: new Date(2025, 0, 15), // Jan 15, 2025
+    entryDate: new Date(Date.UTC(2025, 0, 15)), // Jan 15, 2025 (UTC — the export formats in UTC)
     state: 'posted',
     reversed: false,
     totalDebit: 10000,
@@ -165,7 +165,7 @@ describe('quickbooksFieldMap', () => {
     accountName: 'Cash',
     accountTypeCode: '1010',
     itemLabel: 'Cash received',
-    itemDate: new Date(2025, 0, 15),
+    itemDate: new Date(Date.UTC(2025, 0, 15)),
     debit: 10000,
     credit: 0,
     taxCode: 'GST',

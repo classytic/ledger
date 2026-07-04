@@ -37,10 +37,13 @@ export function createEvent<T>(
   ctx?: EventContext,
   meta?: Partial<DomainEvent['meta']>,
 ): DomainEvent<T> {
+  const userId = toIdString(ctx?.actorId);
+  const organizationId = toIdString(ctx?.organizationId);
+  const correlationId = ctx?.correlationId ?? ctx?.traceId;
   return createPrimitiveEvent(type, payload, {
-    userId: toIdString(ctx?.actorId),
-    organizationId: toIdString(ctx?.organizationId),
-    correlationId: ctx?.correlationId ?? ctx?.traceId,
+    ...(userId !== undefined ? { userId } : {}),
+    ...(organizationId !== undefined ? { organizationId } : {}),
+    ...(correlationId !== undefined ? { correlationId } : {}),
     ...meta,
   });
 }

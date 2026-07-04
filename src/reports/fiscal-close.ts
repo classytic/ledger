@@ -24,10 +24,10 @@ export interface FiscalCloseOptions {
   JournalEntryModel: Model<unknown>;
   FiscalPeriodModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
   /** The retained earnings account code — where year-end net income is transferred to */
-  retainedEarningsAccountCode?: string;
-  logger?: Logger;
+  retainedEarningsAccountCode?: string | undefined;
+  logger?: Logger | undefined;
 }
 
 export interface FiscalCloseResult {
@@ -42,9 +42,9 @@ export async function closeFiscalPeriod(
   opts: FiscalCloseOptions,
   params: {
     periodId: unknown;
-    organizationId?: unknown;
-    closedBy?: string;
-    session?: ClientSession;
+    organizationId?: unknown | undefined;
+    closedBy?: string | undefined;
+    session?: ClientSession | undefined;
   },
 ): Promise<FiscalCloseResult> {
   const {
@@ -226,16 +226,16 @@ export interface FiscalReopenResult {
 
 export async function reopenFiscalPeriod(
   opts: Pick<FiscalCloseOptions, 'JournalEntryModel' | 'FiscalPeriodModel'> & {
-    orgField?: string;
-    logger?: Logger;
+    orgField?: string | undefined;
+    logger?: Logger | undefined;
     /** Any model on the same connection — used to start sessions */
-    AccountModel?: Model<unknown>;
+    AccountModel?: Model<unknown> | undefined;
   },
   params: {
     periodId: unknown;
-    organizationId?: unknown;
-    reopenedBy?: string;
-    session?: ClientSession;
+    organizationId?: unknown | undefined;
+    reopenedBy?: string | undefined;
+    session?: ClientSession | undefined;
   },
 ): Promise<FiscalReopenResult> {
   const { JournalEntryModel, FiscalPeriodModel, orgField, logger = defaultLogger } = opts;

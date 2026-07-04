@@ -33,9 +33,9 @@ import { safePublish } from '../utils/safe-publish.js';
 import { requireOrgScope } from '../utils/tenant-guard.js';
 
 export interface ReconciliationIntegrations {
-  events?: EventTransport;
-  bridges?: LedgerBridges;
-  outboxStore?: OutboxStore;
+  events?: EventTransport | undefined;
+  bridges?: LedgerBridges | undefined;
+  outboxStore?: OutboxStore | undefined;
 }
 
 // ─── Hook context types (exported for plugin consumers) ─────────────────────
@@ -294,7 +294,7 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
         },
       },
     }));
-    await JournalEntryModel.bulkWrite(bulkOps, { session: session ?? undefined });
+    await JournalEntryModel.bulkWrite(bulkOps, session ? { session } : {});
 
     // Create the reconciliation doc via the repository so its hooks fire.
     const reconciliationData: Record<string, unknown> = {
@@ -411,7 +411,7 @@ export function wireReconciliationMethods<TDoc = Record<string, unknown>>(
       },
     }));
     if (bulkOps.length > 0) {
-      await JournalEntryModel.bulkWrite(bulkOps, { session: session ?? undefined });
+      await JournalEntryModel.bulkWrite(bulkOps, session ? { session } : {});
     }
 
     // Route through repository.delete so hooks fire.

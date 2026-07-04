@@ -21,8 +21,10 @@ export interface TrialBalanceOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
-  fiscalYearStartMonth?: number;
+  orgField?: string | undefined;
+  fiscalYearStartMonth?: number | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
   /**
    * Equity account that absorbs prior fiscal years' net income (GIFI '3660' on
    * CA). Defaults to the country pack value. When set, the trial balance rolls
@@ -32,19 +34,19 @@ export interface TrialBalanceOptions {
    * earnings in real bookkeeping. Without it the opening column is short by the
    * prior years' net income.
    */
-  retainedEarningsAccountCode?: string;
+  retainedEarningsAccountCode?: string | undefined;
 }
 
 export async function generateTrialBalance(
   opts: TrialBalanceOptions,
   params: {
-    organizationId?: unknown;
+    organizationId?: unknown | undefined;
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
-    accountId?: string;
-    comparative?: 'monthly' | 'quarterly' | null;
-    businessName?: string;
-    filters?: Record<string, unknown>;
+    accountId?: string | undefined;
+    comparative?: 'monthly' | 'quarterly' | null | undefined;
+    businessName?: string | undefined;
+    filters?: Record<string, unknown> | undefined;
   },
 ): Promise<TrialBalanceReport> {
   const {
@@ -53,11 +55,12 @@ export async function generateTrialBalance(
     country,
     orgField,
     fiscalYearStartMonth = 1,
+    timezone = 'UTC',
     retainedEarningsAccountCode = country.retainedEarningsAccountCode,
   } = opts;
   requireOrgScope(orgField, params.organizationId);
-  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
-  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);
+  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null, timezone);
   const itemFilters = buildItemFilters(params.filters);
 
   // Fetch all active accounts
@@ -127,7 +130,7 @@ export async function generateTrialBalance(
     rangeStart: Date,
     rangeEnd: Date,
   ): Promise<TrialBalanceRow[]> => {
-    const fiscalYearStart = getFiscalYearStart(rangeStart, fiscalYearStartMonth);
+    const fiscalYearStart = getFiscalYearStart(rangeStart, fiscalYearStartMonth, timezone);
 
     const [bsInitial, isInitial, current, priorIs] = await Promise.all([
       bsIds.length
@@ -250,15 +253,15 @@ export async function generateTrialBalance(
 
   const periodDisplay =
     params.dateOption === 'year'
-      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`
-      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+      ? `For the year ended ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}`
+      : `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })} – ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: timezone })}`;
 
   return {
     metadata: {
       businessName: params.businessName,
       generatedAt: new Date().toISOString(),
-      periodStart: isoDate(startDate),
-      periodEnd: isoDate(endDate),
+      periodStart: isoDate(startDate, timezone),
+      periodEnd: isoDate(endDate, timezone),
       displayPeriod: periodDisplay,
       comparative: params.comparative ?? null,
     },

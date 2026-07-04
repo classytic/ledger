@@ -30,18 +30,20 @@ export interface BalanceSheetOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
-  fiscalYearStartMonth?: number;
+  orgField?: string | undefined;
+  fiscalYearStartMonth?: number | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
   /**
    * The retained earnings account code (e.g. '3600' CA, '3310' BD).
    * This account is excluded from normal equity grouping and its balance
    * is folded into the computed Retained Earnings section.
    */
-  retainedEarningsAccountCode?: string;
+  retainedEarningsAccountCode?: string | undefined;
   /** Display code for the "Previous Years Retained Earnings" line */
-  retainedEarningsDisplayCode?: string;
+  retainedEarningsDisplayCode?: string | undefined;
   /** Display code for current year net income (default: '3680') */
-  currentYearEarningsCode?: string;
+  currentYearEarningsCode?: string | undefined;
 }
 
 interface BalanceSheetSnapshot {
@@ -61,12 +63,12 @@ interface BalanceSheetSnapshot {
 export async function generateBalanceSheet(
   opts: BalanceSheetOptions,
   params: {
-    organizationId?: unknown;
+    organizationId?: unknown | undefined;
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
-    comparative?: 'monthly' | 'quarterly' | null;
-    businessName?: string;
-    filters?: Record<string, unknown>;
+    comparative?: 'monthly' | 'quarterly' | null | undefined;
+    businessName?: string | undefined;
+    filters?: Record<string, unknown> | undefined;
   },
 ): Promise<BalanceSheetReport> {
   const {
@@ -75,15 +77,16 @@ export async function generateBalanceSheet(
     country,
     orgField,
     fiscalYearStartMonth = 1,
+    timezone = 'UTC',
     retainedEarningsAccountCode = country.retainedEarningsAccountCode,
     retainedEarningsDisplayCode = country.retainedEarningsDisplayCode ??
       retainedEarningsAccountCode,
     currentYearEarningsCode = country.currentYearEarningsCode ?? '3680',
   } = opts;
   requireOrgScope(orgField, params.organizationId);
-  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue);
-  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null);
-  const fiscalYearStart = getFiscalYearStart(endDate, fiscalYearStartMonth);
+  const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);
+  const periods = buildPeriodColumns(startDate, endDate, params.comparative ?? null, timezone);
+  const fiscalYearStart = getFiscalYearStart(endDate, fiscalYearStartMonth, timezone);
   const itemFilters = buildItemFilters(params.filters);
 
   // Fetch accounts
@@ -273,7 +276,7 @@ export async function generateBalanceSheet(
       },
       {
         id: 'current-year',
-        name: `Current Year Net Income (${endDate.getFullYear()})`,
+        name: `Current Year Net Income (${isoDate(endDate, timezone).slice(0, 4)})`,
         code: currentYearEarningsCode,
         balance: netIncome,
         isCalculated: true,
@@ -408,8 +411,8 @@ export async function generateBalanceSheet(
     metadata: {
       businessName: params.businessName,
       generatedAt: new Date().toISOString(),
-      asOfDate: isoDate(endDate),
-      displayDate: `As of ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+      asOfDate: isoDate(endDate, timezone),
+      displayDate: `As of ${endDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: timezone })}`,
       comparative: params.comparative ?? null,
       // Country-pack display labels — same projection as the IS report.
       labels: {

@@ -27,7 +27,7 @@ export interface DoubleEntryPluginOptions {
   /** Account model — when provided, posted creates verify account existence + tenant scoping */
   AccountModel?: Model<unknown>;
   /** Multi-tenant org field name (e.g. 'business'). Required for tenant-account integrity checks. */
-  orgField?: string;
+  orgField?: string | undefined;
 }
 
 export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
@@ -408,10 +408,31 @@ export function doubleEntryPlugin(options: DoubleEntryPluginOptions = {}) {
         }
       };
 
+      // ── before:claimVersion — version-stamp CAS (mongokit 3.16) ────────
+      //
+      // `claimVersion()` carries an OPERATOR-shaped update ({ $set, $inc })
+      // where `update()` carries field-shape data. Unwrap the `$set` view
+      // and delegate to the same validation `before:update` runs, so item
+      // edits riding claimVersion (the engine's `updateDraft()` verb, or a
+      // host calling claimVersion directly) get identical line-shape,
+      // account-existence, and posted-entry guards.
+      const validateClaimVersion = async (context: RepositoryContext) => {
+        const operatorData = context.data as
+          | { $set?: Record<string, unknown> }
+          | Record<string, unknown>
+          | undefined;
+        const set =
+          operatorData && '$set' in operatorData
+            ? ((operatorData.$set ?? {}) as Record<string, unknown>)
+            : ((operatorData ?? {}) as Record<string, unknown>);
+        await validateUpdate({ ...context, data: set } as RepositoryContext);
+      };
+
       repo.on('before:create', validate);
       repo.on('before:createMany', validateMany);
       repo.on('before:update', validateUpdate);
       repo.on('before:claim', validateClaim);
+      repo.on('before:claimVersion', validateClaimVersion);
     },
   };
 }

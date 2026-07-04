@@ -25,17 +25,17 @@ export interface RevaluationOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
   baseCurrency: string;
 }
 
 export interface RevaluationParams {
-  organizationId?: unknown;
+  organizationId?: unknown | undefined;
   asOfDate: Date;
   rates: RevaluationRate[];
   unrealizedGainLossAccountId: unknown;
   /** If true, create and save the revaluation journal entry */
-  generateEntry?: boolean;
+  generateEntry?: boolean | undefined;
 }
 
 export interface RevaluationReport {
@@ -47,7 +47,7 @@ export interface RevaluationReport {
   results: RevaluationResult[];
   totalGainLoss: number;
   /** Present only when generateEntry was true */
-  entryId?: unknown;
+  entryId?: unknown | undefined;
 }
 
 // ─── Generator ────────────────────────────────────────────────────────────────

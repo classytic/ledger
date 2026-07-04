@@ -1,4 +1,6 @@
 import type { ComparativeMode, PeriodColumn } from '../types/report.js';
+import { civilDateOf } from '@classytic/primitives/timezone';
+import { civilPartsOf, endBefore, zonedFirstOfMonth } from './zoned-boundaries.js';
 
 const MONTH_LABELS = [
   'Jan',
@@ -21,15 +23,9 @@ export interface InternalPeriod {
   end: Date;
 }
 
-export function isoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function endOfMonth(year: number, month: number): Date {
-  return new Date(year, month + 1, 0, 23, 59, 59, 999);
+/** Civil date (`YYYY-MM-DD`) of `d` in the reporting `zone` (default `'UTC'`). */
+export function isoDate(d: Date, zone = 'UTC'): string {
+  return civilDateOf(d, zone);
 }
 
 function maxDate(a: Date, b: Date): Date {
@@ -47,6 +43,7 @@ function pushClampedPeriod(
   rawEnd: Date,
   outerStart: Date,
   outerEnd: Date,
+  zone: string,
 ) {
   const start = maxDate(rawStart, outerStart);
   const end = minDate(rawEnd, outerEnd);
@@ -55,8 +52,8 @@ function pushClampedPeriod(
   periods.push({
     column: {
       ...column,
-      startDate: isoDate(start),
-      endDate: isoDate(end),
+      startDate: isoDate(start, zone),
+      endDate: isoDate(end, zone),
     },
     start,
     end,
@@ -67,15 +64,16 @@ export function buildPeriodColumns(
   outerStart: Date,
   outerEnd: Date,
   comparative: ComparativeMode,
+  zone = 'UTC',
 ): InternalPeriod[] {
   if (!comparative) {
     return [
       {
         column: {
           key: 'total',
-          label: `${outerStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${outerEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`,
-          startDate: isoDate(outerStart),
-          endDate: isoDate(outerEnd),
+          label: `${outerStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: zone })} - ${outerEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: zone })}`,
+          startDate: isoDate(outerStart, zone),
+          endDate: isoDate(outerEnd, zone),
         },
         start: outerStart,
         end: outerEnd,
@@ -84,10 +82,12 @@ export function buildPeriodColumns(
   }
 
   const periods: InternalPeriod[] = [];
-  const startYear = outerStart.getFullYear();
-  const startMonth = outerStart.getMonth();
-  const endYear = outerEnd.getFullYear();
-  const endMonth = outerEnd.getMonth();
+  const s = civilPartsOf(outerStart, zone);
+  const e = civilPartsOf(outerEnd, zone);
+  const startYear = s.year;
+  const startMonth = s.month - 1; // 0-indexed
+  const endYear = e.year;
+  const endMonth = e.month - 1;
 
   if (comparative === 'monthly') {
     let y = startYear;
@@ -96,10 +96,11 @@ export function buildPeriodColumns(
       pushClampedPeriod(
         periods,
         { key: `${y}-${String(m + 1).padStart(2, '0')}`, label: `${MONTH_LABELS[m]} ${y}` },
-        new Date(y, m, 1),
-        endOfMonth(y, m),
+        zonedFirstOfMonth(y, m + 1, zone),
+        endBefore(zonedFirstOfMonth(y, m + 2, zone)),
         outerStart,
         outerEnd,
+        zone,
       );
       m += 1;
       if (m === 12) {
@@ -115,10 +116,11 @@ export function buildPeriodColumns(
       pushClampedPeriod(
         periods,
         { key: `${y}-Q${q + 1}`, label: `Q${q + 1} ${y}` },
-        new Date(y, q * 3, 1),
-        endOfMonth(y, q * 3 + 2),
+        zonedFirstOfMonth(y, q * 3 + 1, zone),
+        endBefore(zonedFirstOfMonth(y, q * 3 + 4, zone)),
         outerStart,
         outerEnd,
+        zone,
       );
       q += 1;
       if (q === 4) {
@@ -132,8 +134,8 @@ export function buildPeriodColumns(
     column: {
       key: 'total',
       label: `Total ${endYear === startYear ? endYear : `${startYear}-${endYear}`}`,
-      startDate: isoDate(outerStart),
-      endDate: isoDate(outerEnd),
+      startDate: isoDate(outerStart, zone),
+      endDate: isoDate(outerEnd, zone),
       isTotal: true,
     },
     start: outerStart,

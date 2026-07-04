@@ -39,9 +39,9 @@ export interface LockHit {
   /** Human-readable label used in error messages (e.g. `'Q1 2025'`). */
   readonly label: string;
   /** Optional sub-type inside the scope (e.g. `'VAT'`, `'TDS'`, `'GST'`). */
-  readonly subType?: string;
+  readonly subType?: string | undefined;
   /** Optional external reference (filed return number, statement ID, …). */
-  readonly externalRef?: string;
+  readonly externalRef?: string | undefined;
 }
 
 /**
@@ -106,14 +106,14 @@ export interface CreateLockPluginOptions {
   accountSelector?: LockAccountSelector;
 
   /** Required when `accountSelector` is set — used to hydrate accounts. */
-  AccountModel?: Model<unknown>;
+  AccountModel?: Model<unknown> | undefined;
 
   /**
    * Journal-entry model — required for partial updates (we need to look
    * up the persisted `date` and `orgField` when the payload omits them).
    */
-  JournalEntryModel?: Model<unknown>;
+  JournalEntryModel?: Model<unknown> | undefined;
 
   /** Multi-tenant scope field name (e.g. `'organizationId'`). */
-  orgField?: string;
+  orgField?: string | undefined;
 }

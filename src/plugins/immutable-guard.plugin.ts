@@ -23,7 +23,7 @@ export interface ImmutableGuardOptions {
   /** The JournalEntry Mongoose model, for looking up current state on update. */
   JournalEntryModel: Model<unknown>;
   /** Multi-tenant org field name (if enabled). */
-  orgField?: string;
+  orgField?: string | undefined;
 }
 
 type InternalCtx = RepositoryContext & {
@@ -67,6 +67,29 @@ export function immutableGuardPlugin(options: ImmutableGuardOptions): PluginFunc
 
     // Block direct deletes on posted entries.
     repo.on('before:delete', async (ctx: InternalCtx) => {
+      if (ctx._ledgerInternal) return;
+      const id = ctx.id;
+      if (!id) return;
+      const query: Record<string, unknown> = { _id: id };
+      if (orgField && ctx.query && orgField in ctx.query) {
+        query[orgField] = ctx.query[orgField];
+      }
+      const current = (await JournalEntryModel.findOne(query).select({ state: 1 }).lean()) as {
+        state?: string;
+      } | null;
+      if (current?.state === 'posted') {
+        throw new ImmutableViolationError(id);
+      }
+    });
+
+    // ── before:claimVersion — same contract as before:update ───────────
+    //
+    // `claimVersion()` (mongokit 3.16) is an update-shaped write with a
+    // version-stamp CAS. Without this hook a host could patch a posted
+    // entry via `repo.claimVersion(...)` and bypass the update guard.
+    // The engine's own `updateDraft()` verb rides claimVersion and is
+    // constrained to drafts by its CAS `where`, so it never trips this.
+    repo.on('before:claimVersion', async (ctx: InternalCtx) => {
       if (ctx._ledgerInternal) return;
       const id = ctx.id;
       if (!id) return;

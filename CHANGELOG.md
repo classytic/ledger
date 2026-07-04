@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.15.0 — 2026-07-04
+
+### Changed (behavioral)
+
+- **ISO 4217 currency gate via primitives (P1)** — the reconciliation
+  event-catalog `currency` field (`z.string().nullable()` — accepted
+  anything) now validates with `CURRENCY_PATTERN` from
+  `@classytic/primitives/currency` (still nullable). Stricter
+  publish-time validation when hosts run `validateMode: 'reject'` — a
+  MINOR bump per 0.x convention. Primitives peer floor raised to
+  `>=0.9.1` (first version exporting the pattern).
+
+## 0.14.0 — 2026-07-03
+
+Concurrency + boot-safety release: mongokit 3.16's `claimVersion()` adopted
+end-to-end, a fail-fast capability gate, `exactOptionalPropertyTypes`, and
+the primitives-0.9 timezone migration (zone-aware report boundaries)
+finished and stabilized.
+
+### Added — `updateDraft()` (version-guarded draft edits)
+
+`repositories.journalEntries.updateDraft(id, patch, orgId?, { expectedVersion?, actorId?, session? })`
+— rides mongokit 3.16's `claimVersion()` CAS on `__v`. Plain
+`repository.update()` on drafts is last-write-wins (mongoose's
+`optimisticConcurrency` only guards `save()`, not `findOneAndUpdate`);
+this verb closes that gap:
+
+- CAS `where: { state: 'draft' }` — a mid-edit post/archive is a clean
+  miss, never a mixed write. Losses surface as typed errors:
+  `ConcurrencyError` (version moved), `ImmutableViolationError` (left
+  draft), `NOT_FOUND` (vanished).
+- `expectedVersion` pins the `__v` the caller last read (send it from the
+  loaded form) for true read-to-write optimistic locking.
+- Engine-managed fields (state, totals, referenceNumber, audit stamps…)
+  are rejected; `journalItems` patches revalidate line shape and resync
+  `totalDebit`/`totalCredit` (findOneAndUpdate bypasses the schema
+  pre-validate hook, so the verb owns that sync).
+
+`claimVersion` is now a FIRST-CLASS GUARDED OPERATION: the double-entry,
+immutable-guard, and lock plugins all register `before:claimVersion`
+(operator-shaped `$set` unwrapped to the update-path validators), so a
+host calling `repo.claimVersion()` directly cannot bypass posted-entry
+immutability, item validation, or period locks.
+
+### Added — boot capability gate
+
+`createAccountingEngine` now asserts the repository backend's
+`RepoCapabilities` (flow/order/catalog pattern) via the exported
+`assertLedgerCapabilities()`: `upsert` + `duplicateKeyError` always
+(atomic counters + race-safe idempotent create depend on them);
+**`transactions` when an `outboxStore` is configured** — the durable-event
+contract is unenforceable without multi-document transactions, so the
+engine refuses to pretend. Standalone-Mongo hosts WITHOUT an outbox keep
+working (the posting paths retain their non-transactional fallback).
+
+### Changed — primitives 0.9 / zone-aware boundaries (migration completed)
+
+- Peers: `@classytic/primitives >=0.9.0` (was >=0.6.0).
+- `getDateRange` / `getFiscalYearStart` / `period-columns` resolve civil
+  boundaries in the engine's reporting `zone` (default `'UTC'`) via
+  `primitives/timezone` + the new `utils/zoned-boundaries.ts` — never the
+  server-local `new Date(y, m, d)` constructor, which shifted report
+  windows with the deploy machine's TZ (PACKAGE_RULES P12). UTC-deployed
+  hosts see identical behavior; non-UTC hosts stop drifting.
+- QuickBooks CSV export formats dates in UTC (deterministic across deploy
+  machines).
+- Test suite rewritten to assert UTC-civil boundaries (`Date.UTC`
+  fixtures, `getUTC*` getters) plus a non-UTC-zone case (Asia/Dhaka), so
+  it passes identically on any machine TZ.
+
+### Changed — `exactOptionalPropertyTypes: true`
+
+Enabled in tsconfig (PACKAGE_RULES P10); ~30 interfaces across reports,
+plugins, repositories, and types widened to `T | undefined`, plus
+conditional spreads where object literals fed exact-optional targets.
+`MultiTenantConfig` now extends repo-core 0.6.1's fully-widened
+`TenantConfig` with no exceptions (peer bumped to
+`@classytic/repo-core >= 0.6.1`).
+
+### Docs
+
+- README **Production Wiring Checklist**: `fxRealizationPlugin` must be
+  wired explicitly for multi-currency (silent-miss risk), the outbox relay
+  is host responsibility, and fiscal-period REOPENING has no cascade guard
+  — treat it as audit-gated.
+- CLAUDE.md: mongokit >= 3.16 feature-floor inventory.
+
+### Tests
+
+1363 passing (+29: updateDraft suite, capability-gate suite, rewritten
+zone-aware date-range suite).
+
 ## 0.13.0 — 2026-06-13
 
 ### Stack — mongokit 3.16 / repo-core 0.6 / primitives 0.7

@@ -11,7 +11,7 @@ import type { DateRange } from './core.js';
 // ─── Shared ──────────────────────────────────────────────────────────────────
 
 export interface ReportMetadata {
-  businessName?: string;
+  businessName?: string | undefined;
   generatedAt: string;
 }
 
@@ -20,9 +20,9 @@ export interface ReportAccount {
   name: string;
   code: string;
   balance: number;
-  isTotal?: boolean;
-  isVirtualTotal?: boolean;
-  isCalculated?: boolean;
+  isTotal?: boolean | undefined;
+  isVirtualTotal?: boolean | undefined;
+  isCalculated?: boolean | undefined;
 }
 
 export interface ReportGroup {
@@ -57,9 +57,9 @@ export interface PeriodColumn {
    */
   endDate: string;
   /** True for aggregate columns appended after detail columns. */
-  isTotal?: boolean;
+  isTotal?: boolean | undefined;
   /** True when the column is an aging bucket rather than a date period. */
-  isAgeBucket?: boolean;
+  isAgeBucket?: boolean | undefined;
 }
 
 export interface ReportLine<TSource = Record<string, unknown>> {
@@ -95,7 +95,7 @@ export interface TrialBalanceReport {
     periodStart: string;
     periodEnd: string;
     displayPeriod: string;
-    comparative?: ComparativeMode;
+    comparative?: ComparativeMode | undefined;
   };
   period: DateRange;
   periods: PeriodColumn[];
@@ -108,14 +108,18 @@ export interface BalanceSheetReport {
   metadata: ReportMetadata & {
     asOfDate: string;
     displayDate: string;
-    comparative?: ComparativeMode;
+    comparative?: ComparativeMode | undefined;
     /**
      * Display labels sourced from the country pack's `reportLabels`. FE
      * renders section headers from these so the same engine output can
      * power "Stockholders' Equity" (US) or "Owners' Equity" (UK) without
      * a fork. Defaults: assets='Assets', liabilities='Liabilities', equity='Equity'.
      */
-    labels?: { assets?: string; liabilities?: string; equity?: string };
+    labels?: {
+      assets?: string | undefined;
+      liabilities?: string | undefined;
+      equity?: string | undefined;
+    };
   };
   periods: PeriodColumn[];
   summaryByPeriod: {
@@ -149,13 +153,13 @@ export interface IncomeStatementReport {
     periodStart: string;
     periodEnd: string;
     displayPeriod: string;
-    comparative?: ComparativeMode;
+    comparative?: ComparativeMode | undefined;
     /**
      * Display labels sourced from the country pack's `reportLabels`. Same
      * shape as `BalanceSheetReport.metadata.labels`; powers section
      * headers like "Net Revenue" (US) vs "Revenue" (default).
      */
-    labels?: { revenue?: string; expenses?: string };
+    labels?: { revenue?: string | undefined; expenses?: string | undefined };
   };
   periods: PeriodColumn[];
   revenueSection: IncomeStatementSection;
@@ -194,7 +198,7 @@ export interface GeneralLedgerAccount {
 }
 
 export interface GeneralLedgerReport {
-  metadata?: ReportMetadata & { periodStart: string; periodEnd: string; displayPeriod: string };
+  metadata?: ReportMetadata & { periodStart: string | undefined; periodEnd: string; displayPeriod: string };
   accounts: GeneralLedgerAccount[];
   period: DateRange;
 }
@@ -252,9 +256,9 @@ export interface CashFlowReport {
     periodEnd: string;
     displayPeriod: string;
     /** Currency the report is denominated in. */
-    currency?: string;
+    currency?: string | undefined;
     /** Comparative mode used to build the columns ('monthly' | 'quarterly' | null). */
-    comparative?: ComparativeMode;
+    comparative?: ComparativeMode | undefined;
   };
   /** Column definitions in display order. Always at least one entry. */
   periods: CashFlowPeriodColumn[];
@@ -282,26 +286,26 @@ export interface PeriodParams {
    * Keys are dot-path field names (e.g. 'journalItems.departmentId').
    * Values are matched with equality or MongoDB query operators.
    */
-  filters?: Record<string, unknown>;
+  filters?: Record<string, unknown> | undefined;
 }
 
 export interface BalanceSheetParams extends PeriodParams {
-  organizationId?: string;
-  comparative?: ComparativeMode;
+  organizationId?: string | undefined;
+  comparative?: ComparativeMode | undefined;
 }
 
 export interface IncomeStatementParams extends PeriodParams {
-  organizationId?: string;
-  comparative?: ComparativeMode;
+  organizationId?: string | undefined;
+  comparative?: ComparativeMode | undefined;
 }
 
 export interface TrialBalanceParams extends PeriodParams {
-  organizationId?: string;
-  accountId?: string;
-  comparative?: ComparativeMode;
+  organizationId?: string | undefined;
+  accountId?: string | undefined;
+  comparative?: ComparativeMode | undefined;
 }
 
 export interface GeneralLedgerParams extends PeriodParams {
-  organizationId?: string;
-  accountId?: string;
+  organizationId?: string | undefined;
+  accountId?: string | undefined;
 }

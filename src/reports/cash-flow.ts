@@ -51,18 +51,20 @@ export interface CashFlowOptions {
   AccountModel: Model<unknown>;
   JournalEntryModel: Model<unknown>;
   country: CountryPack;
-  orgField?: string;
+  orgField?: string | undefined;
+  /** IANA reporting zone for civil period boundaries (default 'UTC'). */
+  timezone?: string | undefined;
 }
 
 type ObjectId = Types.ObjectId;
 
 interface AccountRow {
   _id: ObjectId;
-  accountTypeCode?: string;
-  accountNumber?: string;
-  name?: string;
-  isCashAccount?: boolean;
-  cashflowSection?: 'operating' | 'investing' | 'financing' | 'excluded' | null;
+  accountTypeCode?: string | undefined;
+  accountNumber?: string | undefined;
+  name?: string | undefined;
+  isCashAccount?: boolean | undefined;
+  cashflowSection?: 'operating' | 'investing' | 'financing' | 'excluded' | null | undefined;
 }
 
 type Section = 'operating' | 'investing' | 'financing' | 'cash' | 'excluded';
@@ -104,7 +106,10 @@ const TAG_DISPLAY_NAMES: Record<string, string> = {
  * Country-pack convention: account codes 1111-1130 are cash & near-cash.
  * The per-Account `isCashAccount: true` flag is the authoritative override.
  */
-function isCashAccount(meta: { isCashAccount?: boolean; accountTypeCode?: string }): boolean {
+function isCashAccount(meta: {
+  isCashAccount?: boolean | undefined;
+  accountTypeCode?: string | undefined;
+}): boolean {
   if (meta.isCashAccount === true) return true;
   return /^11(1[0-9]|2[0-9]|30)$/.test(meta.accountTypeCode ?? '');
 }
@@ -134,25 +139,26 @@ function tagDisplayName(tag: string): string {
 export async function generateCashFlow(
   opts: CashFlowOptions,
   params: {
-    organizationId?: unknown;
+    organizationId?: unknown | undefined;
     dateOption: 'month' | 'quarter' | 'year' | 'custom';
     dateValue: unknown;
     /** Expand the outer range into per-month or per-quarter columns + a YTD total. */
-    comparative?: 'monthly' | 'quarterly' | null;
-    businessName?: string;
-    filters?: Record<string, unknown>;
-    currency?: string;
+    comparative?: 'monthly' | 'quarterly' | null | undefined;
+    businessName?: string | undefined;
+    filters?: Record<string, unknown> | undefined;
+    currency?: string | undefined;
   },
 ): Promise<CashFlowReport> {
-  const { AccountModel, JournalEntryModel, country, orgField } = opts;
+  const { AccountModel, JournalEntryModel, country, orgField, timezone = 'UTC' } = opts;
   requireOrgScope(orgField, params.organizationId);
   const { startDate: outerStart, endDate: outerEnd } = getDateRange(
     params.dateOption,
     params.dateValue,
+    timezone,
   );
   const itemFilters = buildItemFilters(params.filters);
 
-  const periods = buildPeriodColumns(outerStart, outerEnd, params.comparative ?? null);
+  const periods = buildPeriodColumns(outerStart, outerEnd, params.comparative ?? null, timezone);
 
   // ─── Load chart of accounts + country-pack metadata ──────────────────────
   const accountQuery: Record<string, unknown> = { active: true };
@@ -179,7 +185,7 @@ export async function generateCashFlow(
     metas.set(String(acc._id), meta);
   }
 
-  if (metas.size === 0) return emptyReport(periods, params);
+  if (metas.size === 0) return emptyReport(periods, params, timezone);
 
   // Compute one column at a time. Per-column queries trade roundtrips for
   // simplicity + correctness; comparative reports are bounded (≤13 columns
@@ -209,6 +215,7 @@ export async function generateCashFlow(
     outerStart,
     outerEnd,
     params,
+    timezone,
   });
 }
 
@@ -217,8 +224,8 @@ interface ColumnArgs {
   metas: Map<string, AccountMeta>;
   startDate: Date;
   endDate: Date;
-  orgField?: string;
-  organizationId?: unknown;
+  orgField?: string | undefined;
+  organizationId?: unknown | undefined;
   itemFilters: Record<string, unknown>;
 }
 
@@ -321,14 +328,15 @@ interface AssembleArgs {
   outerStart: Date;
   outerEnd: Date;
   params: {
-    businessName?: string;
-    currency?: string;
-    comparative?: 'monthly' | 'quarterly' | null;
+    businessName?: string | undefined;
+    currency?: string | undefined;
+    comparative?: 'monthly' | 'quarterly' | null | undefined;
   };
+  timezone: string;
 }
 
 function assembleReport(args: AssembleArgs): CashFlowReport {
-  const { periods, columnComputations, metas, outerStart, outerEnd, params } = args;
+  const { periods, columnComputations, metas, outerStart, outerEnd, params, timezone } = args;
 
   // Discover every line that appears in ANY column. Lines that are zero in
   // some columns still render across the row — same as comparative reports
@@ -469,14 +477,14 @@ function assembleReport(args: AssembleArgs): CashFlowReport {
       })),
   };
 
-  const periodDisplay = `${outerStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${outerEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+  const periodDisplay = `${outerStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })} – ${outerEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: timezone })}`;
 
   return {
     metadata: {
       businessName: params.businessName,
       generatedAt: new Date().toISOString(),
-      periodStart: isoDate(outerStart),
-      periodEnd: isoDate(outerEnd),
+      periodStart: isoDate(outerStart, timezone),
+      periodEnd: isoDate(outerEnd, timezone),
       displayPeriod: periodDisplay,
       ...(params.currency ? { currency: params.currency } : {}),
       comparative: params.comparative ?? null,
@@ -496,8 +504,8 @@ interface CashBalanceArgs {
   cashIds: ObjectId[];
   startDate: Date;
   endDate: Date;
-  orgField?: string;
-  organizationId?: unknown;
+  orgField?: string | undefined;
+  organizationId?: unknown | undefined;
 }
 
 async function computeCashBalances(args: CashBalanceArgs): Promise<{
@@ -548,10 +556,11 @@ async function computeCashBalances(args: CashBalanceArgs): Promise<{
 function emptyReport(
   periods: InternalPeriod[],
   params: {
-    businessName?: string;
-    currency?: string;
-    comparative?: 'monthly' | 'quarterly' | null;
+    businessName?: string | undefined;
+    currency?: string | undefined;
+    comparative?: 'monthly' | 'quarterly' | null | undefined;
   },
+  timezone: string,
 ): CashFlowReport {
   const zeros: Record<string, number> = {};
   const recon: Record<string, CashFlowColumnReconciliation> = {};
@@ -561,13 +570,13 @@ function emptyReport(
   }
   const outerStart = periods[0].start;
   const outerEnd = periods[periods.length - 1].end;
-  const periodDisplay = `${outerStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${outerEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`;
+  const periodDisplay = `${outerStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })} – ${outerEnd.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: timezone })}`;
   return {
     metadata: {
       businessName: params.businessName,
       generatedAt: new Date().toISOString(),
-      periodStart: isoDate(outerStart),
-      periodEnd: isoDate(outerEnd),
+      periodStart: isoDate(outerStart, timezone),
+      periodEnd: isoDate(outerEnd, timezone),
       displayPeriod: periodDisplay,
       ...(params.currency ? { currency: params.currency } : {}),
       comparative: params.comparative ?? null,

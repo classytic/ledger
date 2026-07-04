@@ -43,6 +43,16 @@ export interface ReverseOptions extends PostOptions {
   autoPost?: boolean;
 }
 
+export interface UpdateDraftOptions extends PostOptions {
+  /**
+   * The `__v` the caller last read (send it from the loaded document) so a
+   * concurrent edit between the read and this write surfaces as a typed
+   * `ConcurrencyError` instead of silently winning. Omitted → the current
+   * persisted version is used.
+   */
+  expectedVersion?: number;
+}
+
 export interface SeedOptions {
   session?: ClientSession | null;
 }
@@ -109,6 +119,19 @@ export interface JournalEntryRepository<TDoc = Record<string, unknown>> extends 
   duplicate(id: unknown, orgId?: unknown, options?: PostOptions): Promise<TDoc>;
   /** Reverse a posted entry. Creates mirror entry with flipped debits/credits. */
   reverse(id: unknown, orgId?: unknown, options?: ReverseOptions): Promise<ReverseResult<TDoc>>;
+  /**
+   * Version-guarded draft edit (0.14.0) — CAS on `__v` via mongokit 3.16's
+   * `claimVersion()`. Drafts only; engine-managed fields are rejected;
+   * `journalItems` patches revalidate line shape and resync the totals.
+   * Throws `ConcurrencyError` when another writer moved the version, and
+   * `ImmutableViolationError` when the entry left `draft` mid-edit.
+   */
+  updateDraft(
+    id: unknown,
+    patch: Record<string, unknown>,
+    orgId?: unknown,
+    options?: UpdateDraftOptions,
+  ): Promise<TDoc>;
 }
 
 // ── Account Repository ────────────────────────────────────────────────────
