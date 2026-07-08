@@ -129,6 +129,22 @@ export type {
   LedgerRepositoryPlugins,
 } from './repositories/factory.js';
 export { createRepositories } from './repositories/factory.js';
+export type {
+  AccountContext,
+  AccountPurpose,
+  AccountResolver,
+  AccountResolverConfig,
+  AccountRule,
+  ResolvedAccount,
+} from './resolver/account-resolver.js';
+// ── Account resolver — declarative GL-account resolution ────────────────────
+export {
+  ACCOUNT_PURPOSE,
+  createAccountResolver,
+  mergeAccountConfig,
+  tokenizeKeywords,
+  validateAccountRules,
+} from './resolver/account-resolver.js';
 
 // ── Public input shapes + builders ─────────────────────────────────────────
 
@@ -321,12 +337,12 @@ export type {
   MatchInput,
   OpenItem,
   PostOptions,
-  UpdateDraftOptions,
   ReconciliationRepository,
   ReverseOptions,
   ReverseResult,
   SeedOptions,
   SeedResult,
+  UpdateDraftOptions,
 } from './types/repositories.js';
 
 // ── Utilities ──────────────────────────────────────────────────────────────

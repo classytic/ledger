@@ -33,6 +33,7 @@
 
 import { QueryParser, type QueryParserOptions } from '@classytic/mongokit';
 import type { EventTransport } from '@classytic/primitives/events';
+import { isValidTimeZone } from '@classytic/primitives/timezone';
 import type { Model } from 'mongoose';
 import type { LedgerBridges } from './bridges/index.js';
 import type { CountryPack } from './country/index.js';
@@ -53,7 +54,6 @@ import { generateTrialBalance } from './reports/trial-balance.js';
 import { createRepositories, type LedgerRepositories } from './repositories/factory.js';
 import { buildIntrospectAPI, type IntrospectAPI } from './semantic/introspect.js';
 import { buildRecordAPI, type RecordAPI } from './semantic/record.js';
-import { isValidTimeZone } from '@classytic/primitives/timezone';
 import type { AccountingEngineConfig } from './types/engine.js';
 
 export class AccountingEngine {
@@ -234,33 +234,32 @@ export class AccountingEngine {
     const modelMap: Record<
       string,
       { model: Model<unknown>; pagination?: { maxLimit?: number | undefined } | undefined }
-    > =
-      {
-        account: {
-          model: this.models.Account as Model<unknown>,
-          pagination: paginationConfig.account,
-        },
-        journalEntry: {
-          model: this.models.JournalEntry as Model<unknown>,
-          pagination: paginationConfig.journalEntry,
-        },
-        fiscalPeriod: {
-          model: this.models.FiscalPeriod as Model<unknown>,
-          pagination: paginationConfig.fiscalPeriod,
-        },
-        budget: {
-          model: this.models.Budget as Model<unknown>,
-          pagination: paginationConfig.budget,
-        },
-        reconciliation: {
-          model: this.models.Reconciliation as Model<unknown>,
-          pagination: paginationConfig.reconciliation,
-        },
-        journal: {
-          model: this.models.Journal as Model<unknown>,
-          pagination: paginationConfig.journal,
-        },
-      };
+    > = {
+      account: {
+        model: this.models.Account as Model<unknown>,
+        pagination: paginationConfig.account,
+      },
+      journalEntry: {
+        model: this.models.JournalEntry as Model<unknown>,
+        pagination: paginationConfig.journalEntry,
+      },
+      fiscalPeriod: {
+        model: this.models.FiscalPeriod as Model<unknown>,
+        pagination: paginationConfig.fiscalPeriod,
+      },
+      budget: {
+        model: this.models.Budget as Model<unknown>,
+        pagination: paginationConfig.budget,
+      },
+      reconciliation: {
+        model: this.models.Reconciliation as Model<unknown>,
+        pagination: paginationConfig.reconciliation,
+      },
+      journal: {
+        model: this.models.Journal as Model<unknown>,
+        pagination: paginationConfig.journal,
+      },
+    };
 
     const entry = modelMap[model];
     if (!entry) {

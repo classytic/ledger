@@ -16,6 +16,7 @@ export default defineConfig({
             'tests/hardening/**/*.test.ts',
             'tests/money.test.ts',
             'tests/plugins/**/*.test.ts',
+            'tests/resolver/**/*.test.ts',
             'tests/schemas/**/*.test.ts',
             'tests/utils/**/*.test.ts',
           ],

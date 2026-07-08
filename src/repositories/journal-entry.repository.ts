@@ -873,7 +873,9 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       );
     }
     if (Object.keys(patch).some((k) => k.startsWith('$'))) {
-      throw Errors.validation('updateDraft() takes a field-shape patch — MongoDB operators are not allowed.');
+      throw Errors.validation(
+        'updateDraft() takes a field-shape patch — MongoDB operators are not allowed.',
+      );
     }
     if (Object.keys(patch).length === 0) {
       throw Errors.validation('updateDraft() patch is empty.');

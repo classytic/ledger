@@ -59,7 +59,14 @@ export async function generateBudgetVsActual(
   opts: BudgetVsActualOptions,
   params: BudgetVsActualParams,
 ): Promise<BudgetVsActualReport> {
-  const { AccountModel, JournalEntryModel, BudgetModel, country, orgField, timezone = 'UTC' } = opts;
+  const {
+    AccountModel,
+    JournalEntryModel,
+    BudgetModel,
+    country,
+    orgField,
+    timezone = 'UTC',
+  } = opts;
   requireOrgScope(orgField, params.organizationId);
 
   const { startDate, endDate } = getDateRange(params.dateOption, params.dateValue, timezone);

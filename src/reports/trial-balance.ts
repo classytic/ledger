@@ -180,8 +180,7 @@ export async function generateTrialBalance(
     // every account at its gross balance — so the TB's RE opening (prior only)
     // is intentionally less than the balance sheet's RE total (prior + current).
     if (rollForwardRE && priorIs.length > 0) {
-      const priorNet =
-        priorIs.reduce((s, r) => s + r.d, 0) - priorIs.reduce((s, r) => s + r.c, 0);
+      const priorNet = priorIs.reduce((s, r) => s + r.d, 0) - priorIs.reduce((s, r) => s + r.c, 0);
       if (priorNet !== 0) {
         const reKey = String(primaryReId);
         const re = map.get(reKey) ?? { iD: 0, iC: 0, cD: 0, cC: 0 };

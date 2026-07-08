@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.1 — 2026-07-08
+
+### Added
+
+- **`AccountResolver` / `createAccountResolver`** — declarative GL-account resolution engine: keyword-matched rules, account purpose taxonomy (`ACCOUNT_PURPOSE`), and merge helper (`mergeAccountConfig`). Exported from the root barrel.
+
 ## 0.15.0 — 2026-07-04
 
 ### Changed (behavioral)

@@ -1,5 +1,5 @@
-import type { ComparativeMode, PeriodColumn } from '../types/report.js';
 import { civilDateOf } from '@classytic/primitives/timezone';
+import type { ComparativeMode, PeriodColumn } from '../types/report.js';
 import { civilPartsOf, endBefore, zonedFirstOfMonth } from './zoned-boundaries.js';
 
 const MONTH_LABELS = [
