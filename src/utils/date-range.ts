@@ -9,7 +9,12 @@
  * deploy machine's `TZ` env. See `utils/zoned-boundaries.ts` + PACKAGE_RULES P12.
  */
 
-import { addCivilDays, civilDate, civilDateOf, civilDateToInstant } from '@classytic/primitives/timezone';
+import {
+  addCivilDays,
+  civilDate,
+  civilDateOf,
+  civilDateToInstant,
+} from '@classytic/primitives/timezone';
 import type { CustomDateRange, DateOption, DateRange, QuarterValue } from '../types/core.js';
 import { civilPartsOf, endBefore, zonedFirstOfMonth } from './zoned-boundaries.js';
 

@@ -198,7 +198,11 @@ export interface GeneralLedgerAccount {
 }
 
 export interface GeneralLedgerReport {
-  metadata?: ReportMetadata & { periodStart: string | undefined; periodEnd: string; displayPeriod: string };
+  metadata?: ReportMetadata & {
+    periodStart: string | undefined;
+    periodEnd: string;
+    displayPeriod: string;
+  };
   accounts: GeneralLedgerAccount[];
   period: DateRange;
 }
