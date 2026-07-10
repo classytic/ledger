@@ -113,6 +113,12 @@ interface ReverseOptions extends PostOptions {
   reversalDate?: Date;
   /** Post the reversal immediately. Defaults to false (ERPNext/Odoo standard — reversal is Draft). */
   autoPost?: boolean;
+  /**
+   * Human reason for the reversal, appended to the reversal entry's label so
+   * the GL records WHY it was reversed (e.g. "duplicate", "wrong branch").
+   * Mirrors Odoo's `reverse_moves` reason and ERPNext's amendment remark.
+   */
+  reason?: string;
 }
 
 interface UpdateDraftOptions extends PostOptions {
@@ -1030,10 +1036,12 @@ export function wireJournalEntryMethods<TDoc = unknown>(
       // returns Draft, docstatus=0) and Odoo (`_reverse_moves` creates
       // Draft via `.copy()`). Callers wanting Odoo's `cancel=True` semantic
       // pass `options.autoPost: true` to post via the `post()` action below.
+      const baseLabel = `Reversal of ${entry.referenceNumber ?? entry._id}`;
+      const reason = options.reason?.trim();
       const reversalData: Record<string, unknown> = {
         journalType: entry.journalType ?? 'MISC',
         date: options.reversalDate ?? new Date(),
-        label: `Reversal of ${entry.referenceNumber ?? entry._id}`,
+        label: reason ? `${baseLabel} — ${reason}` : baseLabel,
         journalItems: reversalItems,
         totalDebit,
         totalCredit,

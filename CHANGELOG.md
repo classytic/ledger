@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.15.2 — 2026-07-11
+
+### Added
+
+- **`ReverseOptions.reason?: string`** — optional human-readable reason for
+  the reversal, appended to the reversal entry's label (e.g. `"duplicate
+  posting"` → label becomes `"Reversal of MISC/2025/01/0001 — duplicate
+  posting"`). Mirrors Odoo's `reverse_moves` reason and ERPNext's amendment
+  remark; lets the GL self-document WHY an entry was reversed without
+  requiring a separate memo. Pure additive — callers that omit it get the
+  existing `"Reversal of …"` label unchanged.
+
+### Tests
+
+- `architectural-improvements.test.ts` — `reverse()` reason-appending
+  (trim + format) verified.
+
 ## 0.15.1 — 2026-07-08
 
 ### Added

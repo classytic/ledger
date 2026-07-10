@@ -41,6 +41,12 @@ export interface ReverseOptions extends PostOptions {
    * skip the review step.
    */
   autoPost?: boolean;
+  /**
+   * Human reason for the reversal, appended to the reversal entry's label so
+   * the GL records WHY it was reversed (e.g. "duplicate", "wrong branch").
+   * Mirrors Odoo's `reverse_moves` reason and ERPNext's amendment remark.
+   */
+  reason?: string;
 }
 
 export interface UpdateDraftOptions extends PostOptions {

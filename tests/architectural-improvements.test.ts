@@ -538,6 +538,40 @@ describe('Improvement 1: reverse()', () => {
     expect(result.reversal).toBe(reversalDoc);
   });
 
+  it('reverse() appends the reason to the reversal label', async () => {
+    const { wireJournalEntryMethods } = await import(
+      '../src/repositories/journal-entry.repository.js'
+    );
+
+    const accId = 'acc-123';
+    const mockEntry = {
+      _id: 'entry-1',
+      state: 'posted',
+      reversed: false,
+      journalType: 'MISC',
+      referenceNumber: 'MISC/2025/01/0001',
+      label: 'Test entry',
+      date: new Date('2025-01-15'),
+      journalItems: [
+        { account: { _id: accId }, debit: 10000, credit: 0, label: 'Rent' },
+        { account: { _id: accId }, debit: 0, credit: 10000, label: 'Cash' },
+      ],
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+    const repoCreate = vi.fn().mockResolvedValue({ _id: 'reversal-1' });
+    const repo: any = mockRepository({
+      create: repoCreate,
+      getByQuery: vi.fn().mockResolvedValue(mockEntry),
+    });
+    wireJournalEntryMethods(repo, {} as any);
+
+    await repo.reverse('entry-1', undefined, { reason: '  duplicate posting  ' });
+
+    const [reversalData] = repoCreate.mock.calls[0];
+    // reason is trimmed and appended after the base "Reversal of …" label.
+    expect(reversalData.label).toBe('Reversal of MISC/2025/01/0001 — duplicate posting');
+  });
+
   it('reverse() returns 404 for non-existent entry', async () => {
     const { wireJournalEntryMethods } = await import(
       '../src/repositories/journal-entry.repository.js'
