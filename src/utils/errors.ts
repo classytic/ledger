@@ -41,6 +41,26 @@ export class AccountingError extends Error {
     }
   }
 
+  /**
+   * Field errors in the canonical `@classytic/repo-core` `HttpError` shape.
+   * arc's global handler reads this via `toErrorContract`, so a thrown
+   * AccountingError surfaces its path-scoped field details on the wire
+   * NATIVELY — no per-host `errorMapper`. `path`/`value` are preserved
+   * (repo-core `ValidationErrorMeta` carries `path` + `meta` since 0.10.0);
+   * `fields` stays the domain-facing API.
+   */
+  get validationErrors():
+    | ReadonlyArray<{ validator: string; error: string; path?: string; meta?: { value: unknown } }>
+    | undefined {
+    if (!this.fields?.length) return undefined;
+    return this.fields.map((f) => ({
+      validator: 'invalid_field',
+      error: f.issue,
+      ...(f.path ? { path: f.path } : {}),
+      ...(f.value !== undefined ? { meta: { value: f.value } } : {}),
+    }));
+  }
+
   /** Serialize to a plain object for API responses and logs. */
   toJSON(): {
     name: string;

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.16.0 — unpublished (2026-07-15)
+
+### Fixed (security/integrity) — immutable guard promoted to mongokit `immutableStatesPlugin`
+
+- **CLOSED GAPS: `findOneAndUpdate`, `updateMany`, `deleteMany`, `bulkWrite`,
+  and `restore` on the JournalEntry repository were UNFENCED** — with
+  `strictness.immutable` on, a host could still mutate a POSTED entry through
+  any of those repo paths without tripping the guard (only `update`, `delete`,
+  `claim`, `claimVersion` were hooked). Also closed: a `claim` on a non-state
+  field (which doesn't CAS-pin `state`) could patch a posted entry.
+- `immutableGuardPlugin` is now a thin configuration of mongokit ≥3.22's
+  `immutableStatesPlugin` (promoted FROM this package's 0.9.0 implementation,
+  as a strict superset). Same semantics preserved: `_ledgerInternal` engine
+  handshake, org-scoped state lookups, reverse-mark claim exemption
+  (`isReverseMarkClaim` fingerprint unchanged), `ImmutableViolationError`
+  (403 `IMMUTABLE_ENTRY`) via `errorFactory`. `updateMany`/`deleteMany` now
+  refuse when ANY posted row is in the blast radius (never a silent partial
+  application); `bulkWrite` on the repo is refused unless engine-flagged
+  (reconciliation's raw `Model.bulkWrite` paths are hook-exempt by design
+  and unaffected).
+- `ImmutableGuardOptions.JournalEntryModel` removed — the plugin reads the
+  repository's own model. Requires `@classytic/mongokit >= 3.22.0`.
+
 ## 0.15.2 — 2026-07-11
 
 ### Added

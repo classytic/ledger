@@ -1,146 +1,59 @@
 /**
- * Immutable Guard Plugin (0.9.0)
+ * Immutable Guard Plugin (0.11.0)
  *
- * Enforces `config.strictness.immutable === true` at the repository hook
- * layer: any `update` or `delete` targeting a posted entry is rejected
- * unless the caller explicitly sets the `_ledgerInternal` flag.
+ * Enforces `config.strictness.immutable === true`: posted journal
+ * entries are frozen audit records — the only way to correct one is
+ * `reverse()`, which creates a counter-entry. The engine's own
+ * transition verbs (`post`, `unpost`, `reverse`, `archive`) pass
+ * `_ledgerInternal: '<op>'` and are permitted; direct repository
+ * callers have no way to set the flag, so they hit the guard.
  *
- * The engine's own state-transition verbs (`post`, `unpost`, `reverse`,
- * `archive`) pass `_ledgerInternal: '<op>'` so they're permitted. Direct
- * `repository.update()` / `repository.delete()` callers have no way to
- * set the flag, so they hit the guard.
+ * Since 0.11.0 this is a thin configuration of mongokit's
+ * `immutableStatesPlugin` (which was PROMOTED from this file's 0.9.0
+ * hand-rolled implementation). The promotion is a strict superset —
+ * it CLOSES real gaps the hand-rolled version had:
  *
- * Before 0.9.0 the `strictness.immutable` config was silently ignored on
- * the update path — only `unpost()` checked it. Flagged by peer review.
+ *   - `findOneAndUpdate` / `updateMany` / `deleteMany` / `bulkWrite` /
+ *     `restore` on the JE repository were previously UNFENCED — a host
+ *     could mutate a posted entry through any of them without tripping
+ *     `strictness.immutable`.
+ *   - a `claim` on a NON-state field (which doesn't CAS-pin `state`)
+ *     could patch a posted entry; it now falls back to a state lookup.
+ *
+ * The reverse-mark stamp (`posted → posted` with the
+ * `reversed: { $ne: true }` race guard and a `reversed: true` $set)
+ * stays exempt via `allowClaim` — same fingerprint as before, see
+ * `isReverseMarkClaim`.
+ *
+ * Engine-internal raw-Model paths (e.g. reconciliation's
+ * `JournalEntryModel.bulkWrite`) bypass the repo hook pipeline by
+ * design and are unaffected.
  */
 
-import type { PluginFunction, RepositoryContext } from '@classytic/mongokit';
-import type { Model } from 'mongoose';
+import { immutableStatesPlugin, type PluginType } from '@classytic/mongokit';
 import { ImmutableViolationError } from '../utils/errors.js';
 import { type ClaimRepositoryContext, isReverseMarkClaim } from './claim-context.js';
 
 export interface ImmutableGuardOptions {
-  /** The JournalEntry Mongoose model, for looking up current state on update. */
-  JournalEntryModel: Model<unknown>;
   /** Multi-tenant org field name (if enabled). */
   orgField?: string | undefined;
 }
 
-type InternalCtx = RepositoryContext & {
-  _ledgerInternal?: string;
-  data?: Record<string, unknown>;
-  id?: unknown;
-  query?: Record<string, unknown>;
-};
-
 /**
- * Returns a mongokit plugin function. Install only when
+ * Returns the configured plugin. Install only when
  * `config.strictness.immutable === true`.
  */
-export function immutableGuardPlugin(options: ImmutableGuardOptions): PluginFunction {
-  const { JournalEntryModel, orgField } = options;
-
-  return (repo) => {
-    // Block direct updates on posted entries.
-    repo.on('before:update', async (ctx: InternalCtx) => {
-      // Engine-internal transitions (post/unpost/reverseMark/archive) opt out.
-      if (ctx._ledgerInternal) return;
-
-      const id = ctx.id;
-      if (!id) return;
-
-      // Look up the current state of the target entry. Use the raw Model to
-      // avoid re-entering the repository layer (which would fire this hook
-      // again). Scope by org when available.
-      const query: Record<string, unknown> = { _id: id };
-      if (orgField && ctx.query && orgField in ctx.query) {
-        query[orgField] = ctx.query[orgField];
-      }
-      const current = (await JournalEntryModel.findOne(query).select({ state: 1 }).lean()) as {
-        state?: string;
-      } | null;
-
-      if (current?.state === 'posted') {
-        throw new ImmutableViolationError(id);
-      }
-    });
-
-    // Block direct deletes on posted entries.
-    repo.on('before:delete', async (ctx: InternalCtx) => {
-      if (ctx._ledgerInternal) return;
-      const id = ctx.id;
-      if (!id) return;
-      const query: Record<string, unknown> = { _id: id };
-      if (orgField && ctx.query && orgField in ctx.query) {
-        query[orgField] = ctx.query[orgField];
-      }
-      const current = (await JournalEntryModel.findOne(query).select({ state: 1 }).lean()) as {
-        state?: string;
-      } | null;
-      if (current?.state === 'posted') {
-        throw new ImmutableViolationError(id);
-      }
-    });
-
-    // ── before:claimVersion — same contract as before:update ───────────
-    //
-    // `claimVersion()` (mongokit 3.16) is an update-shaped write with a
-    // version-stamp CAS. Without this hook a host could patch a posted
-    // entry via `repo.claimVersion(...)` and bypass the update guard.
-    // The engine's own `updateDraft()` verb rides claimVersion and is
-    // constrained to drafts by its CAS `where`, so it never trips this.
-    repo.on('before:claimVersion', async (ctx: InternalCtx) => {
-      if (ctx._ledgerInternal) return;
-      const id = ctx.id;
-      if (!id) return;
-      const query: Record<string, unknown> = { _id: id };
-      if (orgField && ctx.query && orgField in ctx.query) {
-        query[orgField] = ctx.query[orgField];
-      }
-      const current = (await JournalEntryModel.findOne(query).select({ state: 1 }).lean()) as {
-        state?: string;
-      } | null;
-      if (current?.state === 'posted') {
-        throw new ImmutableViolationError(id);
-      }
-    });
-
-    // ── before:claim — block claims that try to leave `posted` ─────────
-    //
-    // In strict mode, posted entries are append-only audit records — the
-    // only way to correct one is `reverse()`, which creates a counter-
-    // entry. Without this hook, a host calling `repo.claim(id, { from:
-    // 'posted', to: 'draft' })` directly would unpost an immutable entry,
-    // bypassing the `unpost()` strictness check.
-    //
-    // Reverse-mark is exempt — it's a state-noop (`from === to ===
-    // 'posted'`) with a `reversed: { $ne: true }` race guard; the
-    // mutation is already constrained to the legitimate audit-trail
-    // fingerprint (reversed/reversedBy/reversedByUser fields).
-    repo.on('before:claim', async (rawCtx: RepositoryContext) => {
-      const ctx = rawCtx as ClaimRepositoryContext & InternalCtx;
-      if (ctx._ledgerInternal) return;
-      if (isReverseMarkClaim(ctx)) return;
-
-      const transition = ctx.transition;
-      if (!transition) return;
-      const stateField = transition.field ?? 'state';
-      if (stateField !== 'state') return;
-
-      // Determine if the transition's `from` set includes 'posted'. When
-      // it does, the caller is asking to leave (or stay-on) posted via a
-      // direct claim — refuse in strict mode unless this is the exempt
-      // reverse-mark shape (handled above).
-      const fromSpec = transition.from;
-      const fromIncludesPosted = Array.isArray(fromSpec)
-        ? fromSpec.includes('posted')
-        : fromSpec === 'posted';
-      if (!fromIncludesPosted) return;
-
-      // `from === to === 'posted'` with a non-reverse-mark patch reaches
-      // here too — block it; arbitrary stamping on posted entries violates
-      // the audit-trail contract.
-      throw new ImmutableViolationError(ctx.id);
-    });
-  };
+export function immutableGuardPlugin(options: ImmutableGuardOptions = {}): PluginType {
+  return immutableStatesPlugin({
+    states: ['posted'],
+    field: 'state',
+    internalFlag: '_ledgerInternal',
+    ...(options.orgField !== undefined ? { tenantField: options.orgField } : {}),
+    allowClaim: (view) =>
+      isReverseMarkClaim({
+        transition: view.transition,
+        data: view.data,
+      } as ClaimRepositoryContext),
+    errorFactory: ({ id }) => new ImmutableViolationError(id),
+  });
 }

@@ -151,10 +151,7 @@ export function createRepositories(
   // repository.update()/delete() callers can't mutate posted entries.
   if (strictness?.immutable) {
     jePlugins.push(
-      immutableGuardPlugin({
-        JournalEntryModel: models.JournalEntry,
-        orgField,
-      }),
+      immutableGuardPlugin({ orgField }),
     );
   }
 
