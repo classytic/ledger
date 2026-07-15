@@ -150,9 +150,7 @@ export function createRepositories(
   // 0.9.0: enforce strictness.immutable at the hook layer so direct
   // repository.update()/delete() callers can't mutate posted entries.
   if (strictness?.immutable) {
-    jePlugins.push(
-      immutableGuardPlugin({ orgField }),
-    );
+    jePlugins.push(immutableGuardPlugin({ orgField }));
   }
 
   const jeBase = new Repository(models.JournalEntry, jePlugins, jePagination);
