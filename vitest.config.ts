@@ -41,6 +41,8 @@ export default defineConfig({
             'tests/smoke/**/*.test.ts',
             'tests/sync/**/*.test.ts',
             'tests/architectural-improvements.test.ts',
+      'tests/posting-rules.test.ts',
+      'tests/assurance/**/*.test.ts',
           ],
           testTimeout: 30_000,
           hookTimeout: 30_000,

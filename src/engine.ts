@@ -35,6 +35,12 @@ import { QueryParser, type QueryParserOptions } from '@classytic/mongokit';
 import type { EventTransport } from '@classytic/primitives/events';
 import { isValidTimeZone } from '@classytic/primitives/timezone';
 import type { Model } from 'mongoose';
+import { runLedgerAssurance } from './assurance/run.js';
+import type {
+  AssuranceReport,
+  LedgerAssuranceOptions,
+  LedgerAssuranceParams,
+} from './assurance/types.js';
 import type { LedgerBridges } from './bridges/index.js';
 import type { CountryPack } from './country/index.js';
 import { InProcessLedgerBus } from './events/in-process-bus.js';
@@ -86,6 +92,7 @@ export class AccountingEngine {
   readonly outboxStore: OutboxStore | undefined;
 
   private _reports?: ReturnType<AccountingEngine['_buildReports']>;
+  private _assurance?: { run: (params?: LedgerAssuranceParams) => Promise<AssuranceReport> };
 
   constructor(config: AccountingEngineConfig) {
     if (!config.mongoose) {
@@ -186,6 +193,27 @@ export class AccountingEngine {
       this._reports = this._buildReports();
     }
     return this._reports;
+  }
+
+  /**
+   * Continuous integrity checks over the posted book, bound to the engine's
+   * owned models: per-entry balance, denormalized-totals drift, trial-balance
+   * conservation, orphan accounts, idempotency duplicates, control-account
+   * tie-outs, stale drafts. Read-only aggregations — assurance never mutates
+   * the book. See `@classytic/ledger/assurance`.
+   */
+  get assurance() {
+    if (!this._assurance) {
+      const opts: LedgerAssuranceOptions = {
+        JournalEntryModel: this.models.JournalEntry as Model<unknown>,
+        AccountModel: this.models.Account as Model<unknown>,
+        orgField: this.config.multiTenant?.tenantField,
+      };
+      this._assurance = {
+        run: (params?: LedgerAssuranceParams) => runLedgerAssurance(opts, params),
+      };
+    }
+    return this._assurance;
   }
 
   // ── Account Type Helpers (delegate to country pack) ────────────────────────

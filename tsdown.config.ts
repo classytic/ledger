@@ -5,6 +5,8 @@ export default defineConfig({
     'src/index.ts',
     'src/money.ts',
     'src/reports/index.ts',
+    'src/posting-rules/index.ts',
+    'src/assurance/index.ts',
     'src/plugins/index.ts',
     'src/constants/index.ts',
     'src/country/index.ts',

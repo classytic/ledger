@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.17.0 — 2026-07-17
+
+### Added — posting-rules engine (`@classytic/ledger/posting-rules`)
+
+- **Typed posting-recipe kernel** (design: `docs/posting-rules-design.md`) — the
+  research-backed replacement path for hand-written host posting contracts.
+  Recipes are typed data objects with pure-function leaves: declarative,
+  introspectable STRUCTURE (legs, sides, account refs, conditions, idempotency,
+  journal type) + typed amount functions. Package-distributed, code-reviewed,
+  contract-tested — deliberately NOT runtime configuration (Oracle SLA sprawl),
+  NOT code plug-ins (NetSuite SuiteGL), NOT a string DSL (Numscript).
+- **`evaluatePostingRecipe(recipe, input, { slots })`** — single-pass, pure,
+  no-IO evaluation to an explainable `PostingDraft`. Engine invariants:
+  Σdebit = Σcredit (typed `UnbalancedRecipeError` naming legs), fail-loud
+  `UnknownSlotError` (never a silent default account), always-on per-leg
+  explain provenance (slot → code, condition results, fold traces), skipped
+  drafts (`skipped: true`, zero legs) for intentional no-ops.
+- **`AccountRef` modes** — `slot` (chart alias) · `route` (item-derived slot:
+  payment-method / regex tables) · `resolve` + `foldInto` (regime/rate-gated
+  accounts: null resolution FOLDS the amount into a named target leg — the
+  input-VAT-absorption pattern as a first-class mechanic) · `code` escape hatch.
+- **`reversalOf(recipe, { keySuffix })`** — reversal by derivation: sides
+  mirror, keys suffix, conditions/folds/groups carry over — reversals can no
+  longer drift from their originals.
+- **`PostingRuleRegistry`** — pack contribution (`registerPack` +
+  `requiredSlots`), deliberate host `override`, boot-time `validate()` sweep
+  collecting ALL unresolvable slots into one loud error.
+- **Test kit** — `expectRecipe(...).withSlots(...).given(input).toPost([...])`
+  with order-insensitive matching and precise diffs, `toSkip`, `toHaveKey`,
+  `toBalance`, and `assertDeterministic` (double-evaluation purity enforcement).
+- 19 kernel tests incl. corpus-fidelity recipes (sales transaction, vendor bill
+  with VDS + VAT fold, landed-cost regex grouping + reversal) proving the model
+  expresses the real be-prod contracts ahead of the `ledger-bd` recipe pack.
+
 ## 0.16.0 — unpublished (2026-07-15)
 
 ### Fixed (security/integrity) — immutable guard promoted to mongokit `immutableStatesPlugin`
